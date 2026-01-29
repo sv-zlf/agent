@@ -3,11 +3,23 @@ import { createLogger } from '../utils';
 
 const logger = createLogger(true); // 启用debug模式用于工具引擎
 
+// 默认工具超时时间（毫秒）
+const DEFAULT_TOOL_TIMEOUT = 30000; // 30秒
+const MAX_TOOL_TIMEOUT = 120000; // 2分钟
+
 /**
  * 工具执行引擎
  */
 export class ToolEngine {
   private tools: Map<string, ToolDefinition> = new Map();
+  private defaultToolTimeout: number = DEFAULT_TOOL_TIMEOUT;
+
+  /**
+   * 设置默认工具超时
+   */
+  setDefaultToolTimeout(timeout: number): void {
+    this.defaultToolTimeout = Math.min(timeout, MAX_TOOL_TIMEOUT);
+  }
 
   /**
    * 注册工具
@@ -77,13 +89,25 @@ export class ToolEngine {
   /**
    * 执行工具调用
    */
-  async executeToolCall(call: ToolCall): Promise<ToolResult> {
+  async executeToolCall(
+    call: ToolCall,
+    abortSignal?: AbortSignal,
+    timeout?: number
+  ): Promise<ToolResult> {
     const tool = this.tools.get(call.tool);
 
     if (!tool) {
       return {
         success: false,
         error: `Unknown tool: ${call.tool}`,
+      };
+    }
+
+    // 检查全局 abort 信号
+    if (abortSignal?.aborted) {
+      return {
+        success: false,
+        error: '工具执行已被用户中断',
       };
     }
 
@@ -100,14 +124,96 @@ export class ToolEngine {
         }
       }
 
-      // 执行工具
-      const result = await tool.handler(call.parameters);
-      logger.info(`Tool ${call.tool} completed: ${result.success ? 'success' : 'failed'}`);
+      // 创建工具级别的 AbortController（用于超时）
+      const toolTimeoutController = new AbortController();
+      const toolTimeout = Math.min(
+        timeout ?? this.defaultToolTimeout,
+        MAX_TOOL_TIMEOUT
+      );
+      const timeoutId = setTimeout(() => {
+        toolTimeoutController.abort();
+      }, toolTimeout);
 
-      return result;
-    } catch (error) {
+      let combinedSignal: AbortSignal | undefined;
+      if (abortSignal) {
+        // 组合全局 abort 信号和工具超时信号
+        // 注意：AbortSignal.any 是实验性 API，需要做兼容处理
+        try {
+          combinedSignal = (AbortSignal as any).any([
+            toolTimeoutController.signal,
+            abortSignal,
+          ]);
+        } catch (e) {
+          // 如果 AbortSignal.any 不可用，使用全局 abort 信号
+          combinedSignal = abortSignal;
+          // logger.warning('AbortSignal.any not available, using global abort signal only');
+        }
+      } else {
+        combinedSignal = toolTimeoutController.signal;
+      }
+
+      try {
+        // 执行工具，传入组合 abort 信号
+        const execParams = {
+          ...call.parameters,
+          __abortSignal__: combinedSignal,
+          __timeout__: toolTimeout,
+        };
+
+        const result = await tool.handler(execParams);
+        logger.info(`Tool ${call.tool} completed: ${result.success ? 'success' : 'failed'}`);
+
+        clearTimeout(timeoutId);
+
+        // 检查执行后是否被中断
+        if (combinedSignal?.aborted && !result.success) {
+          // 判断是超时还是用户中断
+          if (toolTimeoutController.signal.aborted) {
+            return {
+              success: false,
+              error: '工具执行超时',
+            };
+          } else if (abortSignal?.aborted) {
+            return {
+              success: false,
+              error: '工具执行已被用户中断',
+            };
+          }
+        }
+
+        return result;
+      } catch (error: any) {
+        clearTimeout(timeoutId);
+
+        // 检查中断原因
+        if (combinedSignal?.aborted) {
+          if (toolTimeoutController.signal.aborted) {
+            return {
+              success: false,
+              error: '工具执行超时',
+            };
+          } else if (abortSignal?.aborted) {
+            return {
+              success: false,
+              error: '工具执行已被用户中断',
+            };
+          }
+        }
+
+        // 其他错误
+        throw error;
+      }
+    } catch (error: any) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       logger.error(`Tool ${call.tool} error: ${errorMsg}`);
+
+      // 检查是否是中断错误
+      if (abortSignal?.aborted || errorMsg.includes('中断') || errorMsg.includes('abort')) {
+        return {
+          success: false,
+          error: '工具执行已被用户中断',
+        };
+      }
 
       return {
         success: false,
@@ -119,12 +225,30 @@ export class ToolEngine {
   /**
    * 批量执行工具调用
    */
-  async executeToolCalls(calls: ToolCall[]): Promise<ToolResult[]> {
+  async executeToolCalls(
+    calls: ToolCall[],
+    abortSignal?: AbortSignal,
+    timeout?: number
+  ): Promise<ToolResult[]> {
     const results: ToolResult[] = [];
 
     for (const call of calls) {
-      const result = await this.executeToolCall(call);
+      // 检查是否已中断
+      if (abortSignal?.aborted) {
+        results.push({
+          success: false,
+          error: '工具执行已被用户中断',
+        });
+        break;
+      }
+
+      const result = await this.executeToolCall(call, abortSignal, timeout);
       results.push(result);
+
+      // 如果工具执行失败且不是因为中断，停止后续工具
+      if (!result.success && !result.error?.includes('中断') && !result.error?.includes('超时')) {
+        break;
+      }
     }
 
     return results;

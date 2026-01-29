@@ -1,7 +1,7 @@
 {
-  "name": "internal-code-agent",
+  "name": "gg-code",
   "version": "1.0.0",
-  "description": "内网代码编辑助手CLI工具",
+  "description": "GG CODE - AI-Powered Code Editor CLI Tool",
   "main": "dist/index.js",
   "bin": {
     "agent": "./bin/agent.js"
@@ -10,6 +10,8 @@
     "build": "tsc",
     "dev": "ts-node src/index.ts",
     "start": "node dist/index.js",
+    "agent": "node run-agent.js agent",
+    "agent:win": "run-agent-windows.js agent",
     "test": "jest",
     "test:watch": "jest --watch",
     "lint": "eslint src --ext .ts",
@@ -17,9 +19,10 @@
   },
   "keywords": [
     "cli",
-    "agent",
+    "gg-code",
     "code-editor",
-    "ai"
+    "ai",
+    "assistant"
   ],
   "author": "",
   "license": "MIT",

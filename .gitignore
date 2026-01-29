@@ -6,3 +6,5 @@ backups/
 .env
 .DS_Store
 *.tsbuildinfo
+/.idea/
+/.claude/

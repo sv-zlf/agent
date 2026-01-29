@@ -45,6 +45,7 @@ export class ChatAPIAdapter {
       topP?: number;
       topK?: number;
       repetitionPenalty?: number;
+      abortSignal?: AbortSignal;
     }
   ): Promise<string> {
     const traceId = this.generateTraceId();
@@ -70,6 +71,11 @@ export class ChatAPIAdapter {
       Fst_Attr_Rmrk: this.config.access_key_id,
     };
 
+    // 检查是否已中断
+    if (options?.abortSignal?.aborted) {
+      throw new APIError('请求已被用户中断', 'ABORTED');
+    }
+
     try {
       const response = await axios.post<InternalAPIResponse>(
         `${this.config.base_url}/ai-service/ainlpllm/chat`,
@@ -84,6 +90,7 @@ export class ChatAPIAdapter {
             'Tx-Serial-No': serialNo,
           },
           timeout: this.config.timeout ?? 30000,
+          signal: options?.abortSignal, // 支持中断请求
         }
       );
 
@@ -109,6 +116,18 @@ export class ChatAPIAdapter {
     } catch (error) {
       if (axios.isAxiosError(error)) {
         const axiosError = error as AxiosError<InternalAPIResponse>;
+
+        // 检查是否是中断错误
+        if (
+          axiosError.code === 'ECONNABORTED' ||
+          axiosError.code === 'ERR_CANCELED' ||
+          (axiosError.name && axiosError.name.includes('cancel')) ||
+          (axiosError.message && axiosError.message.includes('cancel')) ||
+          options?.abortSignal?.aborted
+        ) {
+          throw new APIError('请求已被用户中断', 'ABORTED');
+        }
+
         if (axiosError.response) {
           // 服务器返回了错误响应
           throw new APIError(

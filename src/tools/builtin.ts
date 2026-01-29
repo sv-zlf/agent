@@ -365,15 +365,71 @@ export const BashTool: ToolDefinition = {
     },
   },
   handler: async (args) => {
-    const { command, description } = args as { command: string; description?: string };
+    const { command, description, __abortSignal__, __timeout__ } = args as {
+      command: string;
+      description?: string;
+      __abortSignal__?: AbortSignal;
+      __timeout__?: number;
+    };
+
+    // 检查初始中断状态
+    if (__abortSignal__?.aborted) {
+      return {
+        success: false,
+        error: '命令执行已被用户中断',
+      };
+    }
 
     try {
       logger.info(`Executing command: ${command}`);
 
+      // 使用自定义的超时或默认超时
+      const timeout = __timeout__ || 60000; // 默认 60 秒
+
+      // 创建一个 AbortController 用于超时
+      const timeoutController = new AbortController();
+      const timeoutId = setTimeout(() => timeoutController.abort(), timeout);
+
+      // 组合 abort 信号
+      let combinedSignal: AbortSignal | undefined = __abortSignal__;
+      if (__abortSignal__) {
+        try {
+          combinedSignal = (AbortSignal as any).any([
+            timeoutController.signal,
+            __abortSignal__,
+          ]);
+        } catch (e) {
+          // Fallback: 只使用传入的 abort 信号
+          combinedSignal = __abortSignal__;
+        }
+      } else {
+        combinedSignal = timeoutController.signal;
+      }
+
+      // 执行命令（带超时）
       const { stdout, stderr } = await execAsync(command, {
         maxBuffer: 10 * 1024 * 1024, // 10MB
-        timeout: 120000, // 2分钟
+        timeout: timeout,
+        // 注意：execAsync 的 timeout 参数无法被 AbortController 中断
+        // 所以我们依赖 kill 来中断命令
       });
+
+      clearTimeout(timeoutId);
+
+      // 检查执行后是否被中断
+      if (combinedSignal?.aborted) {
+        if (timeoutController.signal.aborted) {
+          return {
+            success: false,
+            error: `命令执行超时 (${timeout / 1000}秒)`,
+          };
+        } else if (__abortSignal__?.aborted) {
+          return {
+            success: false,
+            error: '命令执行已被用户中断',
+          };
+        }
+      }
 
       const output = stdout || stderr || '命令执行成功（无输出）';
 
@@ -386,8 +442,45 @@ export const BashTool: ToolDefinition = {
           has_stderr: !!stderr,
         },
       };
-    } catch (error) {
+    } catch (error: any) {
       const errorMsg = error instanceof Error ? error.message : String(error);
+
+      // 检查是否是超时或中断
+      if (__abortSignal__?.aborted) {
+        return {
+          success: false,
+          error: '命令执行已被用户中断',
+          metadata: {
+            command,
+            description,
+          },
+        };
+      }
+
+      // execAsync 的超时错误
+      if (errorMsg.includes('timed out') || errorMsg.includes('ETIMEDOUT')) {
+        return {
+          success: false,
+          error: `命令执行超时`,
+          metadata: {
+            command,
+            description,
+          },
+        };
+      }
+
+      // 检查是否被 kill（用户 Ctrl+C）
+      if (errorMsg.includes('killed') || errorMsg.includes('SIGTERM')) {
+        return {
+          success: false,
+          error: '命令执行已被用户中断',
+          metadata: {
+            command,
+            description,
+          },
+        };
+      }
+
       return {
         success: false,
         error: `命令执行失败: ${errorMsg}`,

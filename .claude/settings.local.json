@@ -15,7 +15,20 @@
       "Bash(ls:*)",
       "Bash(npx tsc:*)",
       "Bash(echo:*)",
-      "Bash(cmd /c \"npm run build 2>&1\")"
+      "Bash(cmd /c \"npm run build 2>&1\")",
+      "Bash(npm install:*)",
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "Bash(npm search:*)",
+      "Bash(docker:*)",
+      "Bash(npm view:*)",
+      "Bash(go:*)",
+      "Bash(npm uninstall:*)",
+      "Bash(git clone:*)",
+      "Bash(if [ -d \"temp/opencode\" ])",
+      "Bash(then echo \"opencode already exists\")",
+      "Bash(else git clone:*)",
+      "Bash(fi:*)"
     ]
   }
 }

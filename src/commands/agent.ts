@@ -2,21 +2,23 @@ import { Command } from 'commander';
 import * as path from 'path';
 import chalk from 'chalk';
 import ora = require('ora');
-import inquirer from 'inquirer';
 import { getConfig } from '../config';
 import { createAPIAdapter } from '../api';
-import { createToolEngine, createAgentOrchestrator, createContextManager } from '../core';
+import { createToolEngine, createContextManager } from '../core';
+import { getInterruptManager } from '../core/interrupt';
 import { builtinTools } from '../tools';
 import { createLogger } from '../utils';
-import type { ToolCall, AgentStatus } from '../types';
+import { displayBanner } from '../utils/logo';
+import type { ToolCall } from '../types';
+import { readFileSync } from 'fs';
 
 const logger = createLogger();
 
 /**
- * agent命令 - 自主编程助手
+ * agent命令 - GG CODE AI编程助手
  */
 export const agentCommand = new Command('agent')
-  .description('AI自主编程助手（类似Claude Code）')
+  .description('GG CODE - AI-Powered Code Editor (类似Claude Code)')
   .option('-y, --yes', '自动批准所有工具调用', false)
   .option('-i, --iterations <number>', '最大迭代次数', '10')
   .option('--no-history', '不保存对话历史')
@@ -49,76 +51,186 @@ export const agentCommand = new Command('agent')
       await contextManager.loadHistory();
     }
 
-    // 显示标题
-    logger.title('AI自主编程助手');
-    logger.info('可以执行文件操作、代码搜索、命令执行等任务');
-    logger.info('输入 "exit" 或 "quit" 退出\n');
+    // 读取版本号
+    const packagePath = path.join(__dirname, '../../package.json');
+    const version = JSON.parse(readFileSync(packagePath, 'utf-8')).version;
+
+    // 显示 GG CODE 启动横幅
+    displayBanner(version);
 
     // 获取当前工作目录
     const workingDirectory = process.cwd();
 
-    // 创建Agent编排器
-    const orchestrator = createAgentOrchestrator(
-      apiAdapter,
-      toolEngine,
-      contextManager,
-      {
-        maxIterations: parseInt(options.iterations, 10),
-        autoApprove: options.yes,
-        dangerousCommands: ['rm -rf', 'del /q', 'format'],
-        workingDirectory,
-        onToolCall: async (call: ToolCall) => {
-          if (options.yes) {
-            return true;
-          }
-
-          // 交互式审批
-          console.log('\n' + chalk.yellow('📋 工具调用请求:'));
-          console.log(chalk.cyan(`  工具: ${call.tool}`));
-          console.log(chalk.gray(`  参数: ${JSON.stringify(call.parameters, null, 2)}`));
-
-          const answer = await inquirer.prompt([
-            {
-              type: 'confirm',
-              name: 'approve',
-              message: '是否批准此工具调用?',
-              default: true,
-            },
-          ]);
-
-          return answer.approve;
-        },
-        onStatusChange: (status: AgentStatus, message?: string) => {
-          if (message) {
-            switch (status) {
-              case 'thinking':
-                console.log(chalk.blue(`\n🤔 ${message}`));
-                break;
-              case 'running':
-                console.log(chalk.gray(`⚙️  ${message}`));
-                break;
-              case 'completed':
-                console.log(chalk.green(`\n✅ ${message}`));
-                break;
-              case 'error':
-                console.log(chalk.red(`\n❌ ${message}`));
-                break;
-            }
-          }
-        },
-      }
-    );
+    // 获取中断管理器
+    const interruptManager = getInterruptManager();
 
     // 启动交互式循环
     const readline = require('readline');
-    const rl = readline.createInterface({
+    let rl = readline.createInterface({
       input: process.stdin,
       output: process.stdout,
     });
 
+    // 设置raw模式，用于监听单个按键
+    rl.input.setRawMode(true);
+
+    // 辅助函数：重新创建 readline 接口（在中断后）
+    const recreateReadline = () => {
+      try {
+        if (rl && !(rl as any)._closed) {
+          rl.close();
+        }
+      } catch (e) {
+        // 忽略关闭错误
+      }
+
+      rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout,
+      });
+
+      rl.input.setRawMode(true);
+    };
+
+    // 按键监听器变量
+    let keyListener: any = null;
+    let interruptKeyListener: any = null;
+
+    // 设置 P 键中断监听
+    const setupInterruptKey = () => {
+      // 移除旧的中断监听器
+      if (interruptKeyListener) {
+        rl.input.removeListener('data', interruptKeyListener);
+      }
+
+      // 创建新的中断监听器
+      interruptKeyListener = (data: Buffer) => {
+        const key = data.toString('utf8');
+
+        // P 键或 p 键中断操作
+        if (key === 'p' || key === 'P') {
+          if (interruptManager.currentState.isAIThinking || interruptManager.currentState.isExecutingTool) {
+            interruptManager.requestInterrupt();
+          }
+        }
+      };
+
+      rl.input.on('data', interruptKeyListener);
+    };
+
+    // 移除中断按键监听
+    const removeInterruptKey = () => {
+      if (interruptKeyListener) {
+        rl.input.removeListener('data', interruptKeyListener);
+        interruptKeyListener = null;
+      }
+    };
+
+    // 设置 SIGINT 处理 - 只用于退出程序
+    process.on('SIGINT', () => {
+      console.log();
+      cleanupAndExit();
+    });
+
+    // 清理并退出
+    const cleanupAndExit = () => {
+      // 防止重复调用
+      if ((rl as any)._closed) {
+        process.exit(0);
+      }
+
+      // 清理中断管理器
+      interruptManager.cleanup();
+
+      // 移除所有监听器
+      if (keyListener) {
+        rl.input.removeListener('data', keyListener);
+      }
+      if (interruptKeyListener) {
+        rl.input.removeListener('data', interruptKeyListener);
+      }
+      try {
+        rl.input.setRawMode(false);
+      } catch (e) {
+        // 忽略错误
+      }
+
+      if (options.history) {
+        contextManager.saveHistory().then(() => {
+          try {
+            rl.close();
+          } catch (e) {
+            // readline 可能已经关闭
+          }
+          logger.info('再见！');
+          process.exit(0);
+        }).catch(() => {
+          // history 保存失败也继续退出
+          try {
+            rl.close();
+          } catch (e) {
+            // readline 可能已经关闭
+          }
+          logger.info('再见！');
+          process.exit(0);
+        });
+      } else {
+        try {
+          rl.close();
+        } catch (e) {
+          // readline 可能已经关闭
+        }
+        logger.info('再见！');
+        process.exit(0);
+      }
+    };
+
+    // 添加工具批准的按键监听
+    const setupKeyListener = (resolve: (choice: 'yes-once' | 'yes-all' | 'no') => void): void => {
+      // 移除旧的监听器（如果有）
+      if (keyListener) {
+        rl.input.removeListener('data', keyListener);
+      }
+
+      // 创建新的监听器
+      keyListener = (data: Buffer) => {
+        const key = data.toString('utf8');
+
+        if (key === '1') {
+          // 移除监听器
+          rl.input.removeListener('data', keyListener);
+          keyListener = null;
+          resolve('yes-once');
+        } else if (key === '2' || key.toLowerCase() === 'a') {
+          // 移除监听器
+          rl.input.removeListener('data', keyListener);
+          keyListener = null;
+          resolve('yes-all');
+        } else if (key === '3' || key.toLowerCase() === 'n') {
+          // 移除监听器
+          rl.input.removeListener('data', keyListener);
+          keyListener = null;
+          resolve('no');
+        }
+        // 忽略其他按键
+      };
+
+      rl.input.on('data', keyListener);
+      rl.input.resume();
+    };
+
+    // 移除按键监听器的辅助函数
+    const removeKeyListener = (): void => {
+      if (keyListener) {
+        rl.input.removeListener('data', keyListener);
+        keyListener = null;
+      }
+      rl.input.setRawMode(false);
+    };
+
     // 设置系统提示词（只设置一次）
     const systemPrompt = `
-你是一个AI编程助手，类似于Claude Code。你可以自主执行各种编程任务。
+你是GG CODE，一个AI编程助手，类似于Claude Code。你可以自主执行各种编程任务。
 
 ## 🚨 重要：你必须使用工具
 
@@ -215,8 +327,17 @@ export const agentCommand = new Command('agent')
 
     contextManager.setSystemPrompt(systemPrompt);
 
+    // 记录用户是否已经批准了所有工具调用
+    let autoApproveAll = false;
+
+    // 定义一个获取当前 readline 接口的函数
+    const getReadline = () => rl;
+
     const chatLoop = async () => {
-      rl.question(chalk.cyan('You: '), async (input: string) => {
+      // 每次调用 chatLoop 时都重新获取 rl
+      const currentRl = getReadline();
+
+      currentRl.question(chalk.cyan('> '), async (input: string) => {
         if (!input.trim()) {
           chatLoop();
           return;
@@ -224,12 +345,8 @@ export const agentCommand = new Command('agent')
 
         // 处理特殊命令
         if (input.toLowerCase() === 'exit' || input.toLowerCase() === 'quit') {
-          if (options.history) {
-            await contextManager.saveHistory();
-          }
-          rl.close();
-          logger.info('再见！');
-          process.exit(0);
+          const rlToClose = getReadline(); // 获取当前的 rl
+          cleanupAndExit();
           return;
         }
 
@@ -258,6 +375,14 @@ export const agentCommand = new Command('agent')
           // 添加用户消息到上下文
           contextManager.addMessage('user', input);
 
+          // 每次新的用户输入时，重置所有状态
+          if (!options.yes) {
+            autoApproveAll = false;
+          }
+
+          // 重置中断管理器状态
+          interruptManager.fullReset();
+
           // 持续对话循环：AI响应 -> 检查工具调用 -> 执行工具 -> 继续对话
           let maxToolRounds = parseInt(options.iterations, 10);
           let currentRound = 0;
@@ -265,13 +390,58 @@ export const agentCommand = new Command('agent')
           while (currentRound < maxToolRounds) {
             currentRound++;
 
+            // 检查是否在循环开始时就被中断
+            if (interruptManager.isAborted()) {
+              console.log();
+              console.log(chalk.yellow('🛑 操作已被用户中断\n'));
+              break;
+            }
+
             try {
               // 获取当前上下文并调用AI
               const messages = contextManager.getContext();
-              const spinner = ora('AI思考中...').start();
 
-              const response = await apiAdapter.chat(messages);
-              spinner.stop();
+              // 开始新操作，获取 abort signal
+              const abortSignal = interruptManager.startOperation();
+              interruptManager.setAIThinking(true);
+
+              const spinner = ora('AI思考中... (按 P 键可中断)').start();
+
+              let response: string | undefined;
+              let wasInterrupted = false;
+
+              try {
+                // API 调用（使用中断管理器的 signal）
+                response = await apiAdapter.chat(messages, {
+                  abortSignal: abortSignal,
+                });
+
+                // 正常完成，停止 spinner
+                spinner.stop();
+              } catch (apiError: any) {
+                spinner.stop();
+
+                // 检查是否是用户中断
+                if (apiError.code === 'ABORTED' || interruptManager.isAborted()) {
+                  console.log();
+                  console.log(chalk.yellow('🛑 AI思考已被用户中断'));
+                  console.log();
+                  wasInterrupted = true;
+
+                  // 添加中断消息到上下文
+                  contextManager.addMessage('user', '\n\n用户中断了AI思考。请重新开始或询问其他问题。');
+                } else {
+                  // 其他错误继续抛出
+                  throw apiError;
+                }
+              } finally {
+                interruptManager.setAIThinking(false);
+              }
+
+              // 如果被中断，直接退出循环（理论上不会执行到这里，因为中断已经退出程序了）
+              if (wasInterrupted || !response) {
+                break;
+              }
 
               // 解析工具调用
               const toolCalls = toolEngine.parseToolCallsFromResponse(response);
@@ -290,40 +460,61 @@ export const agentCommand = new Command('agent')
 
               // 执行工具调用
               console.log(chalk.gray(`⚙️  执行 ${toolCalls.length} 个工具调用...`));
+              console.log(chalk.gray('💡 提示: 按 P 键可中断当前工具执行\n'));
 
               const toolResults: any[] = [];
               for (const call of toolCalls) {
+                // 检查是否已中断
+                if (interruptManager.isAborted()) {
+                  console.log();
+                  console.log(chalk.yellow('🛑 工具执行已被用户中断\n'));
+                  toolResults.push({
+                    success: false,
+                    error: '用户中断了工具执行 (Ctrl+C)',
+                  });
+                  break;
+                }
+
                 try {
                   // 显示工具调用
                   console.log(chalk.yellow(`\n📋 工具调用:`));
                   console.log(chalk.cyan(`  工具: ${call.tool}`));
                   console.log(chalk.gray(`  参数: ${JSON.stringify(call.parameters, null, 2)}`));
 
-                  // 询问是否批准（如果不是自动批准模式）
-                  let approved = options.yes;
+                  // 询问是否批准
+                  let approved = options.yes || autoApproveAll;
                   if (!approved) {
-                    const answer = await inquirer.prompt([
-                      {
-                        type: 'confirm',
-                        name: 'approve',
-                        message: '是否批准此工具调用?',
-                        default: true,
-                      },
-                    ]);
-                    approved = answer.approve;
+                    const choice = await askForApproval();
+
+                    if (choice === 'no') {
+                      // 拒绝当前工具，停止当前操作
+                      toolResults.push({
+                        success: false,
+                        error: '用户拒绝了工具调用',
+                      });
+                      console.log(chalk.red('  ✗ 已拒绝，停止当前操作\n'));
+                      break; // 退出工具循环
+                    } else if (choice === 'yes-all') {
+                      // 批准当前及后续所有工具
+                      approved = true;
+                      autoApproveAll = true;
+                      console.log(chalk.gray('  ✓ 已批准，后续工具将自动执行\n'));
+                    } else {
+                      // yes-once，只批准当前工具
+                      approved = true;
+                      console.log(chalk.gray('  ✓ 已批准（仅当前操作）\n'));
+                    }
                   }
 
-                  if (!approved) {
-                    toolResults.push({
-                      success: false,
-                      error: '用户拒绝了工具调用',
-                    });
-                    console.log(chalk.red('  ✗ 已拒绝'));
-                    continue;
-                  }
+                  // 标记正在执行工具
+                  interruptManager.setExecutingTool(true);
 
-                  // 执行工具
-                  const result = await toolEngine.executeToolCall(call);
+                  // 执行工具（传递 abort signal）
+                  const result = await toolEngine.executeToolCall(call, abortSignal);
+
+                  // 执行完成，重置标志
+                  interruptManager.setExecutingTool(false);
+
                   toolResults.push(result);
 
                   if (result.success) {
@@ -334,13 +525,32 @@ export const agentCommand = new Command('agent')
                   } else {
                     console.log(chalk.red(`  ✗ 失败: ${result.error}`));
                   }
-                } catch (toolError) {
-                  // 单个工具执行失败，继续其他工具
+
+                  // 如果工具失败且不是因为中断，停止后续工具
+                  if (!result.success && !result.error?.includes('中断')) {
+                    break;
+                  }
+                } catch (toolError: any) {
+                  // 执行完成（即使出错），重置标志
+                  interruptManager.setExecutingTool(false);
+
+                  // 单个工具执行失败，检查是否是中断
+                  if (toolError.message?.includes('中断') || interruptManager.isAborted()) {
+                    toolResults.push({
+                      success: false,
+                      error: '用户中断了工具执行 (Ctrl+C)',
+                    });
+                    console.log(chalk.red(`  ✗ 已中断`));
+                    break;
+                  }
+
+                  // 其他错误
                   toolResults.push({
                     success: false,
-                    error: `工具执行异常: ${(toolError as Error).message}`,
+                    error: `工具执行异常: ${toolError.message}`,
                   });
-                  console.log(chalk.red(`  ✗ 异常: ${(toolError as Error).message}`));
+                  console.log(chalk.red(`  ✗ 异常: ${toolError.message}`));
+                  break;
                 }
               }
 
@@ -381,7 +591,21 @@ export const agentCommand = new Command('agent')
         }
 
         // 继续下一轮对话
-        chatLoop();
+        setImmediate(() => chatLoop());
+      });
+    };
+
+    // 辅助函数：询问是否批准（使用按键监听）
+    const askForApproval = (): Promise<'yes-once' | 'yes-all' | 'no'> => {
+      return new Promise((resolve) => {
+        console.log(chalk.gray('    按键选择:\n'));
+        console.log(chalk.green('      1     - 仅同意当前操作 (yes)\n'));
+        console.log(chalk.yellow('      2     - 同意当前及后续所有操作 (all)\n'));
+        console.log(chalk.red('      3     - 拒绝，停止当前操作 (no)\n'));
+        console.log(chalk.cyan('    [按 1/2/3 键快速选择]\n'));
+
+        // 设置按键监听
+        setupKeyListener(resolve);
       });
     };
 
@@ -411,6 +635,9 @@ export const agentCommand = new Command('agent')
 
       return lines.join('\n');
     };
+
+    // 在整个运行期间激活 P 键中断监听
+    setupInterruptKey();
 
     chatLoop();
   });
