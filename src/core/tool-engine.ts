@@ -29,7 +29,6 @@ export class ToolEngine {
       throw new Error(`Tool already registered: ${tool.name}`);
     }
     this.tools.set(tool.name, tool);
-    logger.debug(`Tool registered: ${tool.name}`);
   }
 
   /**

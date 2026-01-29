@@ -143,7 +143,8 @@ export class ContextManager {
         this.messages = JSON.parse(content);
       }
     } catch (error) {
-      console.warn(`加载历史记录失败: ${(error as Error).message}`);
+      // 静默处理历史记录加载失败
+      // 第一次运行时历史文件不存在是正常的
     }
   }
 
