@@ -1,5 +1,7 @@
 import type { ToolDefinition, ToolCall, ToolResult } from '../types';
-import { logger } from '../utils';
+import { createLogger } from '../utils';
+
+const logger = createLogger(true); // 启用debug模式用于工具引擎
 
 /**
  * 工具执行引擎
@@ -86,7 +88,7 @@ export class ToolEngine {
     }
 
     try {
-      logger.info(`Executing tool: ${call.tool}`, call.parameters);
+      logger.info(`Executing tool: ${call.tool}`);
 
       // 验证必需参数
       for (const [paramName, param] of Object.entries(tool.parameters)) {

@@ -195,7 +195,7 @@ export type AgentStatus = 'idle' | 'thinking' | 'running' | 'error' | 'completed
 /**
  * Agent执行配置
  */
-export interface AgentConfig {
+export interface AgentRuntimeConfig {
   maxIterations: number;
   autoApprove: boolean;
   dangerousCommands: string[];

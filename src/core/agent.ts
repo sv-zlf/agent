@@ -1,17 +1,15 @@
-import type { Message, ToolCall, ToolResult, AgentConfig as AgentConfigType, AgentContext, AgentStatus } from '../types';
+import type { Message, ToolCall, ToolResult, AgentRuntimeConfig, AgentContext, AgentStatus } from '../types';
 import { ToolEngine } from './tool-engine';
-import { ChatAPIAdapter } from './api/adapter';
+import { ChatAPIAdapter } from '../api';
 import { ContextManager } from './context-manager';
-import { logger } from '../utils';
+import { createLogger } from '../utils';
+
+const logger = createLogger(true);
 
 /**
  * Agent执行配置
  */
-interface AgentConfig {
-  maxIterations: number;
-  autoApprove: boolean;
-  dangerousCommands: string[];
-  workingDirectory: string;
+interface AgentExecutionConfig extends AgentRuntimeConfig {
   onToolCall?: (call: ToolCall) => Promise<boolean>; // 返回true表示批准
   onStatusChange?: (status: AgentStatus, message?: string) => void;
 }
@@ -34,14 +32,14 @@ export class AgentOrchestrator {
   private apiAdapter: ChatAPIAdapter;
   private toolEngine: ToolEngine;
   private contextManager: ContextManager;
-  private config: AgentConfig;
+  private config: AgentExecutionConfig;
   private status: AgentStatus = 'idle';
 
   constructor(
     apiAdapter: ChatAPIAdapter,
     toolEngine: ToolEngine,
     contextManager: ContextManager,
-    config: AgentConfig
+    config: AgentExecutionConfig
   ) {
     this.apiAdapter = apiAdapter;
     this.toolEngine = toolEngine;
@@ -64,12 +62,12 @@ export class AgentOrchestrator {
     };
 
     try {
+      // 设置系统提示词（包含工具描述）
+      const systemPrompt = this.buildSystemPrompt();
+      this.contextManager.setSystemPrompt(systemPrompt);
+
       // 添加用户查询到上下文
       this.contextManager.addMessage('user', userQuery);
-
-      // 添加系统提示词（包含工具描述）
-      const systemPrompt = this.buildSystemPrompt();
-      this.contextManager.addMessage('system', systemPrompt);
 
       // 主执行循环
       while (context.iteration < this.config.maxIterations) {
@@ -305,7 +303,7 @@ export function createAgentOrchestrator(
   apiAdapter: ChatAPIAdapter,
   toolEngine: ToolEngine,
   contextManager: ContextManager,
-  config: AgentConfig
+  config: AgentExecutionConfig
 ): AgentOrchestrator {
   return new AgentOrchestrator(apiAdapter, toolEngine, contextManager, config);
 }

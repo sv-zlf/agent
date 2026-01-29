@@ -4,7 +4,9 @@ import chalk from 'chalk';
 import ora = require('ora');
 import inquirer from 'inquirer';
 import { getConfig } from '../config';
-import { createAPIAdapter, createToolEngine, createAgentOrchestrator, createContextManager, builtinTools } from '../core';
+import { createAPIAdapter } from '../api';
+import { createToolEngine, createAgentOrchestrator, createContextManager } from '../core';
+import { builtinTools } from '../tools';
 import { createLogger } from '../utils';
 import type { ToolCall, AgentStatus } from '../types';
 

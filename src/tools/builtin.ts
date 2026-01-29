@@ -5,7 +5,9 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import type { ToolDefinition, ToolResult } from '../types';
 import { createCodeOperator } from '../core/code-operator';
-import { logger } from '../utils';
+import { createLogger } from '../utils';
+
+const logger = createLogger(true); // 启用debug模式用于工具执行
 
 const execAsync = promisify(exec);
 
@@ -363,9 +365,9 @@ export const BashTool: ToolDefinition = {
     },
   },
   handler: async (args) => {
-    try {
-      const { command, description } = args as { command: string; description?: string };
+    const { command, description } = args as { command: string; description?: string };
 
+    try {
       logger.info(`Executing command: ${command}`);
 
       const { stdout, stderr } = await execAsync(command, {

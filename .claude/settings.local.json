@@ -11,7 +11,11 @@
       "Bash(powershell:*)",
       "Bash(tree:*)",
       "Bash(npm run build:*)",
-      "Bash(npm run lint:*)"
+      "Bash(npm run lint:*)",
+      "Bash(ls:*)",
+      "Bash(npx tsc:*)",
+      "Bash(echo:*)",
+      "Bash(cmd /c \"npm run build 2>&1\")"
     ]
   }
 }
