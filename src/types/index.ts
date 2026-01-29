@@ -4,12 +4,15 @@
 export type MessageRole = 'system' | 'user' | 'assistant';
 
 /**
- * 消息类型
+ * 消息类型（简单版本，用于向后兼容）
  */
 export interface Message {
   role: MessageRole;
   content: string;
 }
+
+// 导出增强的消息系统
+export * from './message';
 
 /**
  * API配置接口
@@ -178,13 +181,28 @@ export interface ToolCall {
 }
 
 /**
+ * 工具执行结果元数据
+ * 支持标准字段和自定义扩展字段
+ */
+export interface ToolResultMetadata extends Record<string, unknown> {
+  startTime?: number;    // 开始时间戳
+  endTime?: number;      // 结束时间戳
+  duration?: number;     // 执行时长（毫秒）
+  truncated?: boolean;   // 输出是否被截断
+  attachments?: string[]; // 文件附件路径列表
+  exitCode?: number;     // 退出码（用于命令工具）
+  signal?: string;       // 中断信号（如果被中断）
+  retryCount?: number;   // 重试次数
+}
+
+/**
  * 工具执行结果
  */
 export interface ToolResult {
   success: boolean;
   output?: string;
   error?: string;
-  metadata?: Record<string, unknown>;
+  metadata?: ToolResultMetadata;
 }
 
 /**

@@ -152,6 +152,9 @@ export class ToolEngine {
       }
 
       try {
+        // 记录开始时间
+        const startTime = Date.now();
+
         // 执行工具，传入组合 abort 信号
         const execParams = {
           ...call.parameters,
@@ -160,7 +163,10 @@ export class ToolEngine {
         };
 
         const result = await tool.handler(execParams);
-        logger.info(`Tool ${call.tool} completed: ${result.success ? 'success' : 'failed'}`);
+        const endTime = Date.now();
+        const duration = endTime - startTime;
+
+        logger.info(`Tool ${call.tool} completed: ${result.success ? 'success' : 'failed'} (${duration}ms)`);
 
         clearTimeout(timeoutId);
 
@@ -171,36 +177,79 @@ export class ToolEngine {
             return {
               success: false,
               error: '工具执行超时',
+              metadata: {
+                startTime,
+                endTime,
+                duration,
+                signal: 'ABORTED',
+              },
             };
           } else if (abortSignal?.aborted) {
             return {
               success: false,
               error: '工具执行已被用户中断',
+              metadata: {
+                startTime,
+                endTime,
+                duration,
+                signal: 'SIGINT',
+              },
             };
           }
         }
 
-        return result;
+        // 增强返回结果的元数据
+        return {
+          ...result,
+          metadata: {
+            ...(result.metadata || {}),
+            startTime,
+            endTime,
+            duration,
+            // 检测输出是否被截断（默认限制 2000 字符）
+            truncated: result.output ? result.output.length >= 2000 : undefined,
+          },
+        };
       } catch (error: any) {
+        const endTime = Date.now();
         clearTimeout(timeoutId);
 
         // 检查中断原因
         if (combinedSignal?.aborted) {
+          const duration = endTime - (endTime - 10000); // 近似计算
           if (toolTimeoutController.signal.aborted) {
             return {
               success: false,
               error: '工具执行超时',
+              metadata: {
+                startTime: endTime - toolTimeout,
+                endTime,
+                duration: toolTimeout,
+                signal: 'TIMEOUT',
+              },
             };
           } else if (abortSignal?.aborted) {
             return {
               success: false,
               error: '工具执行已被用户中断',
+              metadata: {
+                startTime: endTime - 5000,
+                endTime,
+                duration: 5000,
+                signal: 'SIGINT',
+              },
             };
           }
         }
 
         // 其他错误
-        throw error;
+        return {
+          success: false,
+          error: error.message || String(error),
+          metadata: {
+            endTime,
+          },
+        };
       }
     } catch (error: any) {
       const errorMsg = error instanceof Error ? error.message : String(error);

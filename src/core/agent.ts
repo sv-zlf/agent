@@ -1,7 +1,9 @@
 import type { Message, ToolCall, ToolResult, AgentRuntimeConfig, AgentContext, AgentStatus } from '../types';
+import { PartType, createMessage, createToolCallPart, createToolResultPart, messageToText } from '../types/message';
 import { ToolEngine } from './tool-engine';
 import { ChatAPIAdapter } from '../api';
 import { ContextManager } from './context-manager';
+import { SessionStateManager, SessionState } from './session-state';
 import { createLogger } from '../utils';
 
 const logger = createLogger(true);
@@ -34,24 +36,56 @@ export class AgentOrchestrator {
   private contextManager: ContextManager;
   private config: AgentExecutionConfig;
   private status: AgentStatus = 'idle';
+  private toolCallStartTime: Map<string, number> = new Map(); // 跟踪工具调用开始时间
+  private stateManager: SessionStateManager; // 会话状态管理器
 
   constructor(
     apiAdapter: ChatAPIAdapter,
     toolEngine: ToolEngine,
     contextManager: ContextManager,
-    config: AgentExecutionConfig
+    config: AgentExecutionConfig,
+    stateManager?: SessionStateManager
   ) {
     this.apiAdapter = apiAdapter;
     this.toolEngine = toolEngine;
     this.contextManager = contextManager;
     this.config = config;
+    this.stateManager = stateManager || new SessionStateManager();
+
+    // 启用增强消息模式
+    contextManager.enableEnhancedMessages();
+
+    // 设置初始状态
+    this.stateManager.setState(SessionState.IDLE, 'Agent 初始化完成');
+
+    // 订阅状态变化事件以更新旧的状态字段
+    this.stateManager.subscribe((event) => {
+      // 更新旧的 status 字段以保持兼容性
+      if (event.to === SessionState.THINKING) {
+        this.status = 'thinking';
+      } else if (event.to === SessionState.EXECUTING || event.to === SessionState.BUSY) {
+        this.status = 'running';
+      } else if (event.to === SessionState.ERROR) {
+        this.status = 'error';
+      } else if (event.to === SessionState.IDLE) {
+        this.status = 'idle';
+      } else if (event.to === SessionState.COMPLETED) {
+        this.status = 'completed';
+      }
+
+      // 调用用户的回调
+      if (this.config.onStatusChange) {
+        this.config.onStatusChange(this.status, event.message);
+      }
+    });
   }
 
   /**
    * 执行Agent任务
    */
   async execute(userQuery: string): Promise<AgentResult> {
-    this.updateStatus('thinking', '正在分析任务...');
+    this.stateManager.setState(SessionState.BUSY, '开始执行任务');
+    this.stateManager.setState(SessionState.THINKING, '正在分析任务...');
 
     const context: AgentContext = {
       iteration: 0,
@@ -78,12 +112,13 @@ export class AgentOrchestrator {
       while (context.iteration < this.config.maxIterations) {
         context.iteration++;
 
-        this.updateStatus('running', `执行中 (第 ${context.iteration} 轮)...`);
+        this.stateManager.setState(SessionState.BUSY, `执行中 (第 ${context.iteration} 轮)...`);
 
         // 获取当前上下文
         const messages = this.contextManager.getContext();
 
-        // 调用AI API
+        // AI 思考阶段
+        this.stateManager.setState(SessionState.THINKING, 'AI 思考中...');
         const response = await this.apiAdapter.chat(messages);
 
         // 解析工具调用
@@ -91,7 +126,7 @@ export class AgentOrchestrator {
 
         if (toolCalls.length === 0) {
           // 没有工具调用，任务完成
-          this.updateStatus('completed', '任务完成');
+          this.stateManager.setState(SessionState.COMPLETED, '任务完成');
           this.contextManager.addMessage('assistant', response);
 
           return {
@@ -102,8 +137,8 @@ export class AgentOrchestrator {
           };
         }
 
-        // 执行工具调用
-        this.updateStatus('running', `执行 ${toolCalls.length} 个工具调用...`);
+        // 执行工具调用阶段
+        this.stateManager.setState(SessionState.EXECUTING, `执行 ${toolCalls.length} 个工具调用...`);
 
         const toolResults = await this.executeToolCallsWithApproval(toolCalls);
 
@@ -128,7 +163,7 @@ export class AgentOrchestrator {
       }
 
       // 达到最大迭代次数
-      this.updateStatus('completed', `达到最大迭代次数 (${this.config.maxIterations})`);
+      this.stateManager.setState(SessionState.COMPLETED, `达到最大迭代次数 (${this.config.maxIterations})`);
 
       return {
         success: true,
@@ -138,7 +173,7 @@ export class AgentOrchestrator {
       };
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
-      this.updateStatus('error', errorMsg);
+      this.stateManager.setState(SessionState.ERROR, errorMsg);
 
       return {
         success: false,
@@ -147,7 +182,7 @@ export class AgentOrchestrator {
         error: errorMsg,
       };
     } finally {
-      this.updateStatus('idle');
+      this.stateManager.setState(SessionState.IDLE, '回到空闲状态');
     }
   }
 
@@ -173,8 +208,24 @@ export class AgentOrchestrator {
         continue;
       }
 
+      // 记录工具调用开始时间
+      const callId = call.id || `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      this.toolCallStartTime.set(callId, Date.now());
+
       // 执行工具调用
       const result = await this.toolEngine.executeToolCall(call);
+
+      // 计算执行时长
+      const startTime = this.toolCallStartTime.get(callId);
+      if (startTime) {
+        const duration = Date.now() - startTime;
+        result.metadata = {
+          ...result.metadata,
+          duration,
+        };
+        this.toolCallStartTime.delete(callId);
+      }
+
       results.push(result);
     }
 
@@ -319,22 +370,14 @@ ${toolsDescription}
   }
 
   /**
-   * 更新状态
+   * 获取会话状态管理器
    */
-  private updateStatus(status: AgentStatus, message?: string): void {
-    this.status = status;
-
-    if (this.config.onStatusChange) {
-      this.config.onStatusChange(status, message);
-    }
-
-    if (message) {
-      logger.info(`[Agent ${status}] ${message}`);
-    }
+  getStateManager(): SessionStateManager {
+    return this.stateManager;
   }
 
   /**
-   * 获取当前状态
+   * 获取当前状态（兼容旧代码）
    */
   getStatus(): AgentStatus {
     return this.status;
@@ -348,9 +391,10 @@ export function createAgentOrchestrator(
   apiAdapter: ChatAPIAdapter,
   toolEngine: ToolEngine,
   contextManager: ContextManager,
-  config: AgentExecutionConfig
+  config: AgentExecutionConfig,
+  stateManager?: SessionStateManager
 ): AgentOrchestrator {
-  return new AgentOrchestrator(apiAdapter, toolEngine, contextManager, config);
+  return new AgentOrchestrator(apiAdapter, toolEngine, contextManager, config, stateManager);
 }
 
 /**
