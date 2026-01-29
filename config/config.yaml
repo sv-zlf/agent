@@ -1,0 +1,16 @@
+api:
+  base_url: http://10.252.167.50:8021
+  access_key_id: '1305842310935769088'
+  tx_code: A4011LM01
+  sec_node_no: '400136'
+  model: F-G-9B-V20241220-0000-00
+  timeout: 30000
+agent:
+  max_context_tokens: 8000
+  backup_before_edit: true
+  backup_dir: ./backups
+  max_file_size: 1048576
+  max_history: 10
+prompts:
+  system: ./prompts/system.txt
+  code_edit: ./prompts/code-edit.txt
