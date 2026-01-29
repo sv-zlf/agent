@@ -352,3 +352,249 @@ export function createAgentOrchestrator(
 ): AgentOrchestrator {
   return new AgentOrchestrator(apiAdapter, toolEngine, contextManager, config);
 }
+
+/**
+ * Agent 配置和类型定义
+ */
+
+export interface IAgentConfig {
+  name: string;
+  description: string;
+  mode: 'primary' | 'subagent' | 'all';
+  systemPrompt?: string;
+  temperature?: number;
+  maxSteps?: number;
+  permissions?: string[];
+  hidden?: boolean;
+}
+
+/**
+ * Agent 注册表
+ */
+export const AGENTS: Record<string, IAgentConfig> = {
+  default: {
+    name: 'default',
+    description: '默认的 AI 编程助手，可以执行所有操作',
+    mode: 'primary',
+  },
+  explore: {
+    name: 'explore',
+    description: '代码探索专家，只进行只读操作',
+    mode: 'all',
+    permissions: ['read', 'glob', 'grep'],
+  },
+  build: {
+    name: 'build',
+    description: '构建和部署专家',
+    mode: 'primary',
+  },
+  plan: {
+    name: 'plan',
+    description: '规划模式，只允许分析和规划，不允许修改代码',
+    mode: 'primary',
+    permissions: ['read', 'glob', 'grep'],
+  },
+};
+
+/**
+ * Agent 管理器
+ */
+export class AgentManager {
+  private agents: Map<string, IAgentConfig>;
+
+  constructor() {
+    this.agents = new Map();
+    this.loadDefaultAgents();
+  }
+
+  /**
+   * 加载默认 agents
+   */
+  private loadDefaultAgents(): void {
+    Object.entries(AGENTS).forEach(([key, config]) => {
+      this.agents.set(key, config);
+    });
+  }
+
+  /**
+   * 获取 agent 配置
+   */
+  getAgent(name: string): IAgentConfig | undefined {
+    return this.agents.get(name);
+  }
+
+  /**
+   * 获取所有 agents
+   */
+  getAllAgents(): IAgentConfig[] {
+    return Array.from(this.agents.values());
+  }
+
+  /**
+   * 获取可显示的 agents（非隐藏）
+   */
+  getVisibleAgents(): IAgentConfig[] {
+    return this.getAllAgents().filter(agent => !agent.hidden);
+  }
+
+  /**
+   * 获取默认 agent
+   */
+  getDefaultAgent(): IAgentConfig {
+    return this.agents.get('default')!;
+  }
+
+  /**
+   * 添加自定义 agent
+   */
+  addAgent(config: IAgentConfig): void {
+    this.agents.set(config.name, config);
+  }
+
+  /**
+   * 加载 agent 的系统提示词
+   */
+  async loadAgentPrompt(agentName: string): Promise<string> {
+    const agent = this.getAgent(agentName);
+    if (!agent) {
+      throw new Error(`Agent not found: ${agentName}`);
+    }
+
+    // 如果 agent 有自定义的 systemPrompt，使用它
+    if (agent.systemPrompt) {
+      return agent.systemPrompt;
+    }
+
+    // 否则尝试从 prompts 目录加载
+    const fs = await import('fs/promises');
+    const path = await import('path');
+
+    const promptFile = path.join(process.cwd(), 'prompts', `${agentName}.txt`);
+
+    try {
+      const content = await fs.readFile(promptFile, 'utf-8');
+      return content;
+    } catch (error) {
+      // 如果找不到文件，使用默认提示词
+      const defaultPromptFile = path.join(process.cwd(), 'prompts', 'default.txt');
+      try {
+        const content = await fs.readFile(defaultPromptFile, 'utf-8');
+        return content;
+      } catch (defaultError) {
+        // 如果连默认文件都没有，返回硬编码的提示词
+        return this.getDefaultPrompt();
+      }
+    }
+  }
+
+  /**
+   * 获取默认提示词
+   */
+  private getDefaultPrompt(): string {
+    return `你是一个AI编程助手，类似于Claude Code。你可以自主执行各种编程任务。
+
+## 🚨 重要：你必须使用工具
+
+**关键规则**：当用户要求你执行操作（如读取文件、修改代码、运行命令等）时，你**必须**使用工具调用格式。
+
+## 可用工具
+
+### 1. Read - 读取文件
+读取文件内容，支持分页读取。
+
+### 2. Write - 写入文件（创建新文件）
+创建新文件或完全覆盖现有文件。
+
+### 3. Edit - 编辑文件（修改现有文件）
+对文件执行精确的字符串替换。
+
+### 4. Glob - 查找文件
+使用glob模式查找文件。
+
+### 5. Grep - 搜索代码
+在文件中搜索特定内容，支持正则表达式。
+
+### 6. Bash - 执行命令
+执行shell命令，用于运行测试、构建、git操作等。
+
+### 7. MakeDirectory - 创建目录
+创建目录（文件夹），支持递归创建多级目录。
+
+## 工具调用格式
+
+使用以下格式调用工具：
+
+\`\`\`json
+{
+  "tool": "工具名称",
+  "parameters": {
+    "参数名": "参数值"
+  }
+}
+\`\`\`
+
+可以一次调用多个工具。
+
+## 关键提示
+
+1. **每次操作都要用工具** - 读取、写入、编辑、搜索都必须用工具调用
+2. **工具调用必须用代码块** - 将JSON放在\`\`\`json...\`\`\`代码块中
+3. **可以一次调用多个工具** - 在响应中包含多个工具调用
+4. **先Read再Edit** - 修改文件前先用Read查看内容
+5. **说明你的计划** - 在工具调用前解释你要做什么
+6. **报告结果** - 工具执行后说明结果
+
+## 常见任务示例
+
+### 创建目录
+用户: "创建test目录"
+你:
+\`\`\`json
+{
+  "tool": "MakeDirectory",
+  "parameters": {
+    "path": "test"
+  }
+}
+\`\`\`
+
+### 读取文件
+用户: "读取package.json"
+你:
+\`\`\`json
+{
+  "tool": "Read",
+  "parameters": {
+    "file_path": "package.json"
+  }
+}
+\`\`\`
+
+### 创建文件
+用户: "创建hello.ts"
+你:
+\`\`\`json
+{
+  "tool": "Write",
+  "parameters": {
+    "file_path": "hello.ts",
+    "content": "console.log('Hello World');"
+  }
+}
+\`\`\`
+
+现在，请帮助用户完成他们的编程任务。记住：当用户要求你执行操作时，必须使用工具调用格式！`;
+  }
+}
+
+/**
+ * 全局 Agent 管理器实例
+ */
+let agentManagerInstance: AgentManager | null = null;
+
+export function getAgentManager(): AgentManager {
+  if (!agentManagerInstance) {
+    agentManagerInstance = new AgentManager();
+  }
+  return agentManagerInstance;
+}

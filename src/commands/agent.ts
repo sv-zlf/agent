@@ -6,6 +6,7 @@ import { getConfig } from '../config';
 import { createAPIAdapter } from '../api';
 import { createToolEngine, createContextManager } from '../core';
 import { getInterruptManager } from '../core/interrupt';
+import { getAgentManager } from '../core/agent';
 import { builtinTools } from '../tools';
 import { createLogger } from '../utils';
 import { displayBanner } from '../utils/logo';
@@ -21,6 +22,7 @@ export const agentCommand = new Command('agent')
   .description('GG CODE - AI-Powered Code Editor (类似Claude Code)')
   .option('-y, --yes', '自动批准所有工具调用', false)
   .option('-i, --iterations <number>', '最大迭代次数', '10')
+  .option('-a, --agent <name>', '使用的 Agent (default, explore, build, plan)', 'default')
   .option('--no-history', '不保存对话历史')
   .action(async (options) => {
     const config = getConfig();
@@ -229,101 +231,18 @@ export const agentCommand = new Command('agent')
     };
 
     // 设置系统提示词（只设置一次）
-    const systemPrompt = `
-你是GG CODE，一个AI编程助手，类似于Claude Code。你可以自主执行各种编程任务。
+    // 使用 AgentManager 加载对应的 agent 提示词
+    const agentManager = getAgentManager();
+    const agentName = options.agent || 'default';
 
-## 🚨 重要：你必须使用工具
-
-**关键规则**：当用户要求你执行操作（如读取文件、修改代码、运行命令等）时，你**必须**使用工具调用格式。
-
-## 可用工具
-
-### 1. Read - 读取文件
-读取文件内容，支持分页读取。
-
-### 2. Write - 写入文件（创建新文件）
-创建新文件或完全覆盖现有文件。
-
-### 3. Edit - 编辑文件（修改现有文件）
-对文件执行精确的字符串替换。
-
-### 4. Glob - 查找文件
-使用glob模式查找文件。
-
-### 5. Grep - 搜索代码
-在文件中搜索特定内容，支持正则表达式。
-
-### 6. Bash - 执行命令
-执行shell命令，用于运行测试、构建、git操作等。
-
-### 7. MakeDirectory - 创建目录
-创建目录（文件夹），支持递归创建多级目录。
-
-## 工具调用格式
-
-使用以下格式调用工具：
-
-\`\`\`json
-{
-  "tool": "工具名称",
-  "parameters": {
-    "参数名": "参数值"
-  }
-}
-\`\`\`
-
-可以一次调用多个工具。
-
-## 关键提示
-
-1. **每次操作都要用工具** - 读取、写入、编辑、搜索都必须用工具调用
-2. **工具调用必须用代码块** - 将JSON放在\`\`\`json...\`\`\`代码块中
-3. **可以一次调用多个工具** - 在响应中包含多个工具调用
-4. **先Read再Edit** - 修改文件前先用Read查看内容
-5. **说明你的计划** - 在工具调用前解释你要做什么
-6. **报告结果** - 工具执行后说明结果
-
-## 常见任务示例
-
-### 创建目录
-用户: "创建test目录"
-你:
-\`\`\`json
-{
-  "tool": "MakeDirectory",
-  "parameters": {
-    "path": "test"
-  }
-}
-\`\`\`
-
-### 读取文件
-用户: "读取package.json"
-你:
-\`\`\`json
-{
-  "tool": "Read",
-  "parameters": {
-    "file_path": "package.json"
-  }
-}
-\`\`\`
-
-### 创建文件
-用户: "创建hello.ts"
-你:
-\`\`\`json
-{
-  "tool": "Write",
-  "parameters": {
-    "file_path": "hello.ts",
-    "content": "console.log('Hello World');"
-  }
-}
-\`\`\`
-
-现在，请帮助用户完成他们的编程任务。记住：当用户要求你执行操作时，必须使用工具调用格式！
-`;
+    let systemPrompt: string;
+    try {
+      systemPrompt = await agentManager.loadAgentPrompt(agentName);
+    } catch (error) {
+      console.warn(chalk.yellow(`警告: 无法加载 agent "${agentName}" 的提示词，使用默认提示词`));
+      console.warn(chalk.gray(`  错误: ${(error as Error).message}`));
+      systemPrompt = await agentManager.loadAgentPrompt('default');
+    }
 
     contextManager.setSystemPrompt(systemPrompt);
 
