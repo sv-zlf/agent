@@ -4,6 +4,7 @@ import { ToolEngine } from './tool-engine';
 import { ChatAPIAdapter } from '../api';
 import { ContextManager } from './context-manager';
 import { SessionStateManager, SessionState } from './session-state';
+import { PermissionManager, PermissionAction, type PermissionRequest } from './permissions';
 import { createLogger } from '../utils';
 
 const logger = createLogger(true);
@@ -38,19 +39,22 @@ export class AgentOrchestrator {
   private status: AgentStatus = 'idle';
   private toolCallStartTime: Map<string, number> = new Map(); // 跟踪工具调用开始时间
   private stateManager: SessionStateManager; // 会话状态管理器
+  private permissionManager: PermissionManager; // 权限管理器
 
   constructor(
     apiAdapter: ChatAPIAdapter,
     toolEngine: ToolEngine,
     contextManager: ContextManager,
     config: AgentExecutionConfig,
-    stateManager?: SessionStateManager
+    stateManager?: SessionStateManager,
+    permissionManager?: PermissionManager
   ) {
     this.apiAdapter = apiAdapter;
     this.toolEngine = toolEngine;
     this.contextManager = contextManager;
     this.config = config;
     this.stateManager = stateManager || new SessionStateManager();
+    this.permissionManager = permissionManager || new PermissionManager();
 
     // 启用增强消息模式
     contextManager.enableEnhancedMessages();
@@ -124,6 +128,19 @@ export class AgentOrchestrator {
         // 解析工具调用
         const toolCalls = this.toolEngine.parseToolCallsFromResponse(response);
 
+        // 智能检测是否应该结束
+        if (this.shouldFinish(response, toolCalls)) {
+          this.stateManager.setState(SessionState.COMPLETED, '任务完成');
+          this.contextManager.addMessage('assistant', response);
+
+          return {
+            success: true,
+            iterations: context.iteration,
+            toolCallsExecuted: context.toolCalls.length,
+            finalAnswer: response,
+          };
+        }
+
         if (toolCalls.length === 0) {
           // 没有工具调用，任务完成
           this.stateManager.setState(SessionState.COMPLETED, '任务完成');
@@ -187,17 +204,41 @@ export class AgentOrchestrator {
   }
 
   /**
-   * 执行工具调用（带审批流程）
+   * 执行工具调用（带审批流程和权限检查）
    */
   private async executeToolCallsWithApproval(toolCalls: ToolCall[]): Promise<ToolResult[]> {
     const results: ToolResult[] = [];
 
     for (const call of toolCalls) {
-      // 检查是否需要审批
+      // 1. 检查权限
+      const permissionRequest: PermissionRequest = {
+        tool: call.tool,
+        path: this.extractPathFromParams(call.tool, call.parameters),
+        params: call.parameters,
+      };
+
+      const permissionResult = this.permissionManager.checkPermission(permissionRequest);
+
+      // 2. 处理权限结果
+      if (permissionResult.action === PermissionAction.DENY) {
+        results.push({
+          success: false,
+          error: `权限拒绝: ${permissionResult.reason}`,
+        });
+        continue;
+      }
+
+      // 3. 检查是否需要审批
       let approved = this.config.autoApprove;
 
-      if (!approved && this.config.onToolCall) {
-        approved = await this.config.onToolCall(call);
+      // 如果权限规则要求询问，或者配置了审批回调
+      if (permissionResult.action === PermissionAction.ASK || !approved) {
+        if (this.config.onToolCall) {
+          approved = await this.config.onToolCall(call);
+        } else if (permissionResult.action === PermissionAction.ASK) {
+          // 如果没有配置回调但权限要求询问，则拒绝
+          approved = false;
+        }
       }
 
       if (!approved) {
@@ -230,6 +271,78 @@ export class AgentOrchestrator {
     }
 
     return results;
+  }
+
+  /**
+   * 从工具参数中提取路径（用于权限检查）
+   */
+  private extractPathFromParams(tool: string, params: Record<string, unknown>): string | undefined {
+    // 常见的路径参数名
+    const pathKeys = ['file_path', 'path', 'filePath', 'pattern', 'glob'];
+
+    for (const key of pathKeys) {
+      if (params[key]) {
+        return String(params[key]);
+      }
+    }
+
+    return undefined;
+  }
+
+  /**
+   * 智能检测是否应该结束任务
+   * 参考 opencode 的 finish 状态检测
+   */
+  private shouldFinish(response: string, toolCalls: ToolCall[]): boolean {
+    // 1. 如果有工具调用，继续执行
+    if (toolCalls.length > 0) {
+      return false;
+    }
+
+    // 2. 检测完成关键词
+    const completionPatterns = [
+      /任务完成/g,
+      /已完成/g,
+      /完成/g,
+      /done/gi,
+      /finished/gi,
+      /completed/gi,
+      /没有问题了/g,
+      /就这样/g,
+    ];
+
+    const hasCompletionSignal = completionPatterns.some(pattern => pattern.test(response));
+    if (hasCompletionSignal) {
+      return true;
+    }
+
+    // 3. 检测明确的结束信号（如总结性陈述）
+    const endingPatterns = [
+      /总结：?/g,
+      /综上所述/g,
+      /以上就是/g,
+      /简而言之/g,
+    ];
+
+    const hasEndingSignal = endingPatterns.some(pattern => pattern.test(response));
+
+    // 4. 检测是否在等待用户输入
+    const waitingPatterns = [
+      /需要.*信息/g,
+      /请提供/g,
+      /需要.*确认/g,
+      /是否.*继续/g,
+    ];
+
+    const hasWaitingSignal = waitingPatterns.some(pattern => pattern.test(response));
+
+    // 如果有等待信号，说明还没完成
+    if (hasWaitingSignal) {
+      return false;
+    }
+
+    // 如果有结束信号或已经没有工具调用，可能完成了
+    return hasEndingSignal || toolCalls.length === 0;
   }
 
   /**
@@ -392,9 +505,10 @@ export function createAgentOrchestrator(
   toolEngine: ToolEngine,
   contextManager: ContextManager,
   config: AgentExecutionConfig,
-  stateManager?: SessionStateManager
+  stateManager?: SessionStateManager,
+  permissionManager?: PermissionManager
 ): AgentOrchestrator {
-  return new AgentOrchestrator(apiAdapter, toolEngine, contextManager, config, stateManager);
+  return new AgentOrchestrator(apiAdapter, toolEngine, contextManager, config, stateManager, permissionManager);
 }
 
 /**

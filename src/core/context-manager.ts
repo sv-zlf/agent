@@ -1,5 +1,6 @@
 import type { Message, EnhancedMessage, MessagePart, ToolCall, ToolResult } from '../types';
 import { createMessage, messageToText, filterMessageParts, PartType } from '../types/message';
+import { ContextOptimizer, CompressionPresets } from './context-optimizer';
 import * as fs from 'fs-extra';
 
 /**
@@ -12,6 +13,8 @@ export class ContextManager {
   private maxTokens: number;
   private historyFile: string;
   private useEnhancedMessages: boolean = false; // 是否使用增强消息格式
+  private optimizer: ContextOptimizer; // 上下文压缩器
+  private autoCompress: boolean = false; // 是否自动压缩
 
   constructor(
     maxHistory: number = 10,
@@ -21,6 +24,10 @@ export class ContextManager {
     this.maxHistory = maxHistory;
     this.maxTokens = maxTokens;
     this.historyFile = historyFile;
+    this.optimizer = new ContextOptimizer({
+      ...CompressionPresets.balanced,
+      maxTokens: maxTokens * 10, // 压缩器的上限是上下文限制的10倍
+    });
   }
 
   /**
@@ -33,6 +40,18 @@ export class ContextManager {
     if (this.messages.length > this.maxHistory * 2) {
       // 保留最近的maxHistory轮对话
       this.messages = this.messages.slice(-this.maxHistory * 2);
+    }
+
+    // 自动压缩（如果启用）
+    if (this.autoCompress && this.shouldCompress()) {
+      // 异步压缩，不阻塞
+      this.compress().then(({ result }) => {
+        if (result.compressed) {
+          console.log(`上下文已压缩: 节省 ${result.savedTokens} tokens`);
+        }
+      }).catch(() => {
+        // 忽略压缩错误
+      });
     }
   }
 
@@ -162,6 +181,44 @@ export class ContextManager {
    */
   getRawMessages(): (Message | EnhancedMessage)[] {
     return [...this.messages];
+  }
+
+  /**
+   * 启用自动压缩
+   */
+  enableAutoCompress(): void {
+    this.autoCompress = true;
+  }
+
+  /**
+   * 禁用自动压缩
+   */
+  disableAutoCompress(): void {
+    this.autoCompress = false;
+  }
+
+  /**
+   * 手动压缩上下文
+   */
+  async compress(): Promise<{
+    messages: (Message | EnhancedMessage)[];
+    result: any;
+  }> {
+    return await this.optimizer.compress(this.messages);
+  }
+
+  /**
+   * 检查是否需要压缩
+   */
+  shouldCompress(): boolean {
+    return this.optimizer.shouldCompress(this.messages);
+  }
+
+  /**
+   * 获取压缩器（用于自定义配置）
+   */
+  getOptimizer(): ContextOptimizer {
+    return this.optimizer;
   }
 
   /**

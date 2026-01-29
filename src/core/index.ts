@@ -8,3 +8,16 @@ export {
   getGlobalStateManager,
   resetGlobalStateManager,
 } from './session-state';
+export {
+  PermissionManager,
+  PermissionAction,
+  PermissionRule,
+  PermissionPresets,
+  getGlobalPermissionManager,
+  resetGlobalPermissionManager,
+} from './permissions';
+export {
+  ContextOptimizer,
+  CompressionStrategy,
+  CompressionPresets,
+} from './context-optimizer';
