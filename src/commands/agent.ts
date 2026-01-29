@@ -10,6 +10,7 @@ import { getAgentManager } from '../core/agent';
 import { builtinTools } from '../tools';
 import { createLogger } from '../utils';
 import { displayBanner } from '../utils/logo';
+import { createCommandManager } from './slash-commands';
 import type { ToolCall } from '../types';
 import { readFileSync } from 'fs';
 
@@ -256,6 +257,9 @@ export const agentCommand = new Command('agent')
 
     contextManager.setSystemPrompt(systemPrompt);
 
+    // 创建命令管理器
+    const commandManager = createCommandManager();
+
     // 记录用户是否已经批准了所有工具调用
     let autoApproveAll = false;
 
@@ -272,7 +276,28 @@ export const agentCommand = new Command('agent')
           return;
         }
 
-        // 处理特殊命令
+        // 检测是否是斜杠命令
+        if (commandManager.isCommand(input)) {
+          const result = await commandManager.executeCommand(input, {
+            workingDirectory: workingDirectory,
+            config: config,
+            messages: contextManager.getContext(),
+          });
+
+          // 根据命令结果决定是否继续
+          if (!result.shouldContinue) {
+            // 命令已处理，继续等待下一个输入
+            chatLoop();
+            return;
+          }
+
+          // 如果命令有返回消息，显示它
+          if (result.message) {
+            console.log(chalk.gray(result.message));
+          }
+        }
+
+        // 处理特殊命令（如果不是斜杠命令）
         if (input.toLowerCase() === 'exit' || input.toLowerCase() === 'quit') {
           const rlToClose = getReadline(); // 获取当前的 rl
           cleanupAndExit();

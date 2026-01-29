@@ -65,10 +65,15 @@ npm run dev config init
 ### 2. 启动 GG CODE
 
 ```bash
-npm run agent -- agent
+npm run agent
 ```
 
-或者在 Windows 上双击 `agent.bat`
+**启动选项：**
+```bash
+npm run agent          # 启动 AI 编程助手
+npm run agent -- -y    # 自动批准所有工具调用
+npm run agent -- -a explore  # 使用 explore agent (只读模式)
+```
 
 ### 3. 开始使用
 
@@ -99,9 +104,12 @@ npm run agent -- agent
     • Ctrl+C - 退出程序 / Exit program
 
   📝 命令 / Commands:
-    • exit  - 退出程序 / Exit
-    • clear - 清空历史 / Clear history
-    • tools - 工具列表 / List tools
+    • /init  - 创建项目设计文件 / Create DESIGN.md
+    • /models - 查看或切换模型 / List or switch models
+    • /help  - 显示帮助信息 / Show help
+    • exit   - 退出程序 / Exit
+    • clear  - 清空历史 / Clear history
+    • tools  - 工具列表 / List tools
 
   ══════════════════════════════════════════════
 
@@ -116,6 +124,14 @@ npm run agent -- agent
 - **Ctrl+C**: 退出程序
 
 ### 内置命令
+
+#### 斜杠命令
+
+- `/init` - 创建或更新项目设计文件 (DESIGN.md)
+- `/models [模型名]` - 查看可用模型或切换到指定模型
+- `/help` - 显示帮助信息
+
+#### 普通命令
 
 - `exit` 或 `quit` - 退出程序
 - `clear` - 清空对话历史
@@ -149,17 +165,23 @@ npm run dev config get api.model
 ### AI自主编程（Agent模式）
 
 ```bash
-# 启动Agent模式（推荐）
-npm run dev -- agent
+# 启动 Agent 模式
+npm run agent
 
 # 自动批准所有操作（谨慎使用）
-npm run dev -- agent --yes
+npm run agent -- -y
+
+# 使用 explore agent（只读模式）
+npm run agent -- -a explore
+
+# 使用 build agent（构建专家）
+npm run agent -- -a build
 
 # 自定义最大迭代次数
-npm run dev -- agent --iterations 20
+npm run agent -- -i 20
 
 # 不保存历史记录
-npm run dev -- agent --no-history
+npm run agent -- --no-history
 ```
 
 详细使用指南请查看 [AGENT_GUIDE.md](./AGENT_GUIDE.md)
