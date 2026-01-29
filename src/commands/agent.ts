@@ -113,6 +113,16 @@ export const agentCommand = new Command('agent')
         if (key === 'p' || key === 'P') {
           if (interruptManager.currentState.isAIThinking || interruptManager.currentState.isExecutingTool) {
             interruptManager.requestInterrupt();
+
+            // 清空输入缓冲区 - 延迟执行，避免在监听器内部操作
+            setImmediate(() => {
+              try {
+                recreateReadline();
+                setupInterruptKey();
+              } catch (e) {
+                // 忽略错误
+              }
+            });
           }
         }
       };
