@@ -11,6 +11,7 @@ import { builtinTools } from '../tools';
 import { createLogger } from '../utils';
 import { displayBanner } from '../utils/logo';
 import { createCommandManager } from './slash-commands';
+import { CommandCompleter } from './command-completer';
 import type { ToolCall } from '../types';
 import { readFileSync } from 'fs';
 
@@ -257,8 +258,9 @@ export const agentCommand = new Command('agent')
 
     contextManager.setSystemPrompt(systemPrompt);
 
-    // 创建命令管理器
+    // 创建命令管理器和补全器
     const commandManager = createCommandManager();
+    const commandCompleter = new CommandCompleter(commandManager);
 
     // 记录用户是否已经批准了所有工具调用
     let autoApproveAll = false;
@@ -272,6 +274,13 @@ export const agentCommand = new Command('agent')
 
       currentRl.question(chalk.cyan('> '), async (input: string) => {
         if (!input.trim()) {
+          chatLoop();
+          return;
+        }
+
+        // 特殊处理：只输入 "/" 时显示命令列表
+        if (input.trim() === '/') {
+          console.log(commandCompleter.formatCommandList());
           chatLoop();
           return;
         }
