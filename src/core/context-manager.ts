@@ -41,9 +41,22 @@ export class ContextManager {
     let result: Message[] = [];
     let currentTokens = 0;
 
-    // 从最新的消息开始倒序添加
+    // 首先确保system消息在结果中（如果存在）
+    const systemMessages = this.messages.filter(m => m.role === 'system');
+    if (systemMessages.length > 0) {
+      result.push(...systemMessages);
+      currentTokens = systemMessages.reduce((sum, msg) => sum + this.estimateTokens(msg.content), 0);
+    }
+
+    // 从最新的消息开始倒序添加（排除system消息）
     for (let i = this.messages.length - 1; i >= 0; i--) {
       const msg = this.messages[i];
+
+      // 跳过system消息（已经添加过了）
+      if (msg.role === 'system') {
+        continue;
+      }
+
       const tokens = this.estimateTokens(msg.content);
 
       if (currentTokens + tokens > limit) {

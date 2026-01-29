@@ -401,6 +401,65 @@ export const BashTool: ToolDefinition = {
 };
 
 /**
+ * MakeDirectory工具 - 创建目录
+ */
+export const MakeDirectoryTool: ToolDefinition = {
+  name: 'MakeDirectory',
+  description: '创建目录（文件夹）。支持递归创建多级目录。',
+  category: 'file',
+  parameters: {
+    path: {
+      type: 'string',
+      description: '目录路径（相对或绝对路径）',
+      required: true,
+    },
+    recursive: {
+      type: 'boolean',
+      description: '是否递归创建父目录（默认为true）',
+      required: false,
+    },
+  },
+  handler: async (args) => {
+    try {
+      const { path: dirPath, recursive = true } = args as { path: string; recursive?: boolean };
+
+      logger.info(`Creating directory: ${dirPath}`);
+
+      // 确保目录存在
+      await fs.ensureDir(dirPath, {
+        mode: 0o755, // rwxr-xr-x
+      });
+
+      // 验证目录是否创建成功
+      const exists = await fs.pathExists(dirPath);
+      if (!exists) {
+        return {
+          success: false,
+          error: '目录创建失败：无法验证目录是否存在',
+        };
+      }
+
+      return {
+        success: true,
+        output: `目录已创建: ${dirPath}`,
+        metadata: {
+          path: dirPath,
+          recursive,
+        },
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: `创建目录失败: ${error instanceof Error ? error.message : String(error)}`,
+        metadata: {
+          path: (args as any).path,
+        },
+      };
+    }
+  },
+};
+
+/**
  * 内置工具集合
  */
 export const builtinTools: ToolDefinition[] = [
@@ -410,4 +469,5 @@ export const builtinTools: ToolDefinition[] = [
   GlobTool,
   GrepTool,
   BashTool,
+  MakeDirectoryTool,
 ];
