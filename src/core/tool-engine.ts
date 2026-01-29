@@ -139,38 +139,49 @@ export class ToolEngine {
   parseToolCallsFromResponse(response: string): ToolCall[] {
     const calls: ToolCall[] = [];
 
-    // 尝试解析JSON格式的工具调用
-    const jsonMatches = response.matchAll(/\{[\s\S]*?"tool"\s*:\s*"(\w+)"[\s\S]*?\}/g);
-    for (const match of jsonMatches) {
+    // 首先尝试解析代码块中的工具调用（优先级更高）
+    const codeBlockRegex = /```(?:json|tool)?\s*\n?([\s\S]*?)```/g;
+    let match = codeBlockRegex.exec(response);
+    while (match !== null) {
+      try {
+        const content = match[1].trim();
+        const parsed = JSON.parse(content);
+        if (parsed.tool && parsed.parameters) {
+          calls.push({
+            tool: parsed.tool,
+            parameters: parsed.parameters,
+            id: parsed.id,
+          });
+        }
+      } catch {
+        // 忽略解析失败的JSON
+      }
+      match = codeBlockRegex.exec(response);
+    }
+
+    // 尝试解析纯JSON格式的工具调用（不在代码块中）
+    const jsonRegex = /\{\s*"tool"\s*:\s*"(\w+)"\s*,\s*"parameters"\s*:\s*\{[\s\S]*?\}\s*\}/g;
+    match = jsonRegex.exec(response);
+    while (match !== null) {
       try {
         const parsed = JSON.parse(match[0]);
         if (parsed.tool && parsed.parameters) {
-          calls.push({
-            tool: parsed.tool,
-            parameters: parsed.parameters,
-            id: parsed.id,
-          });
+          // 检查是否已经在代码块中解析过
+          const alreadyParsed = calls.some(
+            c => c.tool === parsed.tool && JSON.stringify(c.parameters) === JSON.stringify(parsed.parameters)
+          );
+          if (!alreadyParsed) {
+            calls.push({
+              tool: parsed.tool,
+              parameters: parsed.parameters,
+              id: parsed.id,
+            });
+          }
         }
       } catch {
         // 忽略解析失败的JSON
       }
-    }
-
-    // 尝试解析代码块中的工具调用
-    const codeBlockMatches = response.matchAll(/```(?:tool|json)\n([\s\S]*?)```/g);
-    for (const match of codeBlockMatches) {
-      try {
-        const parsed = JSON.parse(match[1]);
-        if (parsed.tool && parsed.parameters) {
-          calls.push({
-            tool: parsed.tool,
-            parameters: parsed.parameters,
-            id: parsed.id,
-          });
-        }
-      } catch {
-        // 忽略解析失败的JSON
-      }
+      match = jsonRegex.exec(response);
     }
 
     return calls;

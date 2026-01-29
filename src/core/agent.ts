@@ -62,9 +62,14 @@ export class AgentOrchestrator {
     };
 
     try {
-      // 设置系统提示词（包含工具描述）
-      const systemPrompt = this.buildSystemPrompt();
-      this.contextManager.setSystemPrompt(systemPrompt);
+      // 只在第一次执行时设置系统提示词
+      const messages = this.contextManager.getContext();
+      const hasSystemPrompt = messages.length > 0 && messages[0].role === 'system';
+
+      if (!hasSystemPrompt) {
+        const systemPrompt = this.buildSystemPrompt();
+        this.contextManager.setSystemPrompt(systemPrompt);
+      }
 
       // 添加用户查询到上下文
       this.contextManager.addMessage('user', userQuery);
@@ -106,15 +111,19 @@ export class AgentOrchestrator {
         context.toolCalls.push(...toolCalls);
         context.results.push(...toolResults);
 
-        // 将工具调用和结果添加到上下文
-        const toolCallMessage = this.formatToolCallsForContext(toolCalls, toolResults);
-        this.contextManager.addMessage('assistant', toolCallMessage);
+        // 将AI的原始响应添加到上下文（包含工具调用请求）
+        this.contextManager.addMessage('assistant', response);
 
-        // 检查是否有错误
-        const hasErrors = toolResults.some((r) => !r.success);
-        if (hasErrors) {
-          const errorMessage = this.formatToolErrors(toolResults);
-          this.contextManager.addMessage('user', errorMessage);
+        // 将工具执行结果作为用户反馈添加到上下文
+        const toolResultMessage = this.formatToolResultsForAI(toolCalls, toolResults);
+        this.contextManager.addMessage('user', toolResultMessage);
+
+        // 检查是否所有工具都成功
+        const allSuccess = toolResults.every((r) => r.success);
+        if (!allSuccess) {
+          // 如果有错误，添加额外的错误提示
+          const errorHint = '\n\n请分析上述错误，修正后重试。如果需要更多信息，请使用工具获取。';
+          this.contextManager.addMessage('user', errorHint);
         }
       }
 
@@ -247,6 +256,42 @@ ${toolsDescription}
       } else {
         lines.push(`错误: ${result.error}`);
       }
+    }
+
+    return lines.join('\n');
+  }
+
+  /**
+   * 格式化工具执行结果给AI
+   */
+  private formatToolResultsForAI(calls: ToolCall[], results: ToolResult[]): string {
+    const lines: string[] = ['工具执行结果：\n'];
+
+    for (let i = 0; i < calls.length; i++) {
+      const call = calls[i];
+      const result = results[i];
+
+      lines.push(`**${call.tool}**`);
+      if (result.success) {
+        // 如果输出太长，截断它
+        let output = result.output || '';
+        if (output.length > 2000) {
+          output = output.substring(0, 2000) + '\n... (内容过长，已截断)';
+        }
+        lines.push(`✓ 成功`);
+        if (output) {
+          lines.push(`\n${output}`);
+        }
+        if (result.metadata) {
+          const metadataStr = JSON.stringify(result.metadata, null, 2);
+          if (metadataStr.length < 500) {
+            lines.push(`\n元数据: ${metadataStr}`);
+          }
+        }
+      } else {
+        lines.push(`✗ 失败: ${result.error}`);
+      }
+      lines.push(''); // 空行分隔
     }
 
     return lines.join('\n');
