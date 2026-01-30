@@ -9,6 +9,7 @@ import { getInterruptManager } from '../core/interrupt';
 import { getAgentManager } from '../core/agent';
 import { createSimpleSessionManager, createFunctionalAgentManager } from '../core';
 import { getBuiltinTools } from '../tools';
+import { PermissionManager, PermissionAction } from '../core/permissions';
 import { createLogger } from '../utils';
 import { displayBanner } from '../utils/logo';
 import { createCommandManager } from './slash-commands';
@@ -17,6 +18,48 @@ import type { ToolCall } from '../types';
 import { readFileSync } from 'fs';
 
 const logger = createLogger();
+
+/**
+ * 权限级别显示标签
+ */
+const PERMISSION_LABELS: Record<string, string> = {
+  'safe': '安全操作',
+  'local-modify': '文件修改',
+  'network': '网络操作',
+  'dangerous': '危险操作',
+};
+
+/**
+ * 从工具参数中提取路径（用于权限检查）
+ */
+function extractPathFromParams(tool: string, params: Record<string, unknown>): string | undefined {
+  // 常见的路径参数名
+  const pathKeys = ['file_path', 'path', 'filePath', 'pattern', 'glob'];
+
+  for (const key of pathKeys) {
+    if (params[key]) {
+      return String(params[key]);
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * 将 ToolDefinition.permission 映射到 PermissionAction
+ */
+function mapPermissionToAction(permission: string): PermissionAction {
+  switch (permission) {
+    case 'safe':
+      return PermissionAction.ALLOW;
+    case 'local-modify':
+    case 'network':
+    case 'dangerous':
+      return PermissionAction.ASK;
+    default:
+      return PermissionAction.ASK;
+  }
+}
 
 /**
  * agent命令 - GG CODE AI编程助手
@@ -42,11 +85,36 @@ export const agentCommand = new Command('agent')
     const apiAdapter = createAPIAdapter(config.getAPIConfig());
     const toolEngine = createToolEngine();
     const functionalAgentManager = createFunctionalAgentManager(apiAdapter);
+    const permissionManager = new PermissionManager();
 
     // 注册所有内置工具
     // 使用新工具系统（Zod schema + 智能截断）
     const tools = await getBuiltinTools();
     toolEngine.registerTools(tools);
+
+    // 初始化权限规则：根据工具的 permission 属性设置默认规则
+    tools.forEach(tool => {
+      let action: PermissionAction;
+      switch (tool.permission) {
+        case 'safe':
+          action = PermissionAction.ALLOW;
+          break;
+        case 'local-modify':
+        case 'network':
+          action = PermissionAction.ASK;
+          break;
+        case 'dangerous':
+          action = PermissionAction.ASK;
+          break;
+        default:
+          action = PermissionAction.ASK;
+      }
+      permissionManager.addRule({
+        tool: tool.name,
+        pattern: '*',
+        action
+      });
+    });
 
     // 创建简化的会话管理器（单一会话模式）
     const sessionManager = createSimpleSessionManager();
@@ -631,41 +699,35 @@ export const agentCommand = new Command('agent')
                     .map(([k, v]) => `${k}=${JSON.stringify(v)}`)
                     .join(' ');
 
-                  // 根据权限级别决定是否需要确认
-                  let needsApproval = false;
-                  switch (tool.permission) {
-                    case 'safe':
-                      // 安全操作（只读），不需要确认
-                      needsApproval = false;
-                      break;
-                    case 'local-modify':
-                      // 本地文件修改，需要确认
-                      needsApproval = true;
-                      break;
-                    case 'network':
-                      // 网络操作，需要确认
-                      needsApproval = true;
-                      break;
-                    case 'dangerous':
-                      // 危险操作（执行命令等），必须确认
-                      needsApproval = true;
-                      break;
-                    default:
-                      // 未知权限级别，默认需要确认
-                      needsApproval = true;
-                  }
+                  // 从工具参数中提取路径（用于细粒度权限检查）
+                  const toolPath = extractPathFromParams(call.tool, call.parameters);
 
-                  // 询问是否批准（根据权限级别和全局设置）
-                  let approved = !needsApproval || options.yes || autoApproveAll;
+                  // 使用 PermissionManager 检查权限
+                  const permissionRequest = {
+                    tool: call.tool,
+                    path: toolPath,
+                    params: call.parameters,
+                  };
+                  const permissionResult = permissionManager.checkPermission(permissionRequest);
+
+                  // 判断是否需要批准
+                  const isAllowed = permissionResult.action === PermissionAction.ALLOW;
+                  const needsApproval = permissionResult.action === PermissionAction.ASK;
+
+                  let approved = isAllowed || options.yes || autoApproveAll;
+
+                  // 如果需要确认但未自动批准
                   if (needsApproval && !approved) {
                     // 显示工具调用和权限提示
                     console.log(`\n${chalk.yellow('○')} ${chalk.cyan(call.tool)}(${paramsStr})`);
-                    const permissionLabel: Record<string, string> = {
-                      'local-modify': '文件修改',
-                      'network': '网络操作',
-                      'dangerous': '危险操作',
-                    };
-                    console.log(chalk.gray(`  [${permissionLabel[tool.permission] || '需要确认'}]`));
+                    const permissionLabel = PERMISSION_LABELS[tool.permission] || '需要确认';
+                    console.log(chalk.gray(`  [${permissionLabel}]`));
+
+                    // 如果有权限原因，显示原因
+                    if (permissionResult.reason) {
+                      console.log(chalk.gray(`  ${permissionResult.reason}`));
+                    }
+
                     const choice = await askForApproval();
 
                     if (choice === 'no') {
@@ -681,6 +743,17 @@ export const agentCommand = new Command('agent')
                       approved = true;
                       autoApproveAll = true;
                     }
+                  }
+
+                  // 如果权限被拒绝
+                  if (permissionResult.action === PermissionAction.DENY) {
+                    const errorMsg = permissionResult.reason || '权限拒绝';
+                    toolResults.push({
+                      success: false,
+                      error: errorMsg,
+                    });
+                    console.log(chalk.red(`\n✗ ${errorMsg}\n`));
+                    break; // 退出工具循环
                   }
 
                   // 显示工具调用（同一行）

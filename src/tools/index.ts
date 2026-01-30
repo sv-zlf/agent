@@ -238,3 +238,29 @@ function getPermission(toolId: string): ToolDefinition['permission'] {
   };
   return permissions[toolId] || 'safe';
 }
+
+/**
+ * 允许外部覆盖工具权限配置
+ * 用于从配置文件或 PermissionManager 动态设置权限
+ */
+export function overrideToolPermission(toolId: string, permission: ToolDefinition['permission']): void {
+  const permissions: Record<string, ToolDefinition['permission']> = {
+    read: 'safe',
+    glob: 'safe',
+    grep: 'safe',
+    write: 'local-modify',
+    edit: 'local-modify',
+    'make-directory': 'local-modify',
+    bash: 'dangerous',
+  };
+  permissions[toolId] = permission;
+}
+
+/**
+ * 批量覆盖工具权限
+ */
+export function overrideToolPermissions(permissions: Record<string, ToolDefinition['permission']>): void {
+  Object.entries(permissions).forEach(([toolId, permission]) => {
+    overrideToolPermission(toolId, permission);
+  });
+}
