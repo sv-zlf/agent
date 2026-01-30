@@ -8,3 +8,6 @@ backups/
 *.tsbuildinfo
 /.idea/
 /.claude/
+/temp/
+/.github/
+/.vscode/

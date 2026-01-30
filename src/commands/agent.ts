@@ -478,21 +478,17 @@ export const agentCommand = new Command('agent')
                       needsApproval = true;
                   }
 
-                  // 显示工具调用
-                  console.log(chalk.yellow(`\n○ ${call.tool}(${paramsStr})`));
-
                   // 询问是否批准（根据权限级别和全局设置）
                   let approved = !needsApproval || options.yes || autoApproveAll;
                   if (needsApproval && !approved) {
-                    // 显示权限级别提示
+                    // 显示工具调用和权限提示
+                    console.log(`\n${chalk.yellow('○')} ${chalk.cyan(call.tool)}(${paramsStr})`);
                     const permissionLabel: Record<string, string> = {
-                      'safe': '安全操作',
                       'local-modify': '文件修改',
                       'network': '网络操作',
                       'dangerous': '危险操作',
                     };
                     console.log(chalk.gray(`  [${permissionLabel[tool.permission] || '需要确认'}]`));
-                    console.log(chalk.gray('  等待批准...'));
                     const choice = await askForApproval();
 
                     if (choice === 'no') {
@@ -507,23 +503,14 @@ export const agentCommand = new Command('agent')
                       // 批准当前及后续所有工具
                       approved = true;
                       autoApproveAll = true;
-                      console.log(chalk.green('✓ 已批准（后续自动执行）\n'));
-                    } else {
-                      // yes-once，只批准当前工具
-                      approved = true;
-                      console.log(chalk.green('✓ 已批准\n'));
-                    }
-                  } else {
-                    // 自动批准
-                    if (needsApproval) {
-                      console.log(chalk.green('✓ 自动批准\n'));
-                    } else {
-                      console.log(chalk.gray('  [安全操作，自动执行]\n'));
                     }
                   }
 
-                  // 显示执行中状态
-                  console.log(chalk.gray('  执行中...'));
+                  // 显示工具调用（同一行）
+                  process.stdout.write(`\n${chalk.yellow('○')} ${chalk.cyan(call.tool)}(${paramsStr})`);
+
+                  // 记录开始时间
+                  const startTime = Date.now();
 
                   // 标记正在执行工具
                   interruptManager.setExecutingTool(true);
@@ -534,20 +521,22 @@ export const agentCommand = new Command('agent')
                   // 执行完成，重置标志
                   interruptManager.setExecutingTool(false);
 
+                  // 计算执行时间
+                  const duration = Date.now() - startTime;
+
                   toolResults.push(result);
 
-                  // 显示执行结果
+                  // 更新同一行显示结果
+                  const timeStr = `${duration}ms`;
                   if (result.success) {
-                    console.log(chalk.green(`\r● ${call.tool}(${paramsStr})`));
-                    console.log(chalk.green('  ✓ 成功'));
-                    if (result.output && result.output.length < 500) {
-                      console.log(chalk.gray(`  输出: ${result.output.substring(0, 200)}${result.output.length > 200 ? '...' : ''}`));
-                    }
+                    // 成功：绿色实心圆 + 执行时间
+                    process.stdout.write(`\r${chalk.green('●')} ${chalk.cyan(call.tool)}(${paramsStr}) ${chalk.gray(`(${timeStr})`)}`);
                   } else {
-                    console.log(chalk.red(`\r✗ ${call.tool}(${paramsStr})`));
-                    console.log(chalk.red(`  ✗ 失败: ${result.error}`));
+                    // 失败：红色叉号 + 执行时间
+                    process.stdout.write(`\r${chalk.red('✗')} ${chalk.cyan(call.tool)}(${paramsStr}) ${chalk.gray(`(${timeStr})`)}`);
+                    // 失败时在下一行显示错误信息
+                    console.log(`\n  ${chalk.red(`错误: ${result.error}`)}`);
                   }
-                  console.log();
 
                   // 如果工具失败且不是因为中断，停止后续工具
                   if (!result.success && !result.error?.includes('中断')) {

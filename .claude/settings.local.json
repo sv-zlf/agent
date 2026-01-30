@@ -28,7 +28,9 @@
       "Bash(if [ -d \"temp/opencode\" ])",
       "Bash(then echo \"opencode already exists\")",
       "Bash(else git clone:*)",
-      "Bash(fi:*)"
+      "Bash(fi:*)",
+      "Bash(npm run agent:*)",
+      "Bash(npm run clean:release:*)"
     ]
   }
 }
