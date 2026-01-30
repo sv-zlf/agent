@@ -82,20 +82,41 @@ export class ToolEngine {
 
   /**
    * 生成工具描述（用于系统提示词）
+   * 返回简洁的工具列表，详细信息由模板文件提供
    */
   generateToolsDescription(): string {
     const lines: string[] = [];
 
     for (const tool of this.tools.values()) {
-      lines.push(`## ${tool.name}`);
-      lines.push(`Description: ${tool.description}`);
-      lines.push('Parameters:');
+      // 只生成工具名称和简要描述
+      lines.push(`- **${tool.name}**: ${tool.description}`);
+    }
 
-      for (const [paramName, param] of Object.entries(tool.parameters)) {
-        const required = param.required ? ' (required)' : ' (optional)';
-        lines.push(`  - ${paramName}: ${param.type}${required} - ${param.description}`);
-        if (param.default !== undefined) {
-          lines.push(`    Default: ${JSON.stringify(param.default)}`);
+    return lines.join('\n');
+  }
+
+  /**
+   * 生成详细的工具参数描述
+   * 用于调试或扩展提示词
+   */
+  generateDetailedToolsDescription(): string {
+    const lines: string[] = [];
+
+    for (const tool of this.tools.values()) {
+      lines.push(`### ${tool.name}`);
+      lines.push(`**描述**: ${tool.description}`);
+      lines.push(`**权限**: ${tool.permission}`);
+      lines.push('**参数**:');
+
+      if (Object.keys(tool.parameters).length === 0) {
+        lines.push('  (无参数)');
+      } else {
+        for (const [paramName, param] of Object.entries(tool.parameters)) {
+          const required = param.required ? ' **[必需]**' : ' **[可选]**';
+          lines.push(`  - \`${paramName}\` (${param.type})${required}: ${param.description}`);
+          if (param.default !== undefined) {
+            lines.push(`    - 默认值: \`${JSON.stringify(param.default)}\``);
+          }
         }
       }
       lines.push('');

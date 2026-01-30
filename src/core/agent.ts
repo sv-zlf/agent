@@ -128,29 +128,32 @@ export class AgentOrchestrator {
         // 解析工具调用
         const toolCalls = this.toolEngine.parseToolCallsFromResponse(response);
 
+        // 从响应中提取纯文本内容（移除工具调用 JSON）
+        const cleanResponse = this.extractTextFromResponse(response);
+
         // 智能检测是否应该结束
         if (this.shouldFinish(response, toolCalls)) {
           this.stateManager.setState(SessionState.COMPLETED, '任务完成');
-          this.contextManager.addMessage('assistant', response);
+          this.contextManager.addMessage('assistant', cleanResponse);
 
           return {
             success: true,
             iterations: context.iteration,
             toolCallsExecuted: context.toolCalls.length,
-            finalAnswer: response,
+            finalAnswer: cleanResponse,
           };
         }
 
         if (toolCalls.length === 0) {
           // 没有工具调用，任务完成
           this.stateManager.setState(SessionState.COMPLETED, '任务完成');
-          this.contextManager.addMessage('assistant', response);
+          this.contextManager.addMessage('assistant', cleanResponse);
 
           return {
             success: true,
             iterations: context.iteration,
             toolCallsExecuted: context.toolCalls.length,
-            finalAnswer: response,
+            finalAnswer: cleanResponse,
           };
         }
 
@@ -163,7 +166,8 @@ export class AgentOrchestrator {
         context.toolCalls.push(...toolCalls);
         context.results.push(...toolResults);
 
-        // 将AI的原始响应添加到上下文（包含工具调用请求）
+        // 将AI的原始响应（包含工具调用）添加到上下文，供 AI 参考工具调用格式
+        // 注意：这里保留完整响应是因为 AI 需要知道它之前调用了什么工具
         this.contextManager.addMessage('assistant', response);
 
         // 将工具执行结果作为用户反馈添加到上下文
@@ -346,23 +350,50 @@ export class AgentOrchestrator {
   }
 
   /**
+   * 从 AI 响应中提取纯文本内容
+   * 移除工具调用的 JSON 代码块，只保留文本说明
+   */
+  private extractTextFromResponse(response: string): string {
+    // 移除代码块中的工具调用 JSON
+    // 匹配 ```json 或 ```tool 后跟 JSON 对象的代码块
+    const toolCallPattern = /```(?:json|tool)?\s*\n?\s*\{[\s\S]*?"tool"[\s\S]*?\}\s*```/g;
+    let cleaned = response.replace(toolCallPattern, '[工具调用]');
+
+    // 移除独立的 JSON 对象（不在代码块中的）
+    const standaloneJsonPattern = /\{[\s\S]*?"tool"\s*:\s*"\w+"[\s\S]*?\}/g;
+    cleaned = cleaned.replace(standaloneJsonPattern, '[工具调用]');
+
+    // 清理多余的空行
+    cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
+
+    return cleaned.trim();
+  }
+
+  /**
    * 构建系统提示词
+   * 使用简洁格式，避免硬编码
    */
   private buildSystemPrompt(): string {
     const toolsDescription = this.toolEngine.generateToolsDescription();
 
-    return `你是一个AI编程助手，可以帮助用户完成各种编程任务。你有以下工具可以使用：
+    // 动态环境信息
+    const envInfo = [
+      `工作目录: ${this.config.workingDirectory}`,
+      `平台: ${process.platform}`,
+      `日期: ${new Date().toLocaleDateString('zh-CN')}`,
+    ].join('\n');
+
+    return `# GG CODE - AI编程助手
+
+你是一个AI编程助手，可以帮助用户完成各种编程任务。
+
+## 环境信息
+
+${envInfo}
+
+## 可用工具
 
 ${toolsDescription}
-
-## 工具使用指南
-
-1. **在阅读文件前，你应该先使用 Glob 工具查找文件位置**
-2. **优先使用 Read 工具阅读文件，而不是 Write**
-3. **只在需要修改现有文件时使用 Edit 工具**
-4. **只在创建新文件或完全覆盖文件时使用 Write 工具**
-5. **使用 Grep 工具在代码中搜索特定内容**
-6. **使用 Bash 工具运行测试、构建项目、git操作等**
 
 ## 工具调用格式
 
@@ -377,26 +408,16 @@ ${toolsDescription}
 }
 \`\`\`
 
-你可以一次性调用多个工具，每个工具调用使用一个JSON代码块。
+## 重要提示
 
-## 工作流程
+1. **优先使用工具** - 读取、写入、编辑、搜索文件时必须使用对应的工具
+2. **工具调用用代码块** - 将工具调用JSON放在\`\`\`json...\`\`\`代码块中
+3. **可并行调用** - 可以在一次响应中调用多个工具
+4. **先读后改** - 修改文件前先用 Read 工具查看内容
+5. **说明计划** - 在工具调用前简要说明要做什么
+6. **报告结果** - 工具执行后向用户说明结果
 
-1. 理解用户的需求
-2. 使用 Glob 工具查找相关文件
-3. 使用 Read 工具阅读文件内容
-4. 使用 Edit 工具修改文件（如果需要）
-5. 使用 Bash 工具运行测试或构建（如果需要）
-6. 向用户报告结果
-
-## 重要注意事项
-
-- 在修改文件之前，先阅读文件内容
-- 确保你的修改是准确的，使用完整的字符串匹配
-- 如果遇到错误，尝试分析原因并重新尝试
-- 在完成任务后，向用户提供清晰的总结
-- 工作目录: ${this.config.workingDirectory}
-
-现在，请帮助用户完成他们的任务。`;
+现在，请帮助用户完成任务。`;
   }
 
   /**
@@ -427,38 +448,27 @@ ${toolsDescription}
 
   /**
    * 格式化工具执行结果给AI
+   * 简洁格式，避免展示技术细节
    */
   private formatToolResultsForAI(calls: ToolCall[], results: ToolResult[]): string {
-    const lines: string[] = ['工具执行结果：\n'];
+    const lines: string[] = [];
 
     for (let i = 0; i < calls.length; i++) {
       const call = calls[i];
       const result = results[i];
 
-      lines.push(`**${call.tool}**`);
       if (result.success) {
-        // 如果输出太长，截断它
-        let output = result.output || '';
-        if (output.length > 2000) {
-          output = output.substring(0, 2000) + '\n... (内容过长，已截断)';
-        }
-        lines.push(`✓ 成功`);
-        if (output) {
-          lines.push(`\n${output}`);
-        }
-        if (result.metadata) {
-          const metadataStr = JSON.stringify(result.metadata, null, 2);
-          if (metadataStr.length < 500) {
-            lines.push(`\n元数据: ${metadataStr}`);
-          }
+        // 成功：只包含输出内容，不显示元数据
+        if (result.output) {
+          lines.push(result.output);
         }
       } else {
-        lines.push(`✗ 失败: ${result.error}`);
+        // 失败：包含错误信息
+        lines.push(`错误：${result.error || '工具执行失败'}`);
       }
-      lines.push(''); // 空行分隔
     }
 
-    return lines.join('\n');
+    return lines.join('\n\n');
   }
 
   /**
