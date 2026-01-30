@@ -739,7 +739,7 @@ export class CommandManager {
           const title = session.title || session.name;
           const date = new Date(session.lastActiveAt).toLocaleString('zh-CN');
 
-          console.log(`${marker} ${chalk.bold(`${index + 1}. ${title}`)}`);
+          console.log(marker + ' ' + (index + 1) + '. ' + title);
           console.log(chalk.gray(`   ID: ${session.id.substring(0, 12)}...`));
           console.log(chalk.gray(`   活跃: ${date}`));
 

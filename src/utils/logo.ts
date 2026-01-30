@@ -26,29 +26,15 @@ export const displayLogo = (): void => {
 };
 
 /**
- * 显示启动横幅
+ * 显示启动横幅（简化版）
  */
 export const displayBanner = (version: string): void => {
   console.log();
   displayLogo();
 
   console.log(chalk.gray('  =========================================='));
-  console.log(chalk.white.bold('  ') + chalk.cyan.bold('GG CODE') + chalk.white.bold(' - AI-Powered Code Editor'));
-  console.log(chalk.gray('  Version: ') + chalk.green.bold(version));
-  console.log(chalk.gray('  =========================================='));
-  console.log();
-
-  console.log(chalk.yellow('  ⌨️  Controls / 快捷键:'));
-  console.log(chalk.white('    • P     ') + chalk.gray('- Interrupt / 中断操作'));
-  console.log(chalk.white('    • Ctrl+C ') + chalk.gray('- Exit / 退出程序'));
-  console.log();
-
-  console.log(chalk.yellow('  📝 Commands / 命令:'));
-  console.log(chalk.white('    • exit  ') + chalk.gray('- Exit / 退出'));
-  console.log(chalk.white('    • clear ') + chalk.gray('- Clear history / 清空历史'));
-  console.log(chalk.white('    • tools ') + chalk.gray('- List tools / 工具列表'));
-  console.log();
-
+  console.log(chalk.cyan('GG CODE') + chalk.gray(' - AI-Powered Code Editor'));
+  console.log(chalk.gray('  Version: ') + chalk.green(version));
   console.log(chalk.gray('  =========================================='));
   console.log();
 };

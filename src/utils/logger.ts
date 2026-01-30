@@ -47,9 +47,7 @@ export class Logger {
    * 调试日志
    */
   debug(message: string): void {
-    if (this.debugMode) {
-      console.log(chalk.gray('DEBUG:'), message);
-    }
+    // 始终不显示调试日志
   }
 
   /**
@@ -94,7 +92,7 @@ export class Logger {
     const headerRow = headers
       .map((h, i) => h.padEnd(colWidths[i]))
       .join(chalk.gray('|'));
-    console.log(chalk.bold(headerRow));
+    console.log(headerRow);
 
     // 打印分隔线
     const separator = colWidths

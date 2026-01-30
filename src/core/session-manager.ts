@@ -116,7 +116,7 @@ export class SessionManager {
     // 设置为当前会话
     await this.setCurrentSession(sessionId);
 
-    logger.info(`创建新会话: ${session.name} (${sessionId})`);
+    logger.debug(`创建会话: ${session.name}`);
     return session;
   }
 
@@ -136,7 +136,6 @@ export class SessionManager {
     // 设置为当前会话
     await this.setCurrentSession(sessionId);
 
-    logger.info(`切换到会话: ${session.name} (${sessionId})`);
     return session;
   }
 
@@ -171,7 +170,7 @@ export class SessionManager {
       }
     }
 
-    logger.info(`删除会话: ${session.name} (${sessionId})`);
+    logger.debug(`删除会话: ${sessionId}`);
   }
 
   /**
@@ -357,7 +356,7 @@ export class SessionManager {
         newSession.stats = currentSession.stats ? { ...currentSession.stats } : undefined;
         await this.saveSession(newSession);
 
-        logger.info(`Fork 会话: ${currentSession.name} -> ${newSession.name}`);
+        logger.debug(`Fork 会话: ${currentSession.name} -> ${newSession.name}`);
       } catch (error) {
         logger.error(`Fork 会话失败: ${(error as Error).message}`);
       }
@@ -380,7 +379,7 @@ export class SessionManager {
     session.updatedAt = Date.now();
     await this.saveSession(session);
 
-    logger.info(`重命名会话: ${sessionId} -> ${newName}`);
+    logger.debug(`重命名会话: ${sessionId} -> ${newName}`);
     return session;
   }
 
@@ -460,7 +459,7 @@ export class SessionManager {
     await this.saveSession(session);
     this.sessions.set(sessionId, session);
 
-    logger.info(`导入会话: ${session.name} (${sessionId})`);
+    logger.debug(`导入会话: ${session.name}`);
     return session;
   }
 
