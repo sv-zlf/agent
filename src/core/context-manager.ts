@@ -409,8 +409,14 @@ export class ContextManager {
       }
     } catch (error) {
       // 静默处理历史记录加载失败
-      // 第一次运行时历史文件不存在是正常的
     }
+  }
+
+  /**
+   * 更新历史文件路径（用于切换会话）
+   */
+  updateHistoryFile(newHistoryFile: string): void {
+    this.historyFile = newHistoryFile;
   }
 
   /**

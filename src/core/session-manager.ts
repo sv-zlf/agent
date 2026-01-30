@@ -83,7 +83,7 @@ export class SessionManager {
     const sessionId = this.generateId();
 
     const sessionFile = path.join(this.config.sessionsDir, `${sessionId}.json`);
-    const contextFile = path.join(this.config.sessionsDir, `${sessionId}-context.json`);
+    const historyFile = path.join(this.config.sessionsDir, `${sessionId}-history.json`);
 
     const session: Session = {
       id: sessionId,
@@ -92,8 +92,8 @@ export class SessionManager {
       createdAt: Date.now(),
       updatedAt: Date.now(),
       lastActiveAt: Date.now(),
-      historyFile: sessionFile,
-      contextFile: contextFile,
+      historyFile: historyFile,
+      contextFile: sessionFile,
       agentType: agentType,
       parentID,
       messageCount: 0,
@@ -235,13 +235,22 @@ export class SessionManager {
   private async loadSessions(): Promise<void> {
     try {
       const files = await fs.readdir(this.config.sessionsDir);
-      const sessionFiles = files.filter(f => f.endsWith('.json') && !f.endsWith('-context.json'));
+      const sessionFiles = files.filter(f => f.endsWith('.json') && !f.endsWith('-history.json'));
 
       for (const file of sessionFiles) {
         try {
           const sessionFile = path.join(this.config.sessionsDir, file);
           const sessionData = await fs.readJSON(sessionFile);
-          this.sessions.set(sessionData.id, sessionData);
+          // 验证会话数据是否有效（检查是否是 Session 对象而不是消息数组）
+          if (sessionData && sessionData.id && sessionData.name && sessionData.agentType !== undefined) {
+            // 确保 title 字段存在
+            if (!sessionData.title) {
+              sessionData.title = sessionData.name;
+            }
+            this.sessions.set(sessionData.id, sessionData);
+          } else {
+            logger.warning(`无效的会话数据: ${file}`);
+          }
         } catch (error) {
           logger.error(`加载会话失败: ${file} - ${(error as Error).message}`);
         }

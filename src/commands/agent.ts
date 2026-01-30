@@ -9,7 +9,7 @@ import { getBuiltinTools } from '../tools';
 import { PermissionManager, PermissionAction } from '../core/permissions';
 import { createLogger } from '../utils';
 import { displayBanner } from '../utils/logo';
-import { createCommandManager } from './slash-commands';
+import { createCommandManager, type CommandResult } from './slash-commands';
 import { CommandCompleter } from './command-completer';
 import type { ToolCall } from '../types';
 import { readFileSync } from 'fs';
@@ -117,20 +117,14 @@ export const agentCommand = new Command('agent')
     const sessionManager = createSessionManager();
     await sessionManager.initialize();
 
-    // 如果指定了 agent，创建新会话或更新现有会话
+    // 如果指定了 agent，创建新会话
     if (options.agent) {
-      const currentSession = sessionManager.getCurrentSession();
-      if (currentSession) {
-        await sessionManager.updateSessionActivity();
-        sessionManager.setAgent(options.agent);
-      }
+      const newSession = await sessionManager.createSession(`Agent: ${options.agent}`, options.agent);
+      await sessionManager.updateSessionActivity();
     }
 
-    // 确保有当前会话
-    let currentSession = sessionManager.getCurrentSession();
-    if (!currentSession) {
-      currentSession = await sessionManager.createSession('Default Session', 'default');
-    }
+    // 始终创建新会话（用户需求：每次启动新会话，旧会话通过切换选择）
+    const currentSession = await sessionManager.createSession('New Session', 'default');
 
     const agentConfig = config.getAgentConfig();
     const contextManager = createContextManager(
@@ -139,8 +133,8 @@ export const agentCommand = new Command('agent')
       currentSession.historyFile
     );
 
-    // 加载历史记录
-    if (options.history && currentSession) {
+    // 加载历史记录（可选）
+    if (options.history) {
       await contextManager.loadHistory();
     }
 
@@ -422,15 +416,15 @@ export const agentCommand = new Command('agent')
             process.stdin.removeListener('data', interruptKeyListener);
           }
 
-          try {
-            const selected = await select({
-              message: '选择命令:',
-              options: commands.map(cmd => ({
-                label: `/${cmd.name}`,
-                value: `/${cmd.name}`,
-                description: cmd.description,
-              })),
-            });
+            try {
+              const selected = await select({
+                message: '选择命令:',
+                options: commands.map((cmd: any) => ({
+                  label: `/${cmd.name}`,
+                  value: `/${cmd.name}`,
+                  description: cmd.description,
+                })),
+              });
 
             input = selected.value;
           } finally {
@@ -453,6 +447,7 @@ export const agentCommand = new Command('agent')
             messages: contextManager.getContext(),
             sessionManager: sessionManager,
             contextManager: contextManager,
+            apiAdapter: apiAdapter, // 传递 API 适配器
             pauseKeyListener: () => {
               // 临时移除主程序的按键监听器
               const currentRl = getReadline();
@@ -483,8 +478,17 @@ export const agentCommand = new Command('agent')
           });
 
           // 根据命令结果决定是否继续
-          if (!result.shouldContinue) {
-            // 命令已处理，继续等待下一个输入
+          const cmdResult = result as CommandResult & { sessionSwitched?: { sessionId: string; historyFile: string } };
+          if (!cmdResult.shouldContinue) {
+            // 处理会话切换
+            if (cmdResult.sessionSwitched) {
+              const { historyFile } = cmdResult.sessionSwitched;
+              // 更新 contextManager 的历史文件路径并加载历史
+              contextManager.updateHistoryFile(historyFile);
+              await contextManager.loadHistory();
+              console.log(chalk.gray('已加载会话历史，继续对话...\n'));
+            }
+
             // 如果系统提示词未设置（比如切换会话后），重新设置
             if (!contextManager.isSystemPromptSet()) {
               contextManager.setSystemPrompt(systemPrompt);

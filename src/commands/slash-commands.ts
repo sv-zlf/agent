@@ -43,6 +43,10 @@ export interface CommandContext {
    * 返回恢复函数
    */
   pauseKeyListener?: () => () => void;
+  /**
+   * 可选的 API 适配器（用于需要调用 AI 的命令）
+   */
+  apiAdapter?: any; // ChatAPIAdapter 实例（可选）
 }
 
 /**
@@ -65,6 +69,13 @@ export class CommandManager {
   }
 
   /**
+   * 获取所有命令
+   */
+  getCommands(): CommandDefinition[] {
+    return Array.from(this.commands.values());
+  }
+
+  /**
    * 注册命令
    */
   registerCommand(command: CommandDefinition): void {
@@ -77,7 +88,7 @@ export class CommandManager {
   private registerBuiltInCommands(): void {
     this.registerCommand({
       name: 'init',
-      description: '创建/更新项目设计文件 (DESIGN.md)',
+      description: '创建/更新项目文档 (AGENTS.md)',
       handler: this.handleInitCommand.bind(this),
     });
 
@@ -195,80 +206,238 @@ export class CommandManager {
   /**
    * 获取所有命令
    */
-  getCommands(): CommandDefinition[] {
-    return Array.from(this.commands.values());
-  }
-
   /**
-   * /init 命令处理器 - 创建项目设计文件
+   * /init 命令处理器 - 创建/更新 AGENTS.md 项目文档
+   * 使用 AI 分析项目并生成标准化文档
    */
   private async handleInitCommand(
     args: string,
     context: CommandContext
   ): Promise<CommandResult> {
-    const designFilePath = path.join(context.workingDirectory, 'DESIGN.md');
+    const agentsFilePath = path.join(context.workingDirectory, 'AGENTS.md');
 
-    // 检查是否已存在
-    const exists = await fs.access(designFilePath).then(() => true).catch(() => false);
+    // 检查是否需要使用 AI 生成（有 API adapter）
+    if (!context.apiAdapter) {
+      console.log(chalk.yellow('⚠️  未提供 API 适配器，将使用基础模板生成文档\n'));
+      return await this.generateBasicAgentsDocument(context.workingDirectory, agentsFilePath);
+    }
 
-    // 生成项目设计文档
-    const designDoc = await this.generateDesignDocument(context.workingDirectory, exists);
+    console.log(chalk.cyan('🔍 正在分析项目并生成 AGENTS.md...\n'));
 
-    // 写入文件
-    await fs.writeFile(designFilePath, designDoc, 'utf-8');
+    try {
+      // 1. 读取提示词模板
+      const templatePath = path.join(__dirname, '../../prompts/init.txt');
+      let promptTemplate = await fs.readFile(templatePath, 'utf-8').catch(() => {
+        console.log(chalk.yellow('⚠️  未找到 prompts/init.txt，使用默认模板\n'));
+        return this.getDefaultInitTemplate();
+      });
 
-    const message = exists
-      ? `已更新项目设计文件: ${designFilePath}`
-      : `已创建项目设计文件: ${designFilePath}`;
+      // 2. 替换模板变量
+      promptTemplate = promptTemplate.replace(/\$\{path\}/g, context.workingDirectory);
 
-    console.log(chalk.green(message));
-    console.log(chalk.gray('\n包含以下内容:'));
-    console.log(chalk.gray('  • 项目概述'));
-    console.log(chalk.gray('  • 构建/测试命令'));
-    console.log(chalk.gray('  • 代码风格指南'));
-    console.log(chalk.gray('  • 项目结构说明'));
-    console.log();
+      // 3. 收集项目上下文信息
+      const projectContext = await this.collectProjectContext(context.workingDirectory);
 
-    return {
-      shouldContinue: false, // 命令执行后停止
-    };
+      // 4. 构建发送给 AI 的消息
+      const messages: Message[] = [
+        {
+          role: 'system',
+          content: '你是一个专业的项目文档生成助手。请分析提供的项目信息，生成清晰、准确、实用的 AGENTS.md 文档。',
+        },
+        {
+          role: 'user',
+          content: `${promptTemplate}\n\n## 项目上下文信息\n\n${projectContext}`,
+        },
+      ];
+
+      // 5. 调用 AI 生成文档
+      console.log(chalk.gray('正在调用 AI 生成文档...'));
+      const generatedDoc = await context.apiAdapter.chat(messages, {
+        temperature: 0.3, // 较低温度以确保稳定性
+      });
+
+      // 6. 清理和保存生成的文档
+      const cleanedDoc = this.cleanGeneratedDoc(generatedDoc);
+      await fs.writeFile(agentsFilePath, cleanedDoc, 'utf-8');
+
+      console.log(chalk.green(`✓ 已生成项目文档: ${agentsFilePath}`));
+      console.log(chalk.gray(`\n文档大小: ${cleanedDoc.length} 字符`));
+      console.log();
+
+      return {
+        shouldContinue: false,
+      };
+    } catch (error) {
+      console.log(chalk.red(`✗ 生成文档失败: ${(error as Error).message}\n`));
+      console.log(chalk.gray('提示: 如果 API 不可用，文档将使用基础模板生成\n'));
+
+      // 降级到基础模板
+      return await this.generateBasicAgentsDocument(context.workingDirectory, agentsFilePath);
+    }
   }
 
   /**
-   * 生成项目设计文档
+   * 收集项目上下文信息
    */
-  private async generateDesignDocument(
+  private async collectProjectContext(workingDir: string): Promise<string> {
+    const contextParts: string[] = [];
+
+    // 1. README.md
+    const readmePath = path.join(workingDir, 'README.md');
+    try {
+      const readme = await fs.readFile(readmePath, 'utf-8');
+      contextParts.push(`### README.md\n\`\`\`\n${readme.substring(0, 3000)}\n\`\`\`\n`);
+    } catch {}
+
+    // 2. package.json (scripts 部分)
+    const packageJsonPath = path.join(workingDir, 'package.json');
+    try {
+      const pkgJson = JSON.parse(await fs.readFile(packageJsonPath, 'utf-8'));
+      if (pkgJson.scripts) {
+        contextParts.push(`### package.json scripts\n\`\`\`json\n${JSON.stringify(pkgJson.scripts, null, 2)}\n\`\`\`\n`);
+      }
+    } catch {}
+
+    // 3. 现有的 AGENTS.md (如果存在)
+    const agentsPath = path.join(workingDir, 'AGENTS.md');
+    try {
+      const existingAgents = await fs.readFile(agentsPath, 'utf-8');
+      contextParts.push(`### 现有的 AGENTS.md\n\`\`\`\n${existingAgents.substring(0, 2000)}\n\`\`\`\n`);
+    } catch {}
+
+    // 4. Cursor/Copilot 规则
+    const cursorRulesPath = path.join(workingDir, '.cursorrules');
+    try {
+      const cursorRules = await fs.readFile(cursorRulesPath, 'utf-8');
+      contextParts.push(`### .cursorrules\n\`\`\`\n${cursorRules}\n\`\`\`\n`);
+    } catch {}
+
+    const cursorRulesDir = path.join(workingDir, '.cursor', 'rules');
+    try {
+      const files = await fs.readdir(cursorRulesDir);
+      for (const file of files) {
+        const content = await fs.readFile(path.join(cursorRulesDir, file), 'utf-8');
+        contextParts.push(`### .cursor/rules/${file}\n\`\`\`\n${content}\n\`\`\`\n`);
+      }
+    } catch {}
+
+    const copilotInstructionsPath = path.join(workingDir, '.github', 'copilot-instructions.md');
+    try {
+      const copilotInstructions = await fs.readFile(copilotInstructionsPath, 'utf-8');
+      contextParts.push(`### .github/copilot-instructions.md\n\`\`\`\n${copilotInstructions}\n\`\`\`\n`);
+    } catch {}
+
+    // 5. CONTRIBUTING.md
+    const contributingPath = path.join(workingDir, 'CONTRIBUTING.md');
+    try {
+      const contributing = await fs.readFile(contributingPath, 'utf-8');
+      contextParts.push(`### CONTRIBUTING.md\n\`\`\`\n${contributing.substring(0, 2000)}\n\`\`\`\n`);
+    } catch {}
+
+    // 6. 项目结构（简要）
+    try {
+      const srcPath = path.join(workingDir, 'src');
+      const items = await fs.readdir(srcPath, { withFileTypes: true });
+      const structure = items
+        .slice(0, 15)
+        .map(item => `${item.isDirectory() ? '📁' : '📄'} ${item.name}`)
+        .join('\n');
+      contextParts.push(`### src/ 目录结构\n\`\`\`\n${structure}\n\`\`\`\n`);
+    } catch {}
+
+    return contextParts.join('\n');
+  }
+
+  /**
+   * 清理 AI 生成的文档
+   */
+  private cleanGeneratedDoc(doc: string): string {
+    // 移除可能的 markdown 代码块标记
+    let cleaned = doc.replace(/^```markdown\n?/gm, '');
+    cleaned = cleaned.replace(/^```\n?$/gm, '');
+
+    // 移除 AI 可能添加的额外说明
+    const lines = cleaned.split('\n');
+    const filteredLines: string[] = [];
+
+    for (const line of lines) {
+      // 跳过 AI 的常见对话标记
+      if (line.match(/^(这里是|以上是|好的|我会)/)) {
+        continue;
+      }
+      filteredLines.push(line);
+    }
+
+    return filteredLines.join('\n').trim() + '\n';
+  }
+
+  /**
+   * 获取默认初始化模板
+   */
+  private getDefaultInitTemplate(): string {
+    return `请分析当前代码库并创建/更新 AGENTS.md 文件，文件需要包含以下内容：
+
+## 必需内容
+
+1. **项目概述** - 从 README.md 提取项目名称和描述
+2. **构建和测试命令** - 从 package.json 提取可用的 npm scripts
+3. **代码风格指南** - 导入顺序、命名约定、TypeScript 规范
+4. **项目结构** - 主要目录和文件的用途说明
+5. **开发工作流** - 日常开发流程、代码审查标准
+
+## 输出要求
+
+- 文档长度约 150-200 行
+- 使用清晰的 Markdown 格式
+- 包含具体的代码示例
+- 突出显示重要信息
+
+项目路径: \${path}`;
+  }
+
+  /**
+   * 生成基础 AGENTS.md 文档（不使用 AI）
+   */
+  private async generateBasicAgentsDocument(
     workingDir: string,
-    update: boolean
-  ): Promise<string> {
+    agentsFilePath: string
+  ): Promise<CommandResult> {
+    const exists = await fs.access(agentsFilePath).then(() => true).catch(() => false);
+
+    // 基础模板
     const lines: string[] = [];
 
-    // 标题
-    lines.push('# 项目设计文档');
+    lines.push('# AGENTS.md');
     lines.push('');
-    lines.push(`> 自动生成于 ${new Date().toLocaleString('zh-CN')}`);
+    lines.push('> 本文档由 GG CODE 自动生成，包含项目概述、构建命令、代码风格等信息。');
+    lines.push(`> 生成时间: ${new Date().toLocaleString('zh-CN')}`);
     lines.push('');
-
-    // 项目概述
-    lines.push('## 项目概述');
+    lines.push('## 1. 项目概述');
     lines.push('');
     lines.push('本项目使用 GG CODE AI 编程助手进行开发。');
     lines.push('');
 
-    // 构建/测试命令
-    lines.push('## 构建/测试命令');
-    lines.push('');
+    // 尝试从 README.md 提取信息
+    const readmePath = path.join(workingDir, 'README.md');
+    try {
+      const readmeContent = await fs.readFile(readmePath, 'utf-8');
+      const titleMatch = readmeContent.match(/^#\s+(.+)$/m);
+      if (titleMatch) {
+        lines.push(`**${titleMatch[1]}**`);
+        lines.push('');
+      }
+    } catch {}
 
-    // 尝试读取 package.json
+    // package.json scripts
+    lines.push('## 2. 构建和测试命令');
+    lines.push('');
     const packageJsonPath = path.join(workingDir, 'package.json');
     try {
       const packageJson = JSON.parse(await fs.readFile(packageJsonPath, 'utf-8'));
       if (packageJson.scripts) {
-        lines.push('### npm scripts');
-        lines.push('');
         lines.push('```bash');
         for (const [name, script] of Object.entries(packageJson.scripts)) {
-          lines.push(`npm run ${name}  # ${script}`);
+          lines.push(`npm run ${name.padEnd(20)} # ${script}`);
         }
         lines.push('```');
         lines.push('');
@@ -278,89 +447,40 @@ export class CommandManager {
       lines.push('');
     }
 
-    // 代码风格
-    lines.push('## 代码风格指南');
+    lines.push('## 3. 代码风格指南');
     lines.push('');
     lines.push('### 导入顺序');
-    lines.push('');
     lines.push('1. Node.js 内置模块');
     lines.push('2. 第三方库');
     lines.push('3. 项目内部模块');
     lines.push('');
     lines.push('### 命名约定');
-    lines.push('');
     lines.push('- 文件名: kebab-case (例: `user-service.ts`)');
     lines.push('- 类名: PascalCase (例: `UserService`)');
     lines.push('- 函数/变量: camelCase (例: `getUserById`)');
     lines.push('- 常量: UPPER_SNAKE_CASE (例: `MAX_RETRY_COUNT`)');
     lines.push('');
-    lines.push('### TypeScript 规范');
-    lines.push('');
-    lines.push('- 使用严格的类型检查');
-    lines.push('- 避免使用 `any` 类型');
-    lines.push('- 优先使用 `interface` 定义对象结构');
-    lines.push('- 使用 `type` 定义联合类型或交叉类型');
-    lines.push('');
-
-    // 项目结构
-    lines.push('## 项目结构');
-    lines.push('');
-    lines.push('```');
-    const srcPath = path.join(workingDir, 'src');
-    try {
-      const items = await fs.readdir(srcPath, { withFileTypes: true });
-      for (const item of items.slice(0, 20)) {
-        // 只显示前20项
-        const prefix = item.isDirectory() ? '📁 ' : '📄 ';
-        lines.push(`${prefix}${item.name}`);
-      }
-      if (items.length > 20) {
-        lines.push(`... (还有 ${items.length - 20} 项)`);
-      }
-    } catch {
-      lines.push('(src 目录不存在或为空)');
-    }
-    lines.push('```');
-    lines.push('');
-
-    // 配置说明
-    lines.push('## GG CODE 配置');
-    lines.push('');
-    lines.push('项目使用 GG CODE 配置文件 `.ggrc.json` 进行配置。');
-    lines.push('');
-    lines.push('主要配置项:');
-    lines.push('- `api.base_url`: API 基础 URL');
-    lines.push('- `api.model`: 使用的模型名称');
-    lines.push('- `agent.max_history`: 最大历史记录数');
-    lines.push('- `agent.max_iterations`: 最大迭代次数');
-    lines.push('- `agent.auto_approve`: 是否自动批准工具调用');
-    lines.push('');
-
-    // 开发指南
-    lines.push('## 开发指南');
-    lines.push('');
-    lines.push('### 使用 GG CODE');
+    lines.push('## 4. 开发工作流');
     lines.push('');
     lines.push('```bash');
     lines.push('npm run agent          # 启动 AI 编程助手');
-    lines.push('npm run agent -- -a explore  # 使用 explore agent (只读模式)');
-    lines.push('npm run agent -- -a build    # 使用 build agent (构建专家)');
+    lines.push('npm run agent -- -a explore  # 只读探索模式');
+    lines.push('npm run agent -- -a build    # 构建专家模式');
     lines.push('```');
     lines.push('');
-    lines.push('### 斜杠命令');
-    lines.push('');
-    lines.push('- `/init` - 创建/更新项目设计文件');
-    lines.push('- `/models` - 列出可用模型或切换模型');
-    lines.push('- `/help` - 显示帮助信息');
-    lines.push('- 在 AI 思考时按 `P` 键中断操作');
+    lines.push('*如需更详细的文档，请配置 API 后重新运行 `/init` 命令。*');
     lines.push('');
 
-    return lines.join('\n');
+    await fs.writeFile(agentsFilePath, lines.join('\n'), 'utf-8');
+
+    const message = exists ? '已更新项目文档' : '已创建项目文档';
+    console.log(chalk.green(`${message}: ${agentsFilePath}\n`));
+
+    return {
+      shouldContinue: false,
+    };
   }
 
-  /**
-   * /models 命令处理器 - 模型管理
-   */
   private async handleModelsCommand(
     args: string,
     context: CommandContext
@@ -426,6 +546,52 @@ export class CommandManager {
       };
     } finally {
       // 恢复按键监听器
+      resumeKeyListener();
+    }
+  }
+
+  /**
+   * 列出所有会话（交互式选择切换）
+   */
+  private async listSessions(sessionManager: any, pauseKeyListener?: () => () => void): Promise<CommandResult> {
+    const sessions = sessionManager.getAllSessions();
+    const currentSessionId = sessionManager.getCurrentSession()?.id;
+
+    // 找到当前会话的索引
+    const currentIndex = sessions.findIndex((s: Session) => s.id === currentSessionId);
+    const defaultIndex = currentIndex >= 0 ? currentIndex : 0;
+
+    // 暂停按键监听器（如果有）
+    const resumeKeyListener = pauseKeyListener ? pauseKeyListener() : () => {};
+
+    try {
+      console.log(chalk.cyan('\n📋 会话列表\n'));
+
+      const selected = await select({
+        message: '选择要切换的会话 (或按 Esc 取消):',
+        options: sessions.map((session: Session, index: number) => ({
+          label: `${session.title || session.name}${session.id === currentSessionId ? ' ✅' : ''}`,
+          value: session.id,
+          description: `${new Date(session.lastActiveAt).toLocaleString('zh-CN')} | ${session.agentType || 'default'}`,
+        })),
+        default: defaultIndex,
+      });
+
+      if (selected.value !== currentSessionId) {
+        await sessionManager.switchSession(selected.value);
+        console.log(chalk.green(`\n✓ 已切换到会话: ${selected.label.replace(' ✅', '')}\n`));
+        console.log(chalk.gray('提示: 请重新启动 GG CODE 以加载该会话的历史记录\n'));
+      }
+
+      return { shouldContinue: false };
+    } catch (error: any) {
+      if (error.message?.includes('User force closed') || error.message?.includes('Esc')) {
+        console.log(chalk.gray('\n已取消切换\n'));
+      } else {
+        console.log(chalk.red(`\n✗ 选择失败: ${error.message}\n`));
+      }
+      return { shouldContinue: false };
+    } finally {
       resumeKeyListener();
     }
   }
@@ -512,14 +678,20 @@ export class CommandManager {
     args: string,
     context: CommandContext
   ): Promise<CommandResult> {
-    const { sessionManager, contextManager } = context;
+    const { sessionManager, pauseKeyListener } = context;
 
     if (!sessionManager) {
       console.log(chalk.red('✗ 会话管理器未初始化\n'));
       return { shouldContinue: false };
     }
 
-    const subCommand = args.trim() || 'status';
+    const subCommand = args.trim();
+
+    // 无参数时显示交互式会话选择
+    if (!subCommand || subCommand === 'list') {
+      return this.listSessions(sessionManager, pauseKeyListener);
+    }
+
     const [command, ...commandArgs] = subCommand.split(/\s+/);
 
     switch (command) {
@@ -541,7 +713,6 @@ export class CommandManager {
           }
         }
 
-        // 显示父会话和子会话
         if (currentSession?.parentID) {
           console.log(chalk.gray(`\n📍 父会话: ${currentSession.parentID.substring(0, 8)}...`));
         }
@@ -553,12 +724,7 @@ export class CommandManager {
           });
         }
 
-        console.log(chalk.gray(`\n  会话命令:`));
-        console.log(chalk.gray(`  /session list - 列出所有会话`));
-        console.log(chalk.gray(`  /session fork - Fork 当前会话`));
-        console.log(chalk.gray(`  /session rename <名称> - 重命名会话`));
-        console.log(chalk.gray(`  /session export - 导出会话`));
-        console.log(chalk.gray(`  /session import <json> - 导入会话`));
+        console.log(chalk.gray(`\n  输入 /session 切换会话`));
         console.log();
         return { shouldContinue: false };
       }
@@ -597,6 +763,40 @@ export class CommandManager {
           console.log();
         } catch (error) {
           console.log(chalk.red(`✗ Fork 失败: ${(error as Error).message}\n`));
+        }
+
+        return { shouldContinue: false };
+      }
+
+      case 'switch': {
+        const sessionIdOrIndex = commandArgs[0];
+        if (!sessionIdOrIndex) {
+          console.log(chalk.red('✗ 请提供会话 ID 或序号\n'));
+          console.log(chalk.gray('用法: /session switch <会话ID 或 序号>\n'));
+          return { shouldContinue: false };
+        }
+
+        const sessions = sessionManager.getAllSessions();
+        let targetSessionId: string | undefined;
+
+        if (/^\d+$/.test(sessionIdOrIndex)) {
+          const index = parseInt(sessionIdOrIndex, 10) - 1;
+          if (index < 0 || index >= sessions.length) {
+            console.log(chalk.red(`✗ 无效的序号，请使用 /session list 查看会话列表\n`));
+            return { shouldContinue: false };
+          }
+          targetSessionId = sessions[index].id;
+        } else {
+          targetSessionId = sessionIdOrIndex;
+        }
+
+        try {
+          await sessionManager.switchSession(targetSessionId!);
+          const switchedSession = sessionManager.getCurrentSession();
+          console.log(chalk.green(`✓ 已切换到会话: ${switchedSession?.title}\n`));
+          console.log(chalk.gray('提示: 切换会话后需要重新启动才能加载该会话的历史记录\n'));
+        } catch (error) {
+          console.log(chalk.red(`✗ 切换失败: ${(error as Error).message}\n`));
         }
 
         return { shouldContinue: false };
