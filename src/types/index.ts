@@ -195,6 +195,16 @@ export interface ToolResultMetadata extends Record<string, unknown> {
   endTime?: number;      // 结束时间戳
   duration?: number;     // 执行时长（毫秒）
   truncated?: boolean;   // 输出是否被截断
+  truncationFile?: string; // 截断后完整输出的存储路径
+  truncationStats?: {    // 截断统计信息
+    totalLines: number;
+    totalBytes: number;
+    keptLines: number;
+    keptBytes: number;
+    removedLines?: number;
+    removedBytes?: number;
+    truncateReason: 'lines' | 'bytes';
+  };
   attachments?: string[]; // 文件附件路径列表
   exitCode?: number;     // 退出码（用于命令工具）
   signal?: string;       // 中断信号（如果被中断）

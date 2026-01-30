@@ -33,7 +33,9 @@
       "Bash(npm run clean:release:*)",
       "Bash(du:*)",
       "Bash(find:*)",
-      "Bash(wc:*)"
+      "Bash(wc:*)",
+      "Bash(npx tsx:*)",
+      "Bash(cmd.exe:*)"
     ]
   }
 }

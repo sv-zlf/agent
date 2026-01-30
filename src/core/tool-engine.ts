@@ -1,7 +1,13 @@
 import type { ToolDefinition, ToolCall, ToolResult } from '../types';
 import { createLogger } from '../utils';
+import { truncateOutput, cleanupOldTruncationFiles } from '../utils/truncation';
 
 const logger = createLogger(true); // 启用debug模式用于工具引擎
+
+// 截断配置
+const TRUNCATE_ENABLED = true; // 是否启用智能截断
+const TRUNCATE_MAX_LINES = 2000; // 最大行数
+const TRUNCATE_MAX_BYTES = 50 * 1024; // 最大字节数 (50KB)
 
 // 默认工具超时时间（毫秒）
 const DEFAULT_TOOL_TIMEOUT = 30000; // 30秒
@@ -13,6 +19,19 @@ const MAX_TOOL_TIMEOUT = 120000; // 2分钟
 export class ToolEngine {
   private tools: Map<string, ToolDefinition> = new Map();
   private defaultToolTimeout: number = DEFAULT_TOOL_TIMEOUT;
+  private cleanupScheduled: boolean = false;
+
+  /**
+   * 初始化工具引擎（执行清理等初始化操作）
+   */
+  async initialize(): Promise<void> {
+    // 清理过期的截断文件
+    try {
+      await cleanupOldTruncationFiles();
+    } catch (error) {
+      logger.debug(`Failed to cleanup old truncation files: ${error}`);
+    }
+  }
 
   /**
    * 设置默认工具超时
@@ -198,16 +217,46 @@ export class ToolEngine {
           }
         }
 
+        // 应用智能截断（如果启用）
+        let finalOutput = result.output;
+        let truncationInfo: any = undefined;
+
+        if (TRUNCATE_ENABLED && finalOutput && result.success) {
+          try {
+            const truncateResult = await truncateOutput(finalOutput, {
+              maxLines: TRUNCATE_MAX_LINES,
+              maxBytes: TRUNCATE_MAX_BYTES,
+              direction: 'head', // 默认保留头部
+            });
+
+            if (truncateResult.truncated) {
+              finalOutput = truncateResult.content;
+              truncationInfo = {
+                truncated: true,
+                truncationFile: truncateResult.outputPath,
+                truncationStats: truncateResult.stats,
+              };
+              logger.debug(`Tool output truncated: ${truncateResult.outputPath}`);
+            } else {
+              truncationInfo = { truncated: false };
+            }
+          } catch (error) {
+            // 截断失败时保留原输出
+            logger.warning(`Failed to truncate tool output: ${error}`);
+            truncationInfo = { truncated: false, truncateError: String(error) };
+          }
+        }
+
         // 增强返回结果的元数据
         return {
           ...result,
+          output: finalOutput,
           metadata: {
             ...(result.metadata || {}),
             startTime,
             endTime,
             duration,
-            // 检测输出是否被截断（默认限制 2000 字符）
-            truncated: result.output ? result.output.length >= 2000 : undefined,
+            ...truncationInfo,
           },
         };
       } catch (error: any) {
