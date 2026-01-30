@@ -7,8 +7,8 @@ import { createAPIAdapter } from '../api';
 import { createToolEngine, createContextManager } from '../core';
 import { getInterruptManager } from '../core/interrupt';
 import { getAgentManager } from '../core/agent';
-import { createSessionManager } from '../core/session-manager';
-import { builtinTools, enhancedBuiltinTools } from '../tools';
+import { createSimpleSessionManager, createFunctionalAgentManager } from '../core';
+import { getBuiltinTools } from '../tools';
 import { createLogger } from '../utils';
 import { displayBanner } from '../utils/logo';
 import { createCommandManager } from './slash-commands';
@@ -41,24 +41,24 @@ export const agentCommand = new Command('agent')
     // 创建核心组件
     const apiAdapter = createAPIAdapter(config.getAPIConfig());
     const toolEngine = createToolEngine();
+    const functionalAgentManager = createFunctionalAgentManager(apiAdapter);
 
-    // 注册所有内置工具（使用增强版本）
-    // 增强版本包含：
-    // - Read: 智能文件检测、二进制文件拦截、相似文件建议
-    // - Edit: 参数验证、相似字符串提示、替换次数统计
-    // - Bash: 危险命令拦截、退出码记录
-    toolEngine.registerTools(enhancedBuiltinTools);
+    // 注册所有内置工具
+    // 使用新工具系统（Zod schema + 智能截断）
+    const tools = await getBuiltinTools();
+    toolEngine.registerTools(tools);
 
-    // 创建会话管理器（使用系统根目录 .ggcode）
-    const sessionManager = createSessionManager();
+    // 创建简化的会话管理器（单一会话模式）
+    const sessionManager = createSimpleSessionManager();
     await sessionManager.initialize();
 
-    // 获取或创建当前会话
-    let currentSession = sessionManager.getCurrentSession();
-    if (!currentSession) {
-      // 创建新的默认会话
-      currentSession = await sessionManager.createSession('默认会话', options.agent || 'default');
+    // 设置 agent 类型
+    if (options.agent) {
+      sessionManager.setAgent(options.agent);
     }
+
+    // 获取当前会话（始终存在）
+    const currentSession = sessionManager.getCurrentSession();
 
     const agentConfig = config.getAgentConfig();
     const contextManager = createContextManager(
@@ -447,6 +447,46 @@ export const agentCommand = new Command('agent')
           // 添加用户消息到上下文
           contextManager.addMessage('user', input);
 
+          // 检查是否需要生成标题（第一次对话）
+          const messageHistory = contextManager.getContext();
+          const userMessages = messageHistory.filter((m: any) => m.role === 'user');
+
+          // 只在第一条用户消息时生成标题和摘要
+          if (userMessages.length === 1 && options.history) {
+            // 异步生成标题
+            try {
+              functionalAgentManager.generateTitle(messageHistory)
+                .then((result) => {
+                  if (result.success && result.output) {
+                    // 更新会话标题（暂时使用 agent 字段存储）
+                    sessionManager.setAgent(result.output);
+                    console.log(chalk.gray(`📌 生成标题: ${result.output}\n`));
+                  }
+                })
+                .catch((error) => {
+                  console.error(chalk.gray(`标题生成失败: ${(error as Error).message}`));
+                });
+            } catch (error) {
+              // 忽略标题生成错误
+            }
+
+            // 异步生成摘要
+            try {
+              functionalAgentManager.summarize(messageHistory)
+                .then((result) => {
+                  if (result.success && result.output) {
+                    // 可以将摘要保存到会话元数据
+                    console.log(chalk.gray(`📝 已生成对话摘要\n`));
+                  }
+                })
+                .catch((error) => {
+                  console.error(chalk.gray(`摘要生成失败: ${(error as Error).message}`));
+                });
+            } catch (error) {
+              // 忽略摘要生成错误
+            }
+          }
+
           // 每次新的用户输入时，重置所有状态
           if (!options.yes) {
             autoApproveAll = false;
@@ -471,7 +511,37 @@ export const agentCommand = new Command('agent')
 
             try {
               // 获取当前上下文并调用AI
-              const messages = contextManager.getContext();
+              let messages = contextManager.getContext();
+
+              // 检查上下文大小，如果过大则触发压缩
+              const agentConfig = config.getAgentConfig();
+              const maxTokens = agentConfig.max_context_tokens;
+              const estimatedTokens = contextManager.estimateTokens();
+
+              // 如果上下文超过最大 tokens 的 80%，触发压缩
+              if (estimatedTokens > maxTokens * 0.8) {
+                console.log(chalk.yellow(`\n⚠️  上下文过大 (${estimatedTokens}/${maxTokens} tokens)，触发压缩...\n`));
+
+                try {
+                  const compactResult = await functionalAgentManager.compact(messages);
+                  if (compactResult.success && compactResult.output) {
+                    // 清空上下文并添加压缩后的摘要
+                    contextManager.clearContext();
+
+                    // 将压缩摘要添加到系统提示词
+                    const currentSystemPrompt = systemPrompt || '你是一个 AI 编程助手。';
+                    const newSystemPrompt = `${currentSystemPrompt}\n\n## 对话摘要\n${compactResult.output}`;
+                    contextManager.setSystemPrompt(newSystemPrompt);
+
+                    console.log(chalk.green(`✓ 上下文已压缩\n`));
+
+                    // 重新获取消息
+                    messages = contextManager.getContext();
+                  }
+                } catch (compactError) {
+                  console.log(chalk.yellow(`压缩失败，继续使用原上下文: ${(compactError as Error).message}\n`));
+                }
+              }
 
               // 开始新操作，获取 abort signal
               const abortSignal = interruptManager.startOperation();
@@ -699,6 +769,31 @@ export const agentCommand = new Command('agent')
               // 将错误信息添加到上下文，让AI知道发生了什么
               contextManager.addMessage('user', `\n\n执行过程中发生错误: ${(roundError as Error).message}`);
               break; // 出错后退出工具调用循环
+            }
+          }
+
+          // 达到最大迭代次数 - 添加 max-steps 警告
+          if (currentRound >= maxToolRounds) {
+            console.log(chalk.yellow(`\n⚠️  已达到最大迭代次数 (${maxToolRounds})`));
+
+            // 添加 max-steps 警告到上下文
+            try {
+              const maxStepsWarning = await functionalAgentManager.getMaxStepsWarning();
+
+              // 将 max-steps 警告作为用户消息添加
+              contextManager.addMessage('user', maxStepsWarning);
+
+              // 进行最后一次 API 调用，让 AI 生成总结
+              console.log(chalk.gray('📝 正在生成任务总结...\n'));
+
+              const finalMessages = contextManager.getContext();
+              const finalResponse = await apiAdapter.chat(finalMessages);
+
+              contextManager.addMessage('assistant', finalResponse);
+              console.log(chalk.green('AI 总结:'), finalResponse);
+              console.log();
+            } catch (error) {
+              console.log(chalk.red(`生成总结失败: ${(error as Error).message}\n`));
             }
           }
 

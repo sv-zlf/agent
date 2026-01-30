@@ -90,17 +90,9 @@ export interface AgentConfig {
   api: APIConfig;
   agent: {
     max_context_tokens: number;
-    backup_before_edit: boolean;
-    backup_dir: string;
-    max_file_size: number;
     max_history: number;
     max_iterations?: number;
     auto_approve?: boolean;
-  };
-  prompts: {
-    system: string;
-    code_edit: string;
-    agent_mode?: string;
   };
 }
 

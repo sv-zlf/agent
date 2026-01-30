@@ -5,6 +5,7 @@ import { ChatAPIAdapter } from '../api';
 import { ContextManager } from './context-manager';
 import { SessionStateManager, SessionState } from './session-state';
 import { PermissionManager, PermissionAction, type PermissionRequest } from './permissions';
+import { FunctionalAgentManager } from './functional-agents';
 import { createLogger } from '../utils';
 
 const logger = createLogger(true);
@@ -40,6 +41,7 @@ export class AgentOrchestrator {
   private toolCallStartTime: Map<string, number> = new Map(); // 跟踪工具调用开始时间
   private stateManager: SessionStateManager; // 会话状态管理器
   private permissionManager: PermissionManager; // 权限管理器
+  private functionalAgentManager?: FunctionalAgentManager; // 功能性 Agent 管理器
 
   constructor(
     apiAdapter: ChatAPIAdapter,
@@ -47,7 +49,8 @@ export class AgentOrchestrator {
     contextManager: ContextManager,
     config: AgentExecutionConfig,
     stateManager?: SessionStateManager,
-    permissionManager?: PermissionManager
+    permissionManager?: PermissionManager,
+    functionalAgentManager?: FunctionalAgentManager
   ) {
     this.apiAdapter = apiAdapter;
     this.toolEngine = toolEngine;
@@ -55,6 +58,7 @@ export class AgentOrchestrator {
     this.config = config;
     this.stateManager = stateManager || new SessionStateManager();
     this.permissionManager = permissionManager || new PermissionManager();
+    this.functionalAgentManager = functionalAgentManager;
 
     // 启用增强消息模式
     contextManager.enableEnhancedMessages();
@@ -183,8 +187,32 @@ export class AgentOrchestrator {
         }
       }
 
-      // 达到最大迭代次数
+      // 达到最大迭代次数 - 添加 max-steps 提示
       this.stateManager.setState(SessionState.COMPLETED, `达到最大迭代次数 (${this.config.maxIterations})`);
+
+      // 如果有功能性 Agent 管理器，添加 max-steps 警告
+      if (this.functionalAgentManager) {
+        const maxStepsWarning = await this.functionalAgentManager.getMaxStepsWarning();
+
+        // 获取当前上下文并添加 max-steps 警告作为用户消息
+        const currentContext = this.contextManager.getContext();
+        const messagesWithWarning = [
+          ...currentContext,
+          { role: 'user' as const, content: maxStepsWarning }
+        ];
+
+        // 进行最后一次 API 调用，让 AI 生成总结
+        const response = await this.apiAdapter.chat(messagesWithWarning);
+
+        this.contextManager.addMessage('assistant', response);
+
+        return {
+          success: true,
+          iterations: context.iteration,
+          toolCallsExecuted: context.toolCalls.length,
+          finalAnswer: response,
+        };
+      }
 
       return {
         success: true,
@@ -717,14 +745,14 @@ export class AgentManager {
     const fs = await import('fs/promises');
     const path = await import('path');
 
-    const promptFile = path.join(process.cwd(), 'prompts', `${agentName}.txt`);
+    const promptFile = path.join(process.cwd(), 'src/tools/prompts', `${agentName}.txt`);
 
     try {
       const content = await fs.readFile(promptFile, 'utf-8');
       return content;
     } catch (error) {
       // 如果找不到文件，使用默认提示词
-      const defaultPromptFile = path.join(process.cwd(), 'prompts', 'default.txt');
+      const defaultPromptFile = path.join(process.cwd(), 'src/tools/prompts', 'default.txt');
       try {
         const content = await fs.readFile(defaultPromptFile, 'utf-8');
         return content;

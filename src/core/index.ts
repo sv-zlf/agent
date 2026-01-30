@@ -25,3 +25,12 @@ export {
   SessionManager,
   createSessionManager,
 } from './session-manager';
+export {
+  SimpleSessionManager,
+  createSimpleSessionManager,
+} from './simple-session';
+export {
+  FunctionalAgentManager,
+  createFunctionalAgentManager,
+  FunctionalAgentType,
+} from './functional-agents';

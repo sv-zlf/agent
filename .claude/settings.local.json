@@ -35,7 +35,8 @@
       "Bash(find:*)",
       "Bash(wc:*)",
       "Bash(npx tsx:*)",
-      "Bash(cmd.exe:*)"
+      "Bash(cmd.exe:*)",
+      "Bash(./node_modules/.bin/tsc.cmd:*)"
     ]
   }
 }

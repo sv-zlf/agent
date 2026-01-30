@@ -9,7 +9,6 @@ import * as path from 'path';
 import chalk from 'chalk';
 import { getConfig } from '../config';
 import type { Message } from '../types';
-import type { Session } from '../core/session-manager';
 import { select, confirm, question, multiSelect, type SelectOption, getConfigPath } from '../utils';
 
 /**
@@ -519,183 +518,20 @@ export class CommandManager {
       return { shouldContinue: false };
     }
 
-    // 解析子命令
-    const parts = args.trim().split(/\s+/);
-    const subCommand = parts[0] || 'list';
+    // 简化版本：只显示会话状态
+    const currentSession = sessionManager.getCurrentSession();
+    const agent = currentSession?.agent || 'default';
 
-    switch (subCommand) {
-      case 'new':
-        return this.handleNewSession(parts.slice(1).join(' '), sessionManager, contextManager);
-      case 'list':
-        return this.handleListSessions(sessionManager);
-      case 'switch':
-        return this.handleSwitchSession(parts[1], sessionManager, contextManager);
-      case 'delete':
-        return this.handleDeleteSession(parts[1], sessionManager);
-      default:
-        console.log(chalk.yellow('\n📋 会话管理命令:\n'));
-        console.log(chalk.gray('  /session new [名称]     - 创建新会话'));
-        console.log(chalk.gray('  /session list           - 列出所有会话'));
-        console.log(chalk.gray('  /session switch <id>    - 切换到指定会话'));
-        console.log(chalk.gray('  /session delete <id>    - 删除指定会话'));
-        console.log();
-        return { shouldContinue: false };
-    }
-  }
-
-  /**
-   * 创建新会话
-   */
-  private async handleNewSession(
-    name: string,
-    sessionManager: any,
-    contextManager: any
-  ): Promise<CommandResult> {
-    const sessionName = name.trim() || `会话 ${new Date().toLocaleString('zh-CN')}`;
-    const newSession = await sessionManager.createSession(sessionName, 'default');
-
-    // 更新 contextManager 的会话ID
-    if (contextManager) {
-      contextManager.setSessionId(newSession.id);
-      contextManager.clearContext();
-    }
-
-    console.log(chalk.green(`✓ 已创建新会话:`));
-    console.log(chalk.gray(`  ID: ${newSession.id}`));
-    console.log(chalk.gray(`  名称: ${newSession.name}`));
+    console.log(chalk.cyan('\n📋 会话状态:\n'));
+    console.log(chalk.gray(`  当前会话: ${currentSession?.title || 'Default Session'}`));
+    console.log(chalk.gray(`  Agent 类型: ${agent}`));
+    console.log(chalk.gray(`  会话 ID: ${currentSession?.id || 'default'}`));
+    console.log(chalk.gray(`\n  使用 /agent <类型> 切换 agent`));
     console.log();
 
     return { shouldContinue: false };
   }
 
-  /**
-   * 列出所有会话
-   */
-  private async handleListSessions(sessionManager: any): Promise<CommandResult> {
-    const sessions = sessionManager.getAllSessions();
-    const currentSession = sessionManager.getCurrentSession();
-
-    console.log(chalk.cyan('\n📋 所有会话:\n'));
-
-    if (sessions.length === 0) {
-      console.log(chalk.gray('  (暂无会话)\n'));
-      return { shouldContinue: false };
-    }
-
-    for (const session of sessions) {
-      const isCurrent = currentSession && session.id === currentSession.id;
-      const prefix = isCurrent ? chalk.green('→ ') : '  ';
-      const nameDisplay = isCurrent ? chalk.green(session.name) : session.name;
-      const time = new Date(session.lastActiveAt).toLocaleString('zh-CN');
-
-      console.log(`${prefix}${nameDisplay}`);
-      console.log(chalk.gray(`    ID: ${session.id.substring(0, 8)}...`));
-      console.log(chalk.gray(`    最后活跃: ${time}`));
-      console.log();
-    }
-
-    return { shouldContinue: false };
-  }
-
-  /**
-   * 切换会话
-   */
-  private async handleSwitchSession(
-    sessionId: string,
-    sessionManager: any,
-    contextManager: any
-  ): Promise<CommandResult> {
-    if (!sessionId) {
-      console.log(chalk.red('✗ 请指定会话 ID\n'));
-      console.log(chalk.gray('使用方法: /session switch <会话ID>'));
-      console.log(chalk.gray('提示: 使用 /session list 查看所有会话'));
-      console.log();
-      return { shouldContinue: false };
-    }
-
-    try {
-      // 支持短ID（前8位）或完整ID
-      const sessions = sessionManager.getAllSessions();
-      const targetSession = sessions.find((s: Session) =>
-        s.id === sessionId || s.id.startsWith(sessionId)
-      );
-
-      if (!targetSession) {
-        console.log(chalk.red(`✗ 会话不存在: ${sessionId}\n`));
-        return { shouldContinue: false };
-      }
-
-      await sessionManager.switchSession(targetSession.id);
-
-      // 更新 contextManager 的会话ID并清空上下文
-      if (contextManager) {
-        contextManager.setSessionId(targetSession.id);
-        contextManager.clearContext();
-      }
-
-      console.log(chalk.green(`✓ 已切换到会话:`));
-      console.log(chalk.gray(`  名称: ${targetSession.name}`));
-      console.log(chalk.gray(`  ID: ${targetSession.id}`));
-      console.log();
-
-      return {
-        shouldContinue: false,
-        message: `已切换到会话: ${targetSession.name}`,
-      };
-    } catch (error) {
-      console.log(chalk.red(`✗ 切换会话失败: ${(error as Error).message}\n`));
-      return { shouldContinue: false };
-    }
-  }
-
-  /**
-   * 删除会话
-   */
-  private async handleDeleteSession(
-    sessionId: string,
-    sessionManager: any
-  ): Promise<CommandResult> {
-    if (!sessionId) {
-      console.log(chalk.red('✗ 请指定会话 ID\n'));
-      console.log(chalk.gray('使用方法: /session delete <会话ID>'));
-      console.log(chalk.gray('提示: 使用 /session list 查看所有会话'));
-      console.log();
-      return { shouldContinue: false };
-    }
-
-    try {
-      // 支持短ID（前8位）或完整ID
-      const sessions = sessionManager.getAllSessions();
-      const targetSession = sessions.find((s: Session) =>
-        s.id === sessionId || s.id.startsWith(sessionId)
-      );
-
-      if (!targetSession) {
-        console.log(chalk.red(`✗ 会话不存在: ${sessionId}\n`));
-        return { shouldContinue: false };
-      }
-
-      const currentSession = sessionManager.getCurrentSession();
-      const isCurrent = currentSession && targetSession.id === currentSession.id;
-
-      await sessionManager.deleteSession(targetSession.id);
-
-      console.log(chalk.green(`✓ 已删除会话:`));
-      console.log(chalk.gray(`  名称: ${targetSession.name}`));
-      console.log(chalk.gray(`  ID: ${targetSession.id}`));
-
-      if (isCurrent) {
-        console.log(chalk.yellow('  注意: 已删除当前会话，已自动切换到其他会话'));
-      }
-
-      console.log();
-
-      return { shouldContinue: false };
-    } catch (error) {
-      console.log(chalk.red(`✗ 删除会话失败: ${(error as Error).message}\n`));
-      return { shouldContinue: false };
-    }
-  }
 
   /**
    * /compress 命令处理器 - 压缩管理

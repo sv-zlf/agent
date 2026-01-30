@@ -1,4 +1,3 @@
-import * as yaml from 'js-yaml';
 import * as fs from 'fs-extra';
 import * as path from 'path';
 import * as os from 'os';
@@ -27,17 +26,9 @@ const DEFAULT_CONFIG: AgentConfig = {
   },
   agent: {
     max_context_tokens: 8000,
-    backup_before_edit: true,
-    backup_dir: './backups',
-    max_file_size: 1048576, // 1MB
     max_history: 10,
     max_iterations: 10,
     auto_approve: false,
-  },
-  prompts: {
-    system: './prompts/system.txt',
-    code_edit: './prompts/code-edit.txt',
-    agent_mode: './prompts/agent.txt',
   },
 };
 
@@ -46,10 +37,8 @@ const DEFAULT_CONFIG: AgentConfig = {
  */
 export class ConfigManager {
   private config: AgentConfig;
-  private configPath: string;
 
-  constructor(configPath: string = './config/config.yaml') {
-    this.configPath = configPath;
+  constructor() {
     this.config = DEFAULT_CONFIG;
     this.loadEnv();
   }
@@ -75,21 +64,14 @@ export class ConfigManager {
     try {
       if (fsSync.existsSync(userConfigPath)) {
         const content = fsSync.readFileSync(userConfigPath, 'utf-8');
-        const userConfig = JSON.parse(content);
+        const userConfig = JSON.parse(content) as Partial<AgentConfig>;
 
-        // 优先使用用户配置中的模型
-        if (userConfig.api && userConfig.api.model) {
-          this.config.api.model = userConfig.api.model;
-        }
-
-        // 合并 model_config 参数（如果有的话）
-        if (userConfig.model_config) {
-          // 可以在这里处理其他模型参数
-        }
+        // 完整合并用户配置
+        this.config = this.mergeConfig(this.config, userConfig);
       }
     } catch (error) {
-      // 用户配置文件读取失败，忽略错误
-      console.warn(`警告: 无法读取用户配置文件: ${(error as Error).message}`);
+      // 用户配置文件读取失败，忽略错误，使用默认配置
+      console.warn(`警告: 无法读取用户配置文件，使用默认配置: ${(error as Error).message}`);
     }
   }
 
@@ -98,16 +80,7 @@ export class ConfigManager {
    */
   async load(): Promise<void> {
     try {
-      // 首先加载项目配置文件（config/config.yaml）
-      if (await fs.pathExists(this.configPath)) {
-        const content = await fs.readFile(this.configPath, 'utf-8');
-        const loaded = yaml.load(content) as Partial<AgentConfig>;
-
-        // 合并配置（深层合并）
-        this.config = this.mergeConfig(DEFAULT_CONFIG, loaded);
-      }
-
-      // 然后加载用户配置（优先级更高）
+      // 只加载用户配置文件（~/.ggcode/config.json）
       this.loadUserConfig();
     } catch (error) {
       throw new Error(`配置文件加载失败: ${(error as Error).message}`);
@@ -115,22 +88,24 @@ export class ConfigManager {
   }
 
   /**
-   * 保存配置文件
+   * 保存配置文件（保存到 ~/.ggcode/config.json）
    */
   async save(config?: Partial<AgentConfig>): Promise<void> {
     const toSave = config ? this.mergeConfig(this.config, config) : this.config;
 
     try {
+      const userConfigPath = getUserConfigPath();
+
       // 确保目录存在
-      const dir = path.dirname(this.configPath);
+      const dir = path.dirname(userConfigPath);
       await fs.ensureDir(dir);
 
-      // 写入配置文件
-      const content = yaml.dump(toSave, { indent: 2 });
-      await fs.writeFile(this.configPath, content, 'utf-8');
+      // 写入配置文件（JSON 格式）
+      const content = JSON.stringify(toSave, null, 2);
+      await fs.writeFile(userConfigPath, content, 'utf-8');
 
       // 更新当前配置
-      this.config = this.mergeConfig(this.config, toSave);
+      this.config = toSave;
     } catch (error) {
       throw new Error(`配置文件保存失败: ${(error as Error).message}`);
     }
@@ -180,7 +155,6 @@ export class ConfigManager {
     return {
       api: { ...base.api, ...override.api },
       agent: { ...base.agent, ...override.agent },
-      prompts: { ...base.prompts, ...override.prompts },
     };
   }
 
@@ -222,9 +196,9 @@ let configInstance: ConfigManager | null = null;
 /**
  * 获取配置实例
  */
-export function getConfig(configPath?: string): ConfigManager {
+export function getConfig(): ConfigManager {
   if (!configInstance) {
-    configInstance = new ConfigManager(configPath);
+    configInstance = new ConfigManager();
   }
   return configInstance;
 }

@@ -1,11 +1,13 @@
 import { Command } from 'commander';
 import * as fs from 'fs-extra';
+import * as path from 'path';
 import readline from 'readline';
 import chalk from 'chalk';
 import ora = require('ora');
 import { getConfig } from '../config';
 import { createAPIAdapter } from '../api';
 import { createContextManager } from '../core';
+import { getAgentManager } from '../core/agent';
 import { createLogger } from '../utils';
 import type { Message } from '../types';
 
@@ -47,11 +49,14 @@ export const chatCommand = new Command('chat')
     if (options.system) {
       context.setSystemPrompt(options.system);
     } else {
-      // 尝试从文件加载默认系统提示词
-      const systemPromptPath = config.get('prompts').system;
-      if (await fs.pathExists(systemPromptPath)) {
-        const systemPrompt = await fs.readFile(systemPromptPath, 'utf-8');
+      // 从文件加载默认系统提示词
+      try {
+        const agentManager = getAgentManager();
+        const systemPrompt = await agentManager.loadAgentPrompt('default');
         context.setSystemPrompt(systemPrompt);
+      } catch (error) {
+        // 如果加载失败，使用简单的默认提示词
+        context.setSystemPrompt('你是一个 AI 编程助手，可以帮助用户完成编程任务。');
       }
     }
 

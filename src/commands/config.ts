@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import * as fs from 'fs-extra';
 import * as path from 'path';
+import * as os from 'os';
 import chalk from 'chalk';
 import { getConfig } from '../config';
 import { createLogger } from '../utils';
@@ -33,32 +34,33 @@ async function showConfig(): Promise<void> {
   const agentConfig = config.getAgentConfig();
   console.log('\nAgent配置:');
   console.log(`  最大上下文: ${agentConfig.max_context_tokens} tokens`);
-  console.log(`  备份目录: ${agentConfig.backup_dir}`);
-  console.log(`  最大文件大小: ${(agentConfig.max_file_size / 1024 / 1024).toFixed(2)}MB`);
   console.log(`  最大历史: ${agentConfig.max_history} 轮`);
+  console.log(`  最大迭代次数: ${agentConfig.max_iterations || 10}`);
+  console.log(`  自动批准: ${agentConfig.auto_approve ? '是' : '否'}`);
 }
 
 // 初始化配置
 configCommand
   .command('init')
-  .description('初始化配置文件')
+  .description('初始化配置文件（保存到 ~/.ggcode/config.json）')
   .option('-f, --force', '覆盖已存在的配置文件')
   .action(async (options) => {
-    const configPath = './config/config.yaml';
-    const config = getConfig(configPath);
+    const config = getConfig();
+    const userConfigPath = path.join(os.homedir(), '.ggcode', 'config.json');
 
     // 检查配置文件是否已存在
-    if (await fs.pathExists(configPath)) {
+    if (await fs.pathExists(userConfigPath)) {
       if (!options.force) {
-        logger.warning(`配置文件已存在: ${configPath}`);
+        logger.warning(`配置文件已存在: ${userConfigPath}`);
         logger.info('使用 --force 选项覆盖现有配置');
         return;
       }
     }
 
     try {
+      await config.load();
       await config.save();
-      logger.success(`配置文件已创建: ${configPath}`);
+      logger.success(`配置文件已创建: ${userConfigPath}`);
       logger.info('你可以根据需要修改配置文件');
     } catch (error) {
       logger.error(`创建配置文件失败: ${(error as Error).message}`);
