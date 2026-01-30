@@ -126,14 +126,17 @@ export const agentCommand = new Command('agent')
       }
     }
 
-    // 获取当前会话
-    const currentSession = sessionManager.getCurrentSession();
+    // 确保有当前会话
+    let currentSession = sessionManager.getCurrentSession();
+    if (!currentSession) {
+      currentSession = await sessionManager.createSession('Default Session', 'default');
+    }
 
     const agentConfig = config.getAgentConfig();
     const contextManager = createContextManager(
       agentConfig.max_history,
       agentConfig.max_context_tokens,
-      currentSession?.historyFile
+      currentSession.historyFile
     );
 
     // 加载历史记录
@@ -180,6 +183,20 @@ export const agentCommand = new Command('agent')
       });
     };
 
+    // 清空输入缓冲区
+    const flushInput = () => {
+      try {
+        if (process.stdin.isRaw) {
+          process.stdin.setRawMode(false);
+        }
+        while (process.stdin.readableLength > 0) {
+          process.stdin.read();
+        }
+      } catch (e) {
+        // 忽略错误
+      }
+    };
+
     // 按键监听器变量
     let keyListener: any = null;
     let interruptKeyListener: any = null;
@@ -207,6 +224,7 @@ export const agentCommand = new Command('agent')
             // 清空输入缓冲区 - 延迟执行，避免在监听器内部操作
             setImmediate(() => {
               try {
+                flushInput();
                 recreateReadline();
                 setupInterruptKey();
               } catch (e) {

@@ -56,13 +56,7 @@ npm run build
 
 ## 🚀 快速开始
 
-### 1. 初始化配置
-
-```bash
-npm run dev config init
-```
-
-### 2. 启动 GG CODE
+### 启动 GG CODE
 
 ```bash
 npm run agent
@@ -75,7 +69,19 @@ npm run agent -- -y    # 自动批准所有工具调用
 npm run agent -- -a explore  # 使用 explore agent (只读模式)
 ```
 
-### 3. 开始使用
+### 配置说明
+
+配置文件位于 `~/.ggcode/config.json`，首次运行会自动创建默认配置。
+
+**配置项：**
+- `api.base_url` - API 基础 URL
+- `api.model` - 使用的模型名称
+- `agent.max_context_tokens` - 最大上下文 tokens (默认 8000)
+- `agent.max_history` - 最大历史轮数 (默认 20)
+- `agent.max_iterations` - 最大迭代次数 (默认 20)
+- `agent.auto_approve` - 自动批准工具调用 (默认 false)
+
+### 开始使用
 
 启动后，你将看到 GG CODE 的启动界面：
 

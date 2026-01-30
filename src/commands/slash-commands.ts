@@ -10,6 +10,7 @@ import chalk from 'chalk';
 import { getConfig } from '../config';
 import type { Message } from '../types';
 import { select, confirm, question, multiSelect, type SelectOption, getConfigPath } from '../utils';
+import type { Session } from '../core/session-manager';
 
 /**
  * 命令处理结果
@@ -518,18 +519,158 @@ export class CommandManager {
       return { shouldContinue: false };
     }
 
-    // 简化版本：只显示会话状态
-    const currentSession = sessionManager.getCurrentSession();
-    const agent = currentSession?.agent || 'default';
+    const subCommand = args.trim() || 'status';
+    const [command, ...commandArgs] = subCommand.split(/\s+/);
 
-    console.log(chalk.cyan('\n📋 会话状态:\n'));
-    console.log(chalk.gray(`  当前会话: ${currentSession?.title || 'Default Session'}`));
-    console.log(chalk.gray(`  Agent 类型: ${agent}`));
-    console.log(chalk.gray(`  会话 ID: ${currentSession?.id || 'default'}`));
-    console.log(chalk.gray(`\n  使用 /agent <类型> 切换 agent`));
-    console.log();
+    switch (command) {
+      case 'status': {
+        const currentSession = sessionManager.getCurrentSession();
+        const agent = currentSession?.agentType || 'default';
 
-    return { shouldContinue: false };
+        console.log(chalk.cyan('\n📋 会话状态:\n'));
+        console.log(chalk.gray(`  当前会话: ${currentSession?.title || 'Default Session'}`));
+        console.log(chalk.gray(`  Agent 类型: ${agent}`));
+        console.log(chalk.gray(`  会话 ID: ${currentSession?.id || 'default'}`));
+
+        if (currentSession?.stats) {
+          console.log(chalk.gray(`\n📊 统计信息:`));
+          console.log(chalk.gray(`  消息数: ${currentSession.stats.totalMessages}`));
+          console.log(chalk.gray(`  工具调用: ${currentSession.stats.toolCalls}`));
+          if (currentSession.stats.modifiedFiles.length > 0) {
+            console.log(chalk.gray(`  修改文件: ${currentSession.stats.modifiedFiles.length}`));
+          }
+        }
+
+        // 显示父会话和子会话
+        if (currentSession?.parentID) {
+          console.log(chalk.gray(`\n📍 父会话: ${currentSession.parentID.substring(0, 8)}...`));
+        }
+        const children = sessionManager.getChildSessions(currentSession?.id || '');
+        if (children.length > 0) {
+          console.log(chalk.gray(`\n🌿 子会话 (${children.length}):`));
+          children.forEach((child: Session) => {
+            console.log(chalk.gray(`  - ${child.title} (${child.id.substring(0, 8)}...)`));
+          });
+        }
+
+        console.log(chalk.gray(`\n  会话命令:`));
+        console.log(chalk.gray(`  /session list - 列出所有会话`));
+        console.log(chalk.gray(`  /session fork - Fork 当前会话`));
+        console.log(chalk.gray(`  /session rename <名称> - 重命名会话`));
+        console.log(chalk.gray(`  /session export - 导出会话`));
+        console.log(chalk.gray(`  /session import <json> - 导入会话`));
+        console.log();
+        return { shouldContinue: false };
+      }
+
+      case 'list': {
+        const sessions = sessionManager.getAllSessions();
+        console.log(chalk.cyan(`\n📋 所有会话 (${sessions.length}):\n`));
+
+        sessions.forEach((session: Session, index: number) => {
+          const isCurrent = session.id === sessionManager.getCurrentSession()?.id;
+          const marker = isCurrent ? chalk.cyan('→') : ' ';
+          const title = session.title || session.name;
+          const date = new Date(session.lastActiveAt).toLocaleString('zh-CN');
+
+          console.log(`${marker} ${chalk.bold(`${index + 1}. ${title}`)}`);
+          console.log(chalk.gray(`   ID: ${session.id.substring(0, 12)}...`));
+          console.log(chalk.gray(`   活跃: ${date}`));
+
+          if (session.parentID) {
+            console.log(chalk.gray(`   父会话: ${session.parentID.substring(0, 8)}...`));
+          }
+          console.log();
+        });
+
+        return { shouldContinue: false };
+      }
+
+      case 'fork': {
+        console.log(chalk.cyan('\n🌿 Fork 当前会话...\n'));
+
+        try {
+          const newSession = await sessionManager.forkSession();
+          console.log(chalk.green(`✓ Fork 成功!`));
+          console.log(chalk.gray(`  新会话: ${newSession.title}`));
+          console.log(chalk.gray(`  ID: ${newSession.id}`));
+          console.log();
+        } catch (error) {
+          console.log(chalk.red(`✗ Fork 失败: ${(error as Error).message}\n`));
+        }
+
+        return { shouldContinue: false };
+      }
+
+      case 'rename': {
+        const newName = commandArgs.join(' ');
+        if (!newName) {
+          console.log(chalk.red('✗ 请提供新名称\n'));
+          console.log(chalk.gray('用法: /session rename <新名称>\n'));
+          return { shouldContinue: false };
+        }
+
+        const currentSession = sessionManager.getCurrentSession();
+        if (!currentSession) {
+          console.log(chalk.red('✗ 没有当前会话\n'));
+          return { shouldContinue: false };
+        }
+
+        try {
+          await sessionManager.renameSession(currentSession.id, newName);
+          console.log(chalk.green(`✓ 会话已重命名: ${newName}\n`));
+        } catch (error) {
+          console.log(chalk.red(`✗ 重命名失败: ${(error as Error).message}\n`));
+        }
+
+        return { shouldContinue: false };
+      }
+
+      case 'export': {
+        const currentSession = sessionManager.getCurrentSession();
+        if (!currentSession) {
+          console.log(chalk.red('✗ 没有当前会话\n'));
+          return { shouldContinue: false };
+        }
+
+        try {
+          const jsonData = await sessionManager.exportSession(currentSession.id);
+          console.log(chalk.green(`✓ 会话已导出:\n`));
+          console.log(chalk.gray(jsonData));
+          console.log();
+        } catch (error) {
+          console.log(chalk.red(`✗ 导出失败: ${(error as Error).message}\n`));
+        }
+
+        return { shouldContinue: false };
+      }
+
+      case 'import': {
+        const jsonData = commandArgs.join(' ');
+        if (!jsonData) {
+          console.log(chalk.red('✗ 请提供 JSON 数据\n'));
+          console.log(chalk.gray('用法: /session import \'{"info":{...}, "messages":[...]}\'\n'));
+          return { shouldContinue: false };
+        }
+
+        try {
+          const newSession = await sessionManager.importSession(jsonData);
+          console.log(chalk.green(`✓ 会话已导入`));
+          console.log(chalk.gray(`  名称: ${newSession.title}`));
+          console.log(chalk.gray(`  ID: ${newSession.id}`));
+          console.log();
+        } catch (error) {
+          console.log(chalk.red(`✗ 导入失败: ${(error as Error).message}\n`));
+        }
+
+        return { shouldContinue: false };
+      }
+
+      default:
+        console.log(chalk.red(`✗ 未知的命令: ${command}\n`));
+        console.log(chalk.gray('可用命令: status, list, fork, rename, export, import\n'));
+        return { shouldContinue: false };
+    }
   }
 
 

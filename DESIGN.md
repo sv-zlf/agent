@@ -176,9 +176,8 @@ agent/
 │   │   ├── logger.ts               # 日志工具
 │   │   └── diff.ts                 # 差异对比
 │   ├── commands/
-│   │   ├── chat.ts                 # chat命令
-│   │   ├── edit.ts                 # edit命令
-│   │   └── search.ts               # search命令
+│   │   ├── agent.ts                # agent命令（主命令）
+│   │   └── slash-commands.ts       # 斜杠命令（内置命令）
 │   └── types/
 │       └── index.ts                # 全局类型定义
 ├── prompts/
@@ -286,11 +285,11 @@ agent history clear         # 清空历史
 - [ ] 实现上下文管理器 (context-manager.ts)
 - [ ] 实现任务解析器 (task-parser.ts)
 - [ ] 创建系统提示词模板
-- [ ] 实现chat命令基础功能
+- [ ] 实现agent命令基础功能
 - [ ] 添加流式响应支持 (可选)
 
 **交付物**:
-- agent chat命令可用
+- agent命令可用
 - 支持多轮对话
 - API调用正常工作
 

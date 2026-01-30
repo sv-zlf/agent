@@ -114,10 +114,34 @@ export const ToolName = defineTool('tool-id', {
 
 - `/init` - 创建/更新项目 DESIGN.md
 - `/models [model]` - 列出或切换 AI 模型
-- `/session new/list/switch/delete` - 会话管理
+- `/session status` - 显示当前会话状态
+- `/session list` - 列出所有会话
+- `/session fork` - Fork 当前会话（创建分支）
+- `/session rename <名称>` - 重命名会话
+- `/session export` - 导出会话为 JSON
+- `/session import <json>` - 导入会话
 - `/compress on/off/manual/status` - 上下文压缩控制
 - `/tokens` - 显示 token 使用统计
 - `/test` - 测试交互式选择功能
+
+### 会话管理功能
+
+**Fork 会话** - 从当前会话创建分支
+- 复制当前会话的所有历史消息
+- 新会话继承父会话的配置
+- 标题自动添加 `(fork #N)` 后缀
+- 支持从特定消息索引处 fork
+
+**会话统计** - 记录会话使用情况
+- 消息总数（用户/助手分别统计）
+- 工具调用次数
+- Token 使用量
+- 修改过的文件列表
+
+**导入/导出** - 会话数据持久化
+- 导出为 JSON 格式，包含完整历史
+- 导入恢复会话，保留所有消息
+- 支持会话备份和迁移
 
 ## 开发指南
 

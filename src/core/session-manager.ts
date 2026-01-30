@@ -16,12 +16,28 @@ const logger = createLogger(true);
 export interface Session {
   id: string;
   name: string;
+  title: string; // 用户友好的标题
   createdAt: number;
   updatedAt: number;
   lastActiveAt: number;
   historyFile: string;
   contextFile: string;
   agentType: string;
+  parentID?: string; // 父会话ID（用于 fork）
+  messageCount?: number; // 消息数量
+  stats?: SessionStats; // 会话统计信息
+}
+
+/**
+ * 会话统计信息
+ */
+export interface SessionStats {
+  totalMessages: number;
+  userMessages: number;
+  assistantMessages: number;
+  toolCalls: number;
+  tokensUsed: number;
+  modifiedFiles: string[]; // 修改过的文件列表
 }
 
 /**
@@ -63,7 +79,7 @@ export class SessionManager {
   /**
    * 创建新会话
    */
-  async createSession(name: string, agentType: string = 'default'): Promise<Session> {
+  async createSession(name: string, agentType: string = 'default', parentID?: string): Promise<Session> {
     const sessionId = this.generateId();
 
     const sessionFile = path.join(this.config.sessionsDir, `${sessionId}.json`);
@@ -72,12 +88,23 @@ export class SessionManager {
     const session: Session = {
       id: sessionId,
       name: name || `会话 ${sessionId.substring(0, 8)}`,
+      title: name || `会话 ${new Date().toLocaleString('zh-CN')}`,
       createdAt: Date.now(),
       updatedAt: Date.now(),
       lastActiveAt: Date.now(),
       historyFile: sessionFile,
       contextFile: contextFile,
       agentType: agentType,
+      parentID,
+      messageCount: 0,
+      stats: {
+        totalMessages: 0,
+        userMessages: 0,
+        assistantMessages: 0,
+        toolCalls: 0,
+        tokensUsed: 0,
+        modifiedFiles: [],
+      },
     };
 
     // 保存会话信息
@@ -234,8 +261,15 @@ export class SessionManager {
     try {
       if (await fs.pathExists(this.config.currentSessionFile)) {
         const currentSessionId = await fs.readFile(this.config.currentSessionFile, 'utf-8');
-        this.currentSessionId = currentSessionId.trim();
-        logger.debug(`当前会话: ${this.currentSessionId}`);
+        const sessionId = currentSessionId.trim();
+        // 验证会话是否存在
+        if (sessionId && this.sessions.has(sessionId)) {
+          this.currentSessionId = sessionId;
+          logger.debug(`当前会话: ${this.currentSessionId}`);
+        } else {
+          logger.debug(`当前会话文件存在但会话不存在: ${sessionId}`);
+          this.currentSessionId = null;
+        }
       }
     } catch (error) {
       logger.debug(`加载当前会话失败: ${(error as Error).message}`);
@@ -277,6 +311,170 @@ export class SessionManager {
     }
 
     return toDelete.length;
+  }
+
+  /**
+   * Fork 会话 - 从当前会话创建分支
+   * @param messageIndex - 可选，从指定消息索引处 fork（不包括该消息之后的消息）
+   */
+  async forkSession(messageIndex?: number): Promise<Session> {
+    const currentSession = this.getCurrentSession();
+    if (!currentSession) {
+      throw new Error('没有当前会话');
+    }
+
+    // 生成 fork 后的标题
+    const forkedTitle = this.getForkedTitle(currentSession.title);
+
+    // 创建新会话
+    const newSession = await this.createSession(forkedTitle, currentSession.agentType, currentSession.id);
+
+    // 复制历史消息（如果指定了 messageIndex，只复制到该索引）
+    if (await fs.pathExists(currentSession.historyFile)) {
+      try {
+        const history = await fs.readJSON(currentSession.historyFile);
+        const messagesToCopy = messageIndex !== undefined
+          ? history.messages?.slice(0, messageIndex) || []
+          : history.messages || [];
+
+        // 保存到新会话
+        await fs.writeJSON(newSession.historyFile, {
+          ...history,
+          messages: messagesToCopy,
+        }, { spaces: 2 });
+
+        // 更新消息计数
+        newSession.messageCount = messagesToCopy.length;
+        newSession.stats = currentSession.stats ? { ...currentSession.stats } : undefined;
+        await this.saveSession(newSession);
+
+        logger.info(`Fork 会话: ${currentSession.name} -> ${newSession.name}`);
+      } catch (error) {
+        logger.error(`Fork 会话失败: ${(error as Error).message}`);
+      }
+    }
+
+    return newSession;
+  }
+
+  /**
+   * 重命名会话
+   */
+  async renameSession(sessionId: string, newName: string): Promise<Session> {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      throw new Error(`会话不存在: ${sessionId}`);
+    }
+
+    session.name = newName;
+    session.title = newName;
+    session.updatedAt = Date.now();
+    await this.saveSession(session);
+
+    logger.info(`重命名会话: ${sessionId} -> ${newName}`);
+    return session;
+  }
+
+  /**
+   * 导出会话为 JSON
+   */
+  async exportSession(sessionId: string): Promise<string> {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      throw new Error(`会话不存在: ${sessionId}`);
+    }
+
+    const exportData = {
+      info: {
+        id: session.id,
+        name: session.name,
+        title: session.title,
+        agentType: session.agentType,
+        parentID: session.parentID,
+        createdAt: session.createdAt,
+        updatedAt: session.updatedAt,
+        lastActiveAt: session.lastActiveAt,
+        stats: session.stats,
+      },
+      messages: [],
+    };
+
+    // 读取消息历史
+    if (await fs.pathExists(session.historyFile)) {
+      try {
+        const history = await fs.readJSON(session.historyFile);
+        (exportData.messages as any) = history.messages || [];
+      } catch (error) {
+        logger.error(`读取历史失败: ${(error as Error).message}`);
+      }
+    }
+
+    return JSON.stringify(exportData, null, 2);
+  }
+
+  /**
+   * 导入会话
+   */
+  async importSession(jsonData: string): Promise<Session> {
+    const data = JSON.parse(jsonData);
+
+    // 创建新会话
+    const sessionId = this.generateId();
+    const sessionFile = path.join(this.config.sessionsDir, `${sessionId}.json`);
+    const contextFile = path.join(this.config.sessionsDir, `${sessionId}-context.json`);
+
+    const session: Session = {
+      id: sessionId,
+      name: data.info?.name || `导入会话 ${sessionId.substring(0, 8)}`,
+      title: data.info?.title || data.info?.name || `导入会话 ${new Date().toLocaleString('zh-CN')}`,
+      createdAt: data.info?.createdAt || Date.now(),
+      updatedAt: Date.now(),
+      lastActiveAt: Date.now(),
+      historyFile: sessionFile,
+      contextFile: contextFile,
+      agentType: data.info?.agentType || 'default',
+      parentID: data.info?.parentID,
+      messageCount: data.messages?.length || 0,
+      stats: data.info?.stats,
+    };
+
+    // 保存消息历史
+    if (data.messages && Array.isArray(data.messages)) {
+      await fs.writeJSON(sessionFile, {
+        version: 1,
+        messages: data.messages,
+        lastUpdated: Date.now(),
+      }, { spaces: 2 });
+    }
+
+    // 保存会话信息
+    await this.saveSession(session);
+    this.sessions.set(sessionId, session);
+
+    logger.info(`导入会话: ${session.name} (${sessionId})`);
+    return session;
+  }
+
+  /**
+   * 获取会话的子会话列表
+   */
+  getChildSessions(sessionId: string): Session[] {
+    return Array.from(this.sessions.values())
+      .filter(s => s.parentID === sessionId)
+      .sort((a, b) => b.createdAt - a.createdAt);
+  }
+
+  /**
+   * 生成 fork 后的标题
+   */
+  private getForkedTitle(title: string): string {
+    const match = title.match(/^(.+) \(fork #(\d+)\)$/);
+    if (match) {
+      const base = match[1];
+      const num = parseInt(match[2], 10);
+      return `${base} (fork #${num + 1})`;
+    }
+    return `${title} (fork #1)`;
   }
 }
 

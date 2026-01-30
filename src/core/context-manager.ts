@@ -310,12 +310,10 @@ export class ContextManager {
    */
   private estimateMessageTokens(msg: Message | EnhancedMessage): number {
     if ('parts' in msg) {
-      // 增强消息：计算所有非忽略部分的 tokens
       const parts = filterMessageParts(msg as EnhancedMessage);
-      return parts.reduce((sum, part) => sum + this.estimateTextTokens(part.content), 0);
+      return parts.reduce((sum, part) => sum + TokenEstimator.estimate(part.content), 0);
     } else {
-      // 旧格式消息
-      return this.estimateTextTokens(msg.content);
+      return TokenEstimator.estimate(msg.content);
     }
   }
 
@@ -391,6 +389,7 @@ export class ContextManager {
   async saveHistory(): Promise<void> {
     try {
       const legacyMessages = this.messages.map(msg => this.convertToLegacyMessage(msg));
+      await fs.ensureDir(path.dirname(this.historyFile));
       await fs.writeFile(this.historyFile, JSON.stringify(legacyMessages, null, 2), 'utf-8');
     } catch (error) {
       console.warn(`保存历史记录失败: ${(error as Error).message}`);
@@ -423,18 +422,6 @@ export class ContextManager {
     } catch (error) {
       console.warn(`清空历史记录失败: ${(error as Error).message}`);
     }
-  }
-
-  /**
-   * 估算token数量（粗略估算：中文约1字符=1token，英文约4字符=1token）
-   */
-  private estimateTextTokens(text: string): number {
-    // 简单估算：中文字符计数 + 英文单词数
-    const chineseChars = (text.match(/[\u4e00-\u9fa5]/g) || []).length;
-    const englishChars = text.length - chineseChars;
-    const englishWords = englishChars / 4;
-
-    return Math.ceil(chineseChars + englishWords);
   }
 
   /**
