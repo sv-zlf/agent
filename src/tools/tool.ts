@@ -122,20 +122,3 @@ export function defineTool<
     },
   };
 }
-
-/**
- * 从 ToolInfo 创建旧的 ToolDefinition（兼容性）
- */
-export function toolInfoToDefinition(info: ToolInfo<any, any>) {
-  return {
-    name: info.id,
-    description: '', // 将在 init 后填充
-    category: 'file' as const,
-    permission: 'safe' as const,
-    parameters: {},
-    handler: async (args: Record<string, unknown>) => {
-      // 这是一个临时实现，实际使用需要完全重写
-      return { success: true, output: '' };
-    },
-  };
-}
