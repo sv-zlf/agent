@@ -399,11 +399,16 @@ export class CommandManager {
     const resumeKeyListener = pauseKeyListener ? pauseKeyListener() : () => {};
 
     try {
+      // 显示当前模型信息
+      console.log(chalk.cyan('\n📋 模型配置\n'));
+      console.log(chalk.yellow(`当前模型: ${currentModel}\n`));
+      console.log(chalk.gray('选择要切换的模型:\n'));
+
       // 使用交互式选择器
       const selected = await select({
         message: '选择模型:',
         options: commonModels.map(model => ({
-          label: model.name,
+          label: `${model.name}${model.name === currentModel ? ' ✅ (当前)' : ''}`,
           value: model.name,
           description: `${model.provider} - ${model.description}`,
         })),
@@ -415,9 +420,7 @@ export class CommandManager {
         return this.switchModel(selected.value, config);
       }
 
-      console.log(chalk.cyan('\n📋 模型配置\n'));
-      console.log(chalk.yellow(`当前模型: ${currentModel}\n`));
-      console.log(chalk.gray('已取消切换\n'));
+      console.log(chalk.gray('\n已取消切换\n'));
 
       return {
         shouldContinue: false,
@@ -466,6 +469,9 @@ export class CommandManager {
 
       // 写入配置文件
       await fs.writeFile(configPath, JSON.stringify(configObj, null, 2), 'utf-8');
+
+      // 更新内存中的配置（立即生效）
+      config.set('api', { ...config.getAPIConfig(), model: modelName });
 
       console.log(chalk.green(`✓ 已切换模型:`));
       console.log(chalk.gray(`  从: ${oldModel}`));

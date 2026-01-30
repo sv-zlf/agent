@@ -1,8 +1,17 @@
 import * as yaml from 'js-yaml';
 import * as fs from 'fs-extra';
 import * as path from 'path';
+import * as os from 'os';
+import * as fsSync from 'fs';
 import dotenv from 'dotenv';
 import type { AgentConfig } from '../types';
+
+/**
+ * 获取用户配置文件路径 (~/.ggcode/config.json)
+ */
+function getUserConfigPath(): string {
+  return path.join(os.homedir(), '.ggcode', 'config.json');
+}
 
 /**
  * 默认配置
@@ -59,10 +68,37 @@ export class ConfigManager {
   }
 
   /**
+   * 加载用户配置（从 ~/.ggcode/config.json）
+   */
+  private loadUserConfig(): void {
+    const userConfigPath = getUserConfigPath();
+    try {
+      if (fsSync.existsSync(userConfigPath)) {
+        const content = fsSync.readFileSync(userConfigPath, 'utf-8');
+        const userConfig = JSON.parse(content);
+
+        // 优先使用用户配置中的模型
+        if (userConfig.api && userConfig.api.model) {
+          this.config.api.model = userConfig.api.model;
+        }
+
+        // 合并 model_config 参数（如果有的话）
+        if (userConfig.model_config) {
+          // 可以在这里处理其他模型参数
+        }
+      }
+    } catch (error) {
+      // 用户配置文件读取失败，忽略错误
+      console.warn(`警告: 无法读取用户配置文件: ${(error as Error).message}`);
+    }
+  }
+
+  /**
    * 加载配置文件
    */
   async load(): Promise<void> {
     try {
+      // 首先加载项目配置文件（config/config.yaml）
       if (await fs.pathExists(this.configPath)) {
         const content = await fs.readFile(this.configPath, 'utf-8');
         const loaded = yaml.load(content) as Partial<AgentConfig>;
@@ -70,6 +106,9 @@ export class ConfigManager {
         // 合并配置（深层合并）
         this.config = this.mergeConfig(DEFAULT_CONFIG, loaded);
       }
+
+      // 然后加载用户配置（优先级更高）
+      this.loadUserConfig();
     } catch (error) {
       throw new Error(`配置文件加载失败: ${(error as Error).message}`);
     }
