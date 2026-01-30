@@ -36,10 +36,10 @@ export function getHistoryBasePath(): string {
 }
 
 /**
- * 获取配置文件路径（项目配置保存在当前目录）
+ * 获取配置文件路径（统一保存在 .ggcode 目录）
  */
-export function getConfigPath(workingDir: string): string {
-  return path.join(workingDir, '.ggrc.json');
+export function getConfigPath(): string {
+  return path.join(getGGCodeRoot(), 'config.json');
 }
 
 /**

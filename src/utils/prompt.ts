@@ -42,23 +42,24 @@ export async function select(config: SelectConfig): Promise<SelectOption> {
   let selectedIndex = defaultIndex;
   let resolved = false;
 
-  // 创建 readline 接口
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
-
-  // 设置 raw mode 以接收单个按键
   const stdin = process.stdin as tty.ReadStream;
-  stdin.setRawMode(true);
+
+  // 保存当前状态
+  const wasRawMode = stdin.isRaw;
 
   return new Promise<SelectOption>((resolve) => {
     // 显示初始选项
     renderOptions(message, options, selectedIndex);
 
-    // 监听按键
-    const onKeyPress = (key: any) => {
+    // 设置 raw mode 以接收单个按键
+    stdin.setRawMode(true);
+    stdin.resume();
+
+    const onKeyPress = (buffer: Buffer) => {
       if (resolved) return;
+
+      // 将 Buffer 转换为按键对象
+      const key = parseKeyPress(buffer);
 
       // 上下键或 Ctrl+P/Ctrl+N
       if (key.name === 'up' || (key.ctrl && key.name === 'p')) {
@@ -92,7 +93,7 @@ export async function select(config: SelectConfig): Promise<SelectOption> {
       }
 
       // ESC 或 Ctrl+C 取消
-      if (key.name === 'escape' || key.name === 'c' && key.ctrl) {
+      if (key.name === 'escape' || (key.name === 'c' && key.ctrl)) {
         cleanup();
         process.exit(0);
         return;
@@ -101,33 +102,100 @@ export async function select(config: SelectConfig): Promise<SelectOption> {
 
     const cleanup = () => {
       resolved = true;
-      stdin.setRawMode(false);
-      stdin.pause();
+
+      // 移除监听器
       stdin.removeListener('data', onKeyPress);
-      rl.close();
+
+      // 恢复之前的状态
+      if (!wasRawMode) {
+        stdin.setRawMode(false);
+      }
+      stdin.pause();
     };
 
     stdin.on('data', onKeyPress);
-    stdin.resume();
   });
+}
+
+/**
+ * 解析按键 Buffer
+ */
+function parseKeyPress(buffer: Buffer): any {
+  const str = buffer.toString('utf8');
+  const code = buffer[0];
+
+  const key: any = {
+    name: undefined,
+    ctrl: false,
+    shift: false,
+    alt: false,
+    meta: false,
+    sequence: str,
+  };
+
+  // 检测 Ctrl 组合键
+  if (code < 32 || (code === 127 && str.length === 1)) {
+    if (code === 127) {
+      key.name = 'backspace';
+    } else if (code === 3) {
+      key.ctrl = true;
+      key.name = 'c';
+    } else if (code === 13) {
+      key.name = 'return';
+    } else if (code === 27) {
+      // ESC 或转义序列
+      if (buffer.length >= 3 && buffer[1] === 91) {
+        // ANSI 转义序列
+        const lastCode = buffer[2];
+        if (lastCode === 65) {
+          key.name = 'up';
+        } else if (lastCode === 66) {
+          key.name = 'down';
+        } else if (lastCode === 67) {
+          key.name = 'right';
+        } else if (lastCode === 68) {
+          key.name = 'left';
+        }
+      } else {
+        key.name = 'escape';
+      }
+    } else {
+      key.ctrl = true;
+      key.name = String.fromCharCode(code + 64);
+    }
+  } else if (str.length === 1) {
+    // 常规按键
+    if (code === 32) {
+      key.name = 'space';
+      key.sequence = ' ';
+    } else {
+      key.name = str.toLowerCase();
+      if (str.length === 1 && str !== str.toLowerCase()) {
+        key.shift = true;
+      }
+    }
+  }
+
+  return key;
 }
 
 /**
  * 渲染选项列表
  */
 function renderOptions(message: string, options: SelectOption[], selectedIndex: number): void {
-  // 清空当前行并上移
-  const lines = options.length + 2; // 选项数 + 消息行 + 空行
-  process.stdout.write('\x1b[' + lines + 'F'); // 上移到开始位置
+  // 使用 ANSI 转义序列重绘
+  process.stdout.write('\x1b[H'); // 移动光标到左上角
+  process.stdout.write('\x1b[2J'); // 清空屏幕
 
-  // 显示消息
-  console.log(`\n${message}`);
+  // 渲染消息
+  process.stdout.write(`\n${message}\n`);
 
-  // 显示选项
-  options.forEach((option, index) => {
-    const isSelected = index === selectedIndex;
+  // 渲染选项
+  for (let i = 0; i < options.length; i++) {
+    const option = options[i];
+    const isSelected = i === selectedIndex;
     const prefix = isSelected ? '❯ ' : '  ';
-    const label = `${index + 1}. ${option.label}`;
+    const label = `${i + 1}. ${option.label}`;
 
     if (isSelected) {
       // 高亮显示
@@ -137,12 +205,9 @@ function renderOptions(message: string, options: SelectOption[], selectedIndex: 
       }
       process.stdout.write('\n');
     } else {
-      console.log(`${prefix}${label}`);
+      process.stdout.write(`${prefix}${label}\n`);
     }
-  });
-
-  // 移动光标到最后
-  process.stdout.write('\x1b[' + options.length + 'E'); // 下移
+  }
 }
 
 /**
@@ -157,7 +222,7 @@ export async function confirm(message: string, defaultValue: boolean = true): Pr
   const result = await select({
     message,
     options,
-    default: defaultValue ? 0 : 1, // 这里 default 是对象属性，不是变量名
+    default: defaultValue ? 0 : 1,
   });
 
   return result.value === 'yes';
@@ -192,19 +257,18 @@ export async function multiSelect(config: SelectConfig): Promise<SelectOption[]>
   const selected: Set<number> = new Set();
   let resolved = false;
 
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
-
   const stdin = process.stdin as tty.ReadStream;
-  stdin.setRawMode(true);
 
   return new Promise((resolve) => {
     renderMultiOptions(message, options, selectedIndex, selected);
 
-    const onKeyPress = (key: any) => {
+    stdin.setRawMode(true);
+    stdin.resume();
+
+    const onKeyPress = (buffer: Buffer) => {
       if (resolved) return;
+
+      const key = parseKeyPress(buffer);
 
       // 上下键
       if (key.name === 'up' || (key.ctrl && key.name === 'p')) {
@@ -251,11 +315,9 @@ export async function multiSelect(config: SelectConfig): Promise<SelectOption[]>
       stdin.setRawMode(false);
       stdin.pause();
       stdin.removeListener('data', onKeyPress);
-      rl.close();
     };
 
     stdin.on('data', onKeyPress);
-    stdin.resume();
   });
 }
 
@@ -268,24 +330,32 @@ function renderMultiOptions(
   selectedIndex: number,
   selected: Set<number>
 ): void {
-  const lines = options.length + 2;
-  process.stdout.write('\x1b[' + lines + 'F');
+  process.stdout.write('\x1b[H'); // 移动光标到左上角
+  process.stdout.write('\x1b[2J'); // 清空屏幕
 
-  console.log(`\n${message}`);
-  console.log('(使用 ↑↓ 选择，空格切换，回车确认)\n');
+  process.stdout.write(`\n${message}\n`);
+  process.stdout.write('(使用 ↑↓ 选择，空格切换，回车确认)\n\n');
 
-  options.forEach((option, index) => {
-    const isSelected = index === selectedIndex;
-    const isMarked = selected.has(index);
+  for (let i = 0; i < options.length; i++) {
+    const option = options[i];
+    const isSelected = i === selectedIndex;
+    const isMarked = selected.has(i);
     const mark = isMarked ? '✓' : '○';
     const prefix = isSelected ? '❯ ' : '  ';
+    const label = `${prefix}${mark} ${option.label}`;
 
     if (isSelected) {
-      process.stdout.write(`\x1b[36m${prefix}${mark} ${option.label}\x1b[0m\n`);
+      process.stdout.write(`\x1b[36m${label}\x1b[0m\n`);
     } else {
-      console.log(`${prefix}${mark} ${option.label}`);
+      process.stdout.write(`${label}\n`);
     }
-  });
+  }
+}
 
-  process.stdout.write('\x1b[' + (options.length + 2) + 'E');
+/**
+ * 获取配置文件路径
+ */
+export function getConfigPath(workingDir: string): string {
+  const configPath = require('path').join(workingDir, '.ggrc.json');
+  return configPath;
 }

@@ -38,6 +38,11 @@ export interface CommandContext {
   messages: Message[];
   sessionManager?: any; // SessionManager 实例（可选）
   contextManager?: any; // ContextManager 实例（可选）
+  /**
+   * 在交互式选择前移除按键监听器
+   * 返回恢复函数
+   */
+  pauseKeyListener?: () => () => void;
 }
 
 /**
@@ -362,23 +367,20 @@ export class CommandManager {
   ): Promise<CommandResult> {
     const config = context.config;
 
-    // 如果没有参数，列出可用模型
+    // 如果没有参数，列出可用模型（交互式选择）
     if (!args) {
-      return this.listModels(config);
+      return this.listModels(config, context.pauseKeyListener);
     }
 
     // 如果有参数，尝试切换模型
-    return this.switchModel(args.trim(), config, context.workingDirectory);
+    return this.switchModel(args.trim(), config);
   }
 
   /**
-   * 列出可用模型
+   * 列出可用模型（交互式选择）
    */
-  private async listModels(config: any): Promise<CommandResult> {
+  private async listModels(config: any, pauseKeyListener?: () => () => void): Promise<CommandResult> {
     const currentModel = config.getAPIConfig().model;
-
-    console.log(chalk.cyan('\n📋 模型配置\n'));
-    console.log(chalk.yellow(`当前模型: ${currentModel}\n`));
 
     // 常用模型列表
     const commonModels = [
@@ -389,25 +391,41 @@ export class CommandManager {
       { name: 'deepseek-chat', provider: 'DeepSeek', description: 'DeepSeek Chat' },
     ];
 
-    console.log(chalk.gray('模型名称\t\t提供商\t描述'));
-    console.log(chalk.gray('-'.repeat(80)));
+    // 找到当前模型的索引
+    const currentIndex = commonModels.findIndex(m => m.name === currentModel);
+    const defaultIndex = currentIndex >= 0 ? currentIndex : 0;
 
-    for (const model of commonModels) {
-      const isCurrent = model.name === currentModel;
-      const prefix = isCurrent ? chalk.green('→ ') : '  ';
-      console.log(`${prefix}${chalk.cyan(model.name)}\t${chalk.yellow(model.provider)}\t${model.description}`);
+    // 暂停按键监听器（如果有）
+    const resumeKeyListener = pauseKeyListener ? pauseKeyListener() : () => {};
+
+    try {
+      // 使用交互式选择器
+      const selected = await select({
+        message: '选择模型:',
+        options: commonModels.map(model => ({
+          label: model.name,
+          value: model.name,
+          description: `${model.provider} - ${model.description}`,
+        })),
+        default: defaultIndex,
+      });
+
+      // 如果选择的不是当前模型，切换模型
+      if (selected.value !== currentModel) {
+        return this.switchModel(selected.value, config);
+      }
+
+      console.log(chalk.cyan('\n📋 模型配置\n'));
+      console.log(chalk.yellow(`当前模型: ${currentModel}\n`));
+      console.log(chalk.gray('已取消切换\n'));
+
+      return {
+        shouldContinue: false,
+      };
+    } finally {
+      // 恢复按键监听器
+      resumeKeyListener();
     }
-
-    console.log();
-    console.log(chalk.gray('💡 提示:'));
-    console.log(chalk.gray('  /models <模型名称>      # 切换模型'));
-    console.log(chalk.gray('  /setting                  # 查看所有 API 参数'));
-    console.log(chalk.gray('  /setting set <参数> <值>  # 设置 temperature、top_p 等参数'));
-    console.log();
-
-    return {
-      shouldContinue: false,
-    };
   }
 
   /**
@@ -415,8 +433,7 @@ export class CommandManager {
    */
   private async switchModel(
     modelName: string,
-    config: any,
-    workingDir: string
+    config: any
   ): Promise<CommandResult> {
     const oldModel = config.getAPIConfig().model;
 
@@ -426,11 +443,28 @@ export class CommandManager {
     }
 
     // 更新配置文件
-    const configPath = getConfigPath(workingDir);
+    const configPath = getConfigPath();
     try {
-      const configContent = await fs.readFile(configPath, 'utf-8');
-      const configObj = JSON.parse(configContent);
+      let configObj: any;
+
+      // 读取现有配置或创建新配置
+      try {
+        const configContent = await fs.readFile(configPath, 'utf-8');
+        configObj = JSON.parse(configContent);
+      } catch {
+        // 文件不存在，创建新配置
+        configObj = {
+          api: {
+            model: modelName,
+          },
+        };
+      }
+
+      // 更新模型
+      configObj.api = configObj.api || {};
       configObj.api.model = modelName;
+
+      // 写入配置文件
       await fs.writeFile(configPath, JSON.stringify(configObj, null, 2), 'utf-8');
 
       console.log(chalk.green(`✓ 已切换模型:`));
@@ -812,10 +846,10 @@ export class CommandManager {
           console.log();
           return { shouldContinue: false };
         }
-        return this.updateSetting(parts[1], parts.slice(2).join(' '), config, workingDirectory);
+        return this.updateSetting(parts[1], parts.slice(2).join(' '), config);
 
       case 'reset':
-        return this.resetSettings(config, workingDirectory);
+        return this.resetSettings(config);
 
       default:
         return this.listCurrentSettings(config);
@@ -831,7 +865,7 @@ export class CommandManager {
     // 尝试读取配置文件获取 model_config
     let modelConfig: any = {};
     try {
-      const configPath = getConfigPath(process.cwd());
+      const configPath = getConfigPath();
       if (fsSync.existsSync(configPath)) {
         const configContent = fsSync.readFileSync(configPath, 'utf-8');
         const configObj = JSON.parse(configContent);
@@ -872,8 +906,7 @@ export class CommandManager {
   private async updateSetting(
     paramName: string,
     value: string,
-    config: any,
-    workingDir: string
+    config: any
   ): Promise<CommandResult> {
     // 验证参数名
     const validParams = ['temperature', 'top_p', 'top_k', 'repetition_penalty'];
@@ -911,10 +944,18 @@ export class CommandManager {
     }
 
     // 更新配置文件
-    const configPath = getConfigPath(workingDir);
+    const configPath = getConfigPath();
     try {
-      const configContent = await fs.readFile(configPath, 'utf-8');
-      const configObj = JSON.parse(configContent);
+      let configObj: any;
+
+      // 读取现有配置或创建新配置
+      try {
+        const configContent = await fs.readFile(configPath, 'utf-8');
+        configObj = JSON.parse(configContent);
+      } catch {
+        // 文件不存在，创建新配置
+        configObj = {};
+      }
 
       // 确保 model_config 存在
       if (!configObj.model_config) {
@@ -923,6 +964,7 @@ export class CommandManager {
 
       configObj.model_config[paramName] = numValue;
 
+      // 写入配置文件
       await fs.writeFile(configPath, JSON.stringify(configObj, null, 2), 'utf-8');
 
       console.log(chalk.green(`✓ 已设置 ${paramName}:`));
@@ -939,9 +981,15 @@ export class CommandManager {
   /**
    * 重置设置为默认值
    */
-  private async resetSettings(config: any, workingDir: string): Promise<CommandResult> {
-    const configPath = path.join(workingDir, '.ggrc.json');
+  private async resetSettings(config: any): Promise<CommandResult> {
+    const configPath = getConfigPath();
     try {
+      // 检查文件是否存在
+      if (!fsSync.existsSync(configPath)) {
+        console.log(chalk.yellow('  配置文件不存在，无需重置\n'));
+        return { shouldContinue: false };
+      }
+
       const configContent = await fs.readFile(configPath, 'utf-8');
       const configObj = JSON.parse(configContent);
 

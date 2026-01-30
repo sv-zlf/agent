@@ -50,6 +50,13 @@ export class CommandCompleter {
       return this.currentInput;
     }
 
+    // 暂停 readline 以避免冲突
+    const readline = require('readline');
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
+    });
+
     const answers = await inquirer.prompt([
       {
         type: 'list',

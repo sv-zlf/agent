@@ -94,8 +94,8 @@ export const agentCommand = new Command('agent')
       output: process.stdout,
     });
 
-    // 设置raw模式，用于监听单个按键
-    rl.input.setRawMode(true);
+    // 不默认开启 raw mode，只在需要时（如 P 键监听）才开启
+    // raw mode 会干扰正常的行输入
 
     // 辅助函数：重新创建 readline 接口（在中断后）
     const recreateReadline = () => {
@@ -111,8 +111,6 @@ export const agentCommand = new Command('agent')
         input: process.stdin,
         output: process.stdout,
       });
-
-      rl.input.setRawMode(true);
     };
 
     // 按键监听器变量
@@ -125,6 +123,10 @@ export const agentCommand = new Command('agent')
       if (interruptKeyListener) {
         rl.input.removeListener('data', interruptKeyListener);
       }
+
+      // 开启 raw mode 以监听单个按键
+      rl.input.setRawMode(true);
+      rl.input.resume();
 
       // 创建新的中断监听器
       interruptKeyListener = (data: Buffer) => {
@@ -156,6 +158,8 @@ export const agentCommand = new Command('agent')
       if (interruptKeyListener) {
         rl.input.removeListener('data', interruptKeyListener);
         interruptKeyListener = null;
+        // 关闭 raw mode，恢复正常输入
+        rl.input.setRawMode(false);
       }
     };
 
@@ -291,7 +295,25 @@ export const agentCommand = new Command('agent')
       // 每次调用 chatLoop 时都重新获取 rl
       const currentRl = getReadline();
 
-      currentRl.question(chalk.cyan('> '), async (input: string) => {
+      // 在等待用户输入时，暂时关闭 raw mode（如果有）
+      const wasRaw = currentRl.input.isRaw;
+      if (wasRaw) {
+        currentRl.input.setRawMode(false);
+      }
+
+      // 显示提示符
+      process.stdout.write(chalk.cyan('> '));
+
+      // 使用 line 事件而不是 question，这样可以更好地控制
+      const onLine = async (input: string) => {
+        // 移除监听器，避免重复触发
+        currentRl.removeListener('line', onLine);
+
+        // 重新设置 raw mode（如果之前是开启的）
+        if (wasRaw && !currentRl.input.isRaw) {
+          currentRl.input.setRawMode(true);
+        }
+
         if (!input.trim()) {
           chatLoop();
           return;
@@ -299,9 +321,43 @@ export const agentCommand = new Command('agent')
 
         // 特殊处理：只输入 "/" 时显示交互式命令选择器
         if (input.trim() === '/') {
-          const selectedCommand = await commandCompleter.showCommandSelector();
-          // 将选中的命令作为输入继续处理
-          input = selectedCommand;
+          const commands = commandManager.getCommands();
+          const { select } = require('../utils/prompt');
+
+          // 暂时关闭当前的 readline 接口
+          // 这样 select() 才能完全接管 stdin
+          try {
+            currentRl.close();
+          } catch (e) {
+            // readline 可能已经关闭，忽略错误
+          }
+
+          // 移除 P 键监听器
+          if (interruptKeyListener) {
+            process.stdin.removeListener('data', interruptKeyListener);
+          }
+
+          try {
+            const selected = await select({
+              message: '选择命令:',
+              options: commands.map(cmd => ({
+                label: `/${cmd.name}`,
+                value: `/${cmd.name}`,
+                description: cmd.description,
+              })),
+            });
+
+            input = selected.value;
+          } finally {
+            // 重新创建 readline 接口
+            rl = readline.createInterface({
+              input: process.stdin,
+              output: process.stdout,
+            });
+
+            // 重新设置 P 键监听
+            setupInterruptKey();
+          }
         }
 
         // 检测是否是斜杠命令
@@ -312,6 +368,33 @@ export const agentCommand = new Command('agent')
             messages: contextManager.getContext(),
             sessionManager: sessionManager,
             contextManager: contextManager,
+            pauseKeyListener: () => {
+              // 临时移除主程序的按键监听器
+              const currentRl = getReadline();
+              const savedKeyListener = keyListener;
+              const savedInterruptKeyListener = interruptKeyListener;
+
+              // 移除所有按键监听
+              if (keyListener) {
+                currentRl.input.removeListener('data', keyListener);
+                keyListener = null;
+              }
+              if (interruptKeyListener) {
+                currentRl.input.removeListener('data', interruptKeyListener);
+              }
+
+              // 返回恢复函数
+              return () => {
+                // 恢复按键监听器
+                if (savedKeyListener) {
+                  keyListener = savedKeyListener;
+                  currentRl.input.on('data', keyListener);
+                }
+                if (savedInterruptKeyListener) {
+                  currentRl.input.on('data', savedInterruptKeyListener);
+                }
+              };
+            },
           });
 
           // 根据命令结果决定是否继续
@@ -321,7 +404,8 @@ export const agentCommand = new Command('agent')
             if (!contextManager.isSystemPromptSet()) {
               contextManager.setSystemPrompt(systemPrompt);
             }
-            chatLoop();
+            // 使用 setImmediate 避免在 line 回调中立即调用 chatLoop
+            setImmediate(() => chatLoop());
             return;
           }
 
@@ -630,7 +714,10 @@ export const agentCommand = new Command('agent')
 
         // 继续下一轮对话
         setImmediate(() => chatLoop());
-      });
+      };
+
+      // 添加 line 监听器
+      currentRl.on('line', onLine);
     };
 
     // 辅助函数：询问是否批准（使用按键监听）
