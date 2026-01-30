@@ -439,14 +439,18 @@ export const agentCommand = new Command('agent')
                 }
 
                 try {
-                  // 显示工具调用
-                  console.log(chalk.yellow(`\n📋 工具调用:`));
-                  console.log(chalk.cyan(`  工具: ${call.tool}`));
-                  console.log(chalk.gray(`  参数: ${JSON.stringify(call.parameters, null, 2)}`));
+                  // 格式化工具参数显示
+                  const paramsStr = Object.entries(call.parameters)
+                    .map(([k, v]) => `${k}=${JSON.stringify(v)}`)
+                    .join(' ');
+
+                  // 显示工具调用（等待批准）
+                  console.log(chalk.yellow(`\n○ ${call.tool}(${paramsStr})`));
 
                   // 询问是否批准
                   let approved = options.yes || autoApproveAll;
                   if (!approved) {
+                    console.log(chalk.gray('  等待批准...'));
                     const choice = await askForApproval();
 
                     if (choice === 'no') {
@@ -455,19 +459,24 @@ export const agentCommand = new Command('agent')
                         success: false,
                         error: '用户拒绝了工具调用',
                       });
-                      console.log(chalk.red('  ✗ 已拒绝，停止当前操作\n'));
+                      console.log(chalk.red('✗ 已拒绝\n'));
                       break; // 退出工具循环
                     } else if (choice === 'yes-all') {
                       // 批准当前及后续所有工具
                       approved = true;
                       autoApproveAll = true;
-                      console.log(chalk.gray('  ✓ 已批准，后续工具将自动执行\n'));
+                      console.log(chalk.green('✓ 已批准（后续自动执行）\n'));
                     } else {
                       // yes-once，只批准当前工具
                       approved = true;
-                      console.log(chalk.gray('  ✓ 已批准（仅当前操作）\n'));
+                      console.log(chalk.green('✓ 已批准\n'));
                     }
+                  } else {
+                    console.log(chalk.green('✓ 自动批准\n'));
                   }
+
+                  // 显示执行中状态
+                  console.log(chalk.gray('  执行中...'));
 
                   // 标记正在执行工具
                   interruptManager.setExecutingTool(true);
@@ -480,14 +489,18 @@ export const agentCommand = new Command('agent')
 
                   toolResults.push(result);
 
+                  // 显示执行结果
                   if (result.success) {
+                    console.log(chalk.green(`\r● ${call.tool}(${paramsStr})`));
                     console.log(chalk.green('  ✓ 成功'));
                     if (result.output && result.output.length < 500) {
                       console.log(chalk.gray(`  输出: ${result.output.substring(0, 200)}${result.output.length > 200 ? '...' : ''}`));
                     }
                   } else {
+                    console.log(chalk.red(`\r✗ ${call.tool}(${paramsStr})`));
                     console.log(chalk.red(`  ✗ 失败: ${result.error}`));
                   }
+                  console.log();
 
                   // 如果工具失败且不是因为中断，停止后续工具
                   if (!result.success && !result.error?.includes('中断')) {
