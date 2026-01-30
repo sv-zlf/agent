@@ -12,7 +12,7 @@ const logger = createLogger(true);
 /**
  * Zod Schema 类型
  */
-export type ToolParameterSchema = z.ZodType<any, z.ZodTypeDef, any>;
+export type ToolParameterSchema = z.ZodType<any>;
 
 /**
  * 增强的工具定义选项
@@ -50,7 +50,8 @@ export class EnhancedTool implements ToolDefinition {
   permission: ToolPermissionLevel;
   parameters: Record<string, any>;
   schema: ToolParameterSchema;
-  handler: (args: any, context: ToolExecutionContext) => Promise<ToolResult>;
+  private enhancedHandler: (args: any, context: ToolExecutionContext) => Promise<ToolResult>;
+  handler: (args: Record<string, unknown>) => Promise<ToolResult>; // 兼容旧接口
   validate?: (args: any) => string | null;
   examples?: Array<{ args: any; description: string }>;
 
@@ -60,12 +61,46 @@ export class EnhancedTool implements ToolDefinition {
     this.category = options.category;
     this.permission = options.permission;
     this.schema = options.parameters;
-    this.handler = options.handler;
+    this.enhancedHandler = options.handler;
     this.validate = options.validate;
     this.examples = options.examples;
 
     // 从 Zod schema 生成参数定义（用于向后兼容）
     this.parameters = this.extractParameterInfo(this.schema);
+
+    // 包装 handler 以兼容 ToolDefinition 接口
+    this.handler = this.wrapHandler();
+  }
+
+  /**
+   * 包装增强的 handler 使其兼容 ToolDefinition 接口
+   */
+  private wrapHandler(): (args: Record<string, unknown>) => Promise<ToolResult> {
+    return async (args: Record<string, unknown>) => {
+      // 验证参数
+      const validation = this.validateParameters(args);
+      if (!validation.success) {
+        return {
+          success: false,
+          error: `参数验证失败: ${validation.error}`,
+        };
+      }
+
+      // 创建执行上下文
+      const context: ToolExecutionContext = {
+        sessionId: 'session-' + Date.now(),
+        messageId: 'msg-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9),
+        workingDirectory: process.cwd(),
+        startTime: Date.now(),
+        metadata: {},
+        updateMetadata: (metadata: any) => {
+          Object.assign(context.metadata, metadata);
+        },
+      };
+
+      // 调用增强的 handler
+      return this.enhancedHandler(validation.data, context);
+    };
   }
 
   /**
@@ -115,14 +150,17 @@ export class EnhancedTool implements ToolDefinition {
    * 获取 Zod 类型的默认值
    */
   private getZodDefaultValue(zodType: z.ZodTypeAny): any {
-    // 尝试获取默认值
-    const hasDefault = 'defaultValue' in zodType._def;
-    if (hasDefault) {
-      try {
-        return zodType._def.defaultValue();
-      } catch {
-        return undefined;
+    // 尝试获取默认值（使用 safeParse）
+    try {
+      const def = zodType._def as any;
+      if (def.defaultValue !== undefined) {
+        if (typeof def.defaultValue === 'function') {
+          return def.defaultValue();
+        }
+        return def.defaultValue;
       }
+    } catch {
+      // 忽略错误
     }
     return undefined;
   }
@@ -163,16 +201,19 @@ export class EnhancedTool implements ToolDefinition {
 
       switch (issue.code) {
         case 'invalid_type':
-          message = `${path} 类型错误，期望 ${issue.expected}，实际 ${issue.received}`;
+          message = `${path} 类型错误，期望 ${(issue as any).expected}，实际 ${(issue as any).received}`;
           break;
-        case 'invalid_enum_value':
-          message = `${path} 值无效，允许的值: ${issue.options.join(', ')}`;
+        case 'unrecognized_keys':
+          message = `${path} 包含未识别的键`;
           break;
         case 'too_small':
-          message = `${path} 值太小${issue.inclusive ? '（含）' : '（不含）'}: ${issue.minimum}`;
+          message = `${path} 值太小${(issue as any).inclusive ? '（含）' : '（不含）'}: ${(issue as any).minimum}`;
           break;
         case 'too_big':
-          message = `${path} 值太大${issue.inclusive ? '（含）' : '（不含）'}: ${issue.maximum}`;
+          message = `${path} 值太大${(issue as any).inclusive ? '（含）' : '（不含）'}: ${(issue as any).maximum}`;
+          break;
+        case 'invalid_format':
+          message = `${path} 格式无效`;
           break;
         default:
           message = `${path}: ${issue.message}`;
@@ -185,9 +226,9 @@ export class EnhancedTool implements ToolDefinition {
   }
 
   /**
-   * 包装处理器以适配旧接口
+   * 执行工具（向后兼容方法）
    */
-  async execute(args: any, context: ToolExecutionContext): Promise<ToolResult> {
+  async execute(args: any, context?: ToolExecutionContext): Promise<ToolResult> {
     // 验证参数
     const validation = this.validateParameters(args);
     if (!validation.success) {
@@ -197,8 +238,20 @@ export class EnhancedTool implements ToolDefinition {
       };
     }
 
-    // 执行处理器
-    return this.handler(validation.data, context);
+    // 创建上下文（如果未提供）
+    const execContext = context || {
+      sessionId: 'session-' + Date.now(),
+      messageId: 'msg-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9),
+      workingDirectory: process.cwd(),
+      startTime: Date.now(),
+      metadata: {},
+      updateMetadata: (metadata: any) => {
+        Object.assign(execContext.metadata, metadata);
+      },
+    };
+
+    // 调用增强的 handler
+    return this.enhancedHandler(validation.data, execContext);
   }
 }
 

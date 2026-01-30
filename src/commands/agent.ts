@@ -7,7 +7,7 @@ import { createAPIAdapter } from '../api';
 import { createToolEngine, createContextManager } from '../core';
 import { getInterruptManager } from '../core/interrupt';
 import { getAgentManager } from '../core/agent';
-import { builtinTools } from '../tools';
+import { builtinTools, enhancedBuiltinTools } from '../tools';
 import { createLogger } from '../utils';
 import { displayBanner } from '../utils/logo';
 import { createCommandManager } from './slash-commands';
@@ -41,8 +41,12 @@ export const agentCommand = new Command('agent')
     const apiAdapter = createAPIAdapter(config.getAPIConfig());
     const toolEngine = createToolEngine();
 
-    // 注册所有内置工具
-    toolEngine.registerTools(builtinTools);
+    // 注册所有内置工具（使用增强版本）
+    // 增强版本包含：
+    // - Read: 智能文件检测、二进制文件拦截、相似文件建议
+    // - Edit: 参数验证、相似字符串提示、替换次数统计
+    // - Bash: 危险命令拦截、退出码记录
+    toolEngine.registerTools(enhancedBuiltinTools);
 
     const agentConfig = config.getAgentConfig();
     const contextManager = createContextManager(

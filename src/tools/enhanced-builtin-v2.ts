@@ -1,26 +1,15 @@
 /**
- * 增强的内置工具
- * 使用 Zod 验证和智能文件检测
+ * 增强的内置工具 - 简化版
+ * 移除复杂的包装，直接实现 ToolDefinition 接口
  */
 
 import * as fs from 'fs-extra';
 import * as path from 'path';
-import * as fg from 'fast-glob';
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import { z } from 'zod';
-import type { ToolResult } from '../types';
-import { createTool, Schemas, type ToolExecutionContext } from '../core/tool-enhanced';
+import type { ToolDefinition, ToolResult } from '../types';
 import { createCodeOperator } from '../core/code-operator';
 import { createLogger } from '../utils';
-
-// 从原版导入其他工具（暂未增强）
-import {
-  WriteTool,
-  GlobTool,
-  GrepTool,
-  MakeDirectoryTool,
-} from './builtin';
 
 const logger = createLogger(true);
 const execAsync = promisify(exec);
@@ -37,9 +26,6 @@ const BINARY_EXTENSIONS = new Set([
   '.ttf', '.otf', '.woff', '.woff2', '.eot',
 ]);
 
-/**
- * 文件大小限制
- */
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 const MAX_LINE_COUNT = 10000;
 
@@ -52,75 +38,7 @@ function isBinaryFile(filePath: string): boolean {
 }
 
 /**
- * 检测文件编码
- */
-async function detectFileEncoding(filePath: string): Promise<'utf8' | 'binary' | 'unknown'> {
-  try {
-    const buffer = await fs.readFile(filePath);
-    const head = buffer.slice(0, 1000);
-
-    // 检查 UTF-8 BOM
-    if (buffer[0] === 0xEF && buffer[1] === 0xBB && buffer[2] === 0xBF) {
-      return 'utf8';
-    }
-
-    // 检查空字节（二进制文件）
-    if (head.includes(0x00)) {
-      return 'binary';
-    }
-
-    // 检查是否为文本（可打印字符占比）
-    let printableChars = 0;
-    for (let i = 0; i < head.length; i++) {
-      const byte = head[i];
-      if (byte === 9 || byte === 10 || byte === 13 || (byte >= 32 && byte <= 126)) {
-        printableChars++;
-      }
-    }
-
-    const ratio = printableChars / head.length;
-    if (ratio > 0.7) {
-      return 'utf8';
-    }
-
-    return 'binary';
-  } catch {
-    return 'unknown';
-  }
-}
-
-/**
- * 查找相似的文件名
- */
-async function findSimilarFiles(filePath: string, maxResults = 5): Promise<string[]> {
-  try {
-    const dir = path.dirname(filePath);
-    const name = path.basename(filePath);
-    const ext = path.extname(name);
-    const baseName = name.replace(ext, '');
-
-    // 查找目录中的所有文件
-    const files = await fs.readdir(dir);
-    const similar: Array<{ file: string; score: number }> = [];
-
-    for (const file of files) {
-      // 计算相似度（简单的编辑距离）
-      const distance = levenshteinDistance(baseName, file.replace(path.extname(file), ''));
-      if (distance <= 3 && distance > 0) {
-        similar.push({ file: path.join(dir, file), score: distance });
-      }
-    }
-
-    // 按相似度排序
-    similar.sort((a, b) => a.score - b.score);
-    return similar.slice(0, maxResults).map((s) => s.file);
-  } catch {
-    return [];
-  }
-}
-
-/**
- * 简单的编辑距离算法
+ * Levenshtein 距离算法
  */
 function levenshteinDistance(a: string, b: string): number {
   const matrix = Array(b.length + 1).fill(null).map(() => Array(a.length + 1).fill(null));
@@ -132,9 +50,9 @@ function levenshteinDistance(a: string, b: string): number {
     for (let i = 1; i <= a.length; i++) {
       const indicator = a[i - 1] === b[j - 1] ? 0 : 1;
       matrix[j][i] = Math.min(
-        matrix[j][i - 1] + 1, // 删除
-        matrix[j - 1][i] + 1, // 插入
-        matrix[j - 1][i - 1] + indicator // 替换
+        matrix[j][i - 1] + 1,
+        matrix[j - 1][i] + 1,
+        matrix[j - 1][i - 1] + indicator
       );
     }
   }
@@ -143,35 +61,87 @@ function levenshteinDistance(a: string, b: string): number {
 }
 
 /**
+ * 查找相似的文件名
+ */
+async function findSimilarFiles(filePath: string, maxResults = 5): Promise<string[]> {
+  try {
+    const dir = path.dirname(filePath);
+    const name = path.basename(filePath);
+
+    if (!await fs.pathExists(dir)) {
+      return [];
+    }
+
+    const files = await fs.readdir(dir);
+    const similar: Array<{ file: string; score: number }> = [];
+
+    for (const file of files) {
+      const distance = levenshteinDistance(name, file);
+      if (distance <= 3 && distance > 0) {
+        similar.push({ file: path.join(dir, file), score: distance });
+      }
+    }
+
+    similar.sort((a, b) => a.score - b.score);
+    return similar.slice(0, maxResults).map((s) => s.file);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * 查找相似的字符串
+ */
+function findSimilarStrings(target: string, content: string, maxResults = 5): string[] {
+  const lines = content.split('\n');
+  const similar: Array<{ line: string; score: number }> = [];
+
+  for (const line of lines.slice(0, 100)) {
+    const trimmed = line.trim();
+    if (trimmed.length > 0) {
+      const distance = levenshteinDistance(target.trim(), trimmed);
+      if (distance <= 5 && distance > 0) {
+        similar.push({ line: trimmed.substring(0, 80), score: distance });
+      }
+    }
+  }
+
+  similar.sort((a, b) => a.score - b.score);
+  return similar.slice(0, maxResults).map((s) => s.line);
+}
+
+/**
  * Read 工具 - 增强版
  */
-export const EnhancedReadTool = createTool({
+export const EnhancedReadTool: ToolDefinition = {
   name: 'Read',
   description: '读取文件内容。这是用于读取文件的主要工具。在你想要查看文件内容时使用此工具。',
   category: 'file',
   permission: 'safe',
-  parameters: z.object({
-    file_path: Schemas.filePath(),
-    offset: Schemas.offset(),
-    limit: Schemas.limit(),
-  }),
-  examples: [
-    {
-      args: { file_path: '/path/to/file.ts' },
-      description: '读取整个文件',
+  parameters: {
+    file_path: {
+      type: 'string',
+      description: '文件的绝对路径',
+      required: true,
     },
-    {
-      args: { file_path: '/path/to/file.ts', offset: 100, limit: 50 },
-      description: '读取第 100-149 行',
+    offset: {
+      type: 'number',
+      description: '开始读取的行号（从0开始）',
+      required: false,
+      default: 0,
     },
-  ],
-  handler: async (args, context) => {
-    const { file_path, offset = 0, limit } = args as { file_path: string; offset?: number; limit?: number };
-
+    limit: {
+      type: 'number',
+      description: '读取的最大行数',
+      required: false,
+    },
+  },
+  handler: async (args) => {
     try {
+      const { file_path, offset = 0, limit } = args as { file_path: string; offset?: number; limit?: number };
+
       // 检查文件是否存在
       if (!await fs.pathExists(file_path)) {
-        // 提供建议
         const similar = await findSimilarFiles(file_path);
         let suggestion = '';
         if (similar.length > 0) {
@@ -189,15 +159,6 @@ export const EnhancedReadTool = createTool({
         return {
           success: false,
           error: `不能读取二进制文件: ${file_path}`,
-        };
-      }
-
-      // 检测文件编码
-      const encoding = await detectFileEncoding(file_path);
-      if (encoding === 'binary') {
-        return {
-          success: false,
-          error: `文件似乎是二进制文件，无法读取: ${file_path}`,
         };
       }
 
@@ -253,8 +214,6 @@ export const EnhancedReadTool = createTool({
           start_line: startLine,
           end_line: endLine,
           truncated,
-          encoding,
-          size_bytes: stats.size,
         },
       };
     } catch (error) {
@@ -264,53 +223,56 @@ export const EnhancedReadTool = createTool({
       };
     }
   },
-});
+};
 
 /**
- * Edit 工具 - 增强版（带验证）
+ * Edit 工具 - 增强版
  */
-export const EnhancedEditTool = createTool({
+export const EnhancedEditTool: ToolDefinition = {
   name: 'Edit',
   description: '对文件执行精确的字符串替换。在你想对文件进行修改时应该首选此工具。此工具执行字符串搜索和替换操作。',
   category: 'file',
   permission: 'local-modify',
-  parameters: z.object({
-    file_path: Schemas.filePath(),
-    old_string: z.string().min(1, '要替换的字符串不能为空'),
-    new_string: z.string(),
-    replace_all: z.boolean().optional().default(false),
-  }),
-  validate: (args) => {
-    // 验证 old_string 和 new_string 不能完全相同
-    if (args.old_string === args.new_string) {
-      return 'old_string 和 new_string 不能完全相同';
-    }
-    return null;
+  parameters: {
+    file_path: {
+      type: 'string',
+      description: '文件的绝对路径',
+      required: true,
+    },
+    old_string: {
+      type: 'string',
+      description: '要被替换的字符串',
+      required: true,
+    },
+    new_string: {
+      type: 'string',
+      description: '替换后的新字符串',
+      required: true,
+    },
+    replace_all: {
+      type: 'boolean',
+      description: '是否替换所有匹配项（默认为false，只替换第一个匹配项）',
+      required: false,
+      default: false,
+    },
   },
-  examples: [
-    {
-      args: {
-        file_path: '/path/to/file.ts',
-        old_string: 'const x = 1',
-        new_string: 'const x = 2',
-      },
-      description: '替换单个匹配',
-    },
-    {
-      args: {
-        file_path: '/path/to/file.ts',
-        old_string: 'foo',
-        new_string: 'bar',
-        replace_all: true,
-      },
-      description: '替换所有匹配',
-    },
-  ],
-  handler: async (args, context) => {
-    const { file_path, old_string, new_string, replace_all = false } = args;
-
+  handler: async (args) => {
     try {
-      // 检查文件是否存在
+      const { file_path, old_string, new_string, replace_all = false } = args as {
+        file_path: string;
+        old_string: string;
+        new_string: string;
+        replace_all?: boolean;
+      };
+
+      // 验证参数
+      if (old_string === new_string) {
+        return {
+          success: false,
+          error: 'old_string 和 new_string 不能完全相同',
+        };
+      }
+
       if (!await fs.pathExists(file_path)) {
         return {
           success: false,
@@ -336,17 +298,7 @@ export const EnhancedEditTool = createTool({
 
       // 检查 old_string 是否存在
       if (!content.includes(old_string)) {
-        // 尝试提供相似字符串建议
-        const lines = content.split('\n');
-        const similar: string[] = [];
-
-        for (const line of lines.slice(0, 50)) {
-          const distance = levenshteinDistance(old_string.trim(), line.trim());
-          if (distance <= 5 && line.trim().length > 0) {
-            similar.push(line.trim().substring(0, 80));
-          }
-        }
-
+        const similar = findSimilarStrings(old_string, content);
         let suggestion = '';
         if (similar.length > 0) {
           suggestion = `\n\n文件中相似的字符串:\n${similar.map((s) => `  - ${s}`).join('\n')}`;
@@ -363,10 +315,10 @@ export const EnhancedEditTool = createTool({
         ? content.split(old_string).join(new_string)
         : content.replace(old_string, new_string);
 
-      // 检查实际替换次数
+      // 计算替换次数
       const occurrences = replace_all
         ? (content.match(new RegExp(old_string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length
-        : (content.includes(old_string) ? 1 : 0);
+        : 1;
 
       // 写入新内容
       await fs.writeFile(file_path, newContent, 'utf-8');
@@ -387,54 +339,68 @@ export const EnhancedEditTool = createTool({
       };
     }
   },
-});
+};
 
 /**
- * Bash 工具 - 增强版（带安全检查）
+ * Bash 工具 - 增强版
  */
-export const EnhancedBashTool = createTool({
+export const EnhancedBashTool: ToolDefinition = {
   name: 'Bash',
-  description: '执行 shell 命令。用于运行测试、构建项目、git 操作等。',
+  description: '执行shell命令。用于运行测试、构建项目、git 操作等。',
   category: 'command',
   permission: 'dangerous',
-  parameters: z.object({
-    command: Schemas.command(),
-    description: z.string().optional().describe('命令的简短描述（用于日志记录）'),
-  }),
-  validate: (args) => {
-    // 检查危险命令
-    const dangerousCommands = ['rm -rf /', 'rm -rf /*', 'mkfs', 'dd if=/dev/zero', '> /dev/sda', 'format'];
-    const cmd = args.command.toLowerCase().trim();
+  parameters: {
+    command: {
+      type: 'string',
+      description: '要执行的shell命令',
+      required: true,
+    },
+    description: {
+      type: 'string',
+      description: '命令的简短描述（用于日志记录）',
+      required: false,
+    },
+  },
+  handler: async (args) => {
+    const { command, description, __abortSignal__, __timeout__ } = args as {
+      command: string;
+      description?: string;
+      __abortSignal__?: AbortSignal;
+      __timeout__?: number;
+    };
 
-    for (const dangerous of dangerousCommands) {
-      if (cmd.includes(dangerous)) {
-        return `检测到危险命令: ${dangerous}`;
+    // 检查危险命令
+    const dangerousPatterns = [
+      'rm -rf /',
+      'rm -rf /*',
+      'rm -rf /\\',
+      'mkfs',
+      'dd if=/dev/zero',
+      'dd if=/dev/sda',
+      'dd if=/dev/sdb',
+      '> /dev/sda',
+      '> /dev/sdb',
+      'format',
+      'del /f /s /q',
+    ];
+
+    const cmdLower = command.toLowerCase().trim();
+    for (const pattern of dangerousPatterns) {
+      if (cmdLower.includes(pattern)) {
+        return {
+          success: false,
+          error: `检测到危险命令: ${pattern}`,
+        };
       }
     }
-
-    return null;
-  },
-  examples: [
-    {
-      args: { command: 'npm test' },
-      description: '运行测试',
-    },
-    {
-      args: { command: 'git status' },
-      description: '查看 Git 状态',
-    },
-  ],
-  handler: async (args, context) => {
-    const { command, description, __abortSignal__, __timeout__ } = args;
 
     try {
       logger.debug(`Executing command: ${command}`);
 
-      // 使用自定义的超时或默认超时
-      const timeout = __timeout__ || 60000; // 默认 60 秒
+      const timeout = __timeout__ || 60000;
 
       const { stdout, stderr } = await execAsync(command, {
-        maxBuffer: 10 * 1024 * 1024, // 10MB
+        maxBuffer: 10 * 1024 * 1024,
         timeout: timeout,
       });
 
@@ -453,19 +419,7 @@ export const EnhancedBashTool = createTool({
     } catch (error: any) {
       const errorMsg = error instanceof Error ? error.message : String(error);
 
-      // 检查是否是超时或中断
-      if (__abortSignal__?.aborted) {
-        return {
-          success: false,
-          error: '命令执行已被用户中断',
-          metadata: {
-            command,
-            description,
-          },
-        };
-      }
-
-      // execAsync 的超时错误
+      // 检查是否是超时
       if (errorMsg.includes('timed out') || errorMsg.includes('ETIMEDOUT')) {
         return {
           success: false,
@@ -477,7 +431,7 @@ export const EnhancedBashTool = createTool({
         };
       }
 
-      // 检查是否被 kill（用户 Ctrl+C）
+      // 检查是否被中断
       if (errorMsg.includes('killed') || errorMsg.includes('SIGTERM')) {
         return {
           success: false,
@@ -500,18 +454,13 @@ export const EnhancedBashTool = createTool({
       };
     }
   },
-});
+};
 
 /**
  * 导出增强工具列表
- * 包含增强的工具和原版工具
  */
 export const enhancedBuiltinTools = [
-  EnhancedReadTool,    // 增强版：智能文件检测、相似文件建议
-  EnhancedEditTool,    // 增强版：参数验证、相似字符串提示
-  EnhancedBashTool,    // 增强版：危险命令拦截、退出码记录
-  WriteTool,           // 原版：写入文件
-  GlobTool,            // 原版：文件模式匹配
-  GrepTool,            // 原版：代码搜索
-  MakeDirectoryTool,   // 原版：创建目录
+  EnhancedReadTool,
+  EnhancedEditTool,
+  EnhancedBashTool,
 ];
