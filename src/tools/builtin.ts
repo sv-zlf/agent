@@ -387,7 +387,7 @@ export const BashTool: ToolDefinition = {
     }
 
     try {
-      logger.info(`Executing command: ${command}`);
+      // logger.info(`Executing command: ${command}`); // 已移除：由上层显示状态
 
       // 使用自定义的超时或默认超时
       const timeout = __timeout__ || 60000; // 默认 60 秒

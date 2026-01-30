@@ -530,12 +530,13 @@ export const agentCommand = new Command('agent')
                   const timeStr = `${duration}ms`;
                   if (result.success) {
                     // 成功：绿色实心圆 + 执行时间
-                    process.stdout.write(`\r${chalk.green('●')} ${chalk.cyan(call.tool)}(${paramsStr}) ${chalk.gray(`(${timeStr})`)}`);
+                    // 使用 \r 回到行首，然后用空格清除行尾，再写入新内容
+                    process.stdout.write(`\r${chalk.green('●')} ${chalk.cyan(call.tool)}(${paramsStr}) ${chalk.gray(`(${timeStr})`)}   `);
                   } else {
                     // 失败：红色叉号 + 执行时间
-                    process.stdout.write(`\r${chalk.red('✗')} ${chalk.cyan(call.tool)}(${paramsStr}) ${chalk.gray(`(${timeStr})`)}`);
+                    process.stdout.write(`\r${chalk.red('✗')} ${chalk.cyan(call.tool)}(${paramsStr}) ${chalk.gray(`(${timeStr})`)}   `);
                     // 失败时在下一行显示错误信息
-                    console.log(`\n  ${chalk.red(`错误: ${result.error}`)}`);
+                    process.stdout.write(`\n  ${chalk.red(`错误: ${result.error}`)}`);
                   }
 
                   // 如果工具失败且不是因为中断，停止后续工具

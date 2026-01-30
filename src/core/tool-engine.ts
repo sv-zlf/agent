@@ -111,7 +111,7 @@ export class ToolEngine {
     }
 
     try {
-      logger.info(`Executing tool: ${call.tool}`);
+      // logger.info(`Executing tool: ${call.tool}`); // 已移除：由上层显示状态
 
       // 验证必需参数
       for (const [paramName, param] of Object.entries(tool.parameters)) {
@@ -166,7 +166,7 @@ export class ToolEngine {
         const endTime = Date.now();
         const duration = endTime - startTime;
 
-        logger.info(`Tool ${call.tool} completed: ${result.success ? 'success' : 'failed'} (${duration}ms)`);
+        // logger.info(`Tool ${call.tool} completed: ${result.success ? 'success' : 'failed'} (${duration}ms)`); // 已移除：由上层显示状态
 
         clearTimeout(timeoutId);
 
