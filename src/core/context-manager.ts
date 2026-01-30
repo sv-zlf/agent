@@ -1,6 +1,6 @@
 import type { Message, EnhancedMessage, MessagePart, ToolCall, ToolResult } from '../types';
 import { createMessage, messageToText, filterMessageParts, PartType } from '../types/message';
-import { ContextOptimizer, CompressionPresets } from './context-optimizer';
+import { ContextCompactor, createContextCompactor } from './context-compactor';
 import * as fs from 'fs-extra';
 
 /**
@@ -13,8 +13,11 @@ export class ContextManager {
   private maxTokens: number;
   private historyFile: string;
   private useEnhancedMessages: boolean = false; // 是否使用增强消息格式
-  private optimizer: ContextOptimizer; // 上下文压缩器
+  private compactor: ContextCompactor; // 上下文压缩器
   private autoCompress: boolean = false; // 是否自动压缩
+  private sessionId: string | null = null; // 会话ID，用于隔离不同会话的历史
+  private baseHistoryFile: string; // 基础历史文件路径（不包含会话ID）
+  private systemPromptSet: boolean = false; // 是否已设置系统提示词
 
   constructor(
     maxHistory: number = 10,
@@ -23,10 +26,12 @@ export class ContextManager {
   ) {
     this.maxHistory = maxHistory;
     this.maxTokens = maxTokens;
+    this.baseHistoryFile = historyFile;
     this.historyFile = historyFile;
-    this.optimizer = new ContextOptimizer({
-      ...CompressionPresets.balanced,
-      maxTokens: maxTokens * 10, // 压缩器的上限是上下文限制的10倍
+    this.compactor = createContextCompactor({
+      enabled: false, // 默认禁用自动压缩
+      maxTokens: maxTokens,
+      reserveTokens: Math.max(1000, maxTokens * 0.2), // 保留 20% 给输出
     });
   }
 
@@ -43,9 +48,9 @@ export class ContextManager {
     }
 
     // 自动压缩（如果启用）
-    if (this.autoCompress && this.shouldCompress()) {
+    if (this.autoCompress && this.compactor.needsCompaction(this.messages)) {
       // 异步压缩，不阻塞
-      this.compress().then(({ result }) => {
+      this.compact().then((result) => {
         if (result.compressed) {
           console.log(`上下文已压缩: 节省 ${result.savedTokens} tokens`);
         }
@@ -188,6 +193,7 @@ export class ContextManager {
    */
   enableAutoCompress(): void {
     this.autoCompress = true;
+    this.compactor.updateConfig({ enabled: true });
   }
 
   /**
@@ -195,30 +201,46 @@ export class ContextManager {
    */
   disableAutoCompress(): void {
     this.autoCompress = false;
+    this.compactor.updateConfig({ enabled: false });
   }
 
   /**
    * 手动压缩上下文
    */
-  async compress(): Promise<{
+  async compact(): Promise<{
+    compressed: boolean;
     messages: (Message | EnhancedMessage)[];
-    result: any;
+    originalTokens: number;
+    compressedTokens: number;
+    savedTokens: number;
+    prunedParts: number;
   }> {
-    return await this.optimizer.compress(this.messages);
+    const result = await this.compactor.compact(this.messages);
+    if (result.compressed) {
+      this.messages = result.messages;
+    }
+    return result;
   }
 
   /**
    * 检查是否需要压缩
    */
   shouldCompress(): boolean {
-    return this.optimizer.shouldCompress(this.messages);
+    return this.compactor.needsCompaction(this.messages);
   }
 
   /**
    * 获取压缩器（用于自定义配置）
    */
-  getOptimizer(): ContextOptimizer {
-    return this.optimizer;
+  getCompactor(): ContextCompactor {
+    return this.compactor;
+  }
+
+  /**
+   * 估算当前上下文的 token 数量
+   */
+  estimateTokens(): number {
+    return this.compactor.estimateMessages(this.messages);
   }
 
   /**
@@ -242,10 +264,10 @@ export class ContextManager {
     if ('parts' in msg) {
       // 增强消息：计算所有非忽略部分的 tokens
       const parts = filterMessageParts(msg as EnhancedMessage);
-      return parts.reduce((sum, part) => sum + this.estimateTokens(part.content), 0);
+      return parts.reduce((sum, part) => sum + this.estimateTextTokens(part.content), 0);
     } else {
       // 旧格式消息
-      return this.estimateTokens(msg.content);
+      return this.estimateTextTokens(msg.content);
     }
   }
 
@@ -281,6 +303,32 @@ export class ContextManager {
    */
   clearContext(): void {
     this.messages = [];
+    this.systemPromptSet = false;
+  }
+
+  /**
+   * 设置会话ID（用于隔离不同会话的历史）
+   */
+  setSessionId(sessionId: string | null): void {
+    this.sessionId = sessionId;
+    // 更新历史文件路径
+    this.historyFile = sessionId
+      ? this.baseHistoryFile.replace('.json', `-${sessionId}.json`)
+      : this.baseHistoryFile;
+  }
+
+  /**
+   * 获取当前会话ID
+   */
+  getSessionId(): string | null {
+    return this.sessionId;
+  }
+
+  /**
+   * 检查系统提示词是否已设置
+   */
+  isSystemPromptSet(): boolean {
+    return this.systemPromptSet;
   }
 
   /**
@@ -299,6 +347,7 @@ export class ContextManager {
 
     // 添加新的系统提示词到开头
     this.messages.unshift({ role: 'system', content: prompt });
+    this.systemPromptSet = true;
   }
 
   /**
@@ -344,7 +393,7 @@ export class ContextManager {
   /**
    * 估算token数量（粗略估算：中文约1字符=1token，英文约4字符=1token）
    */
-  private estimateTokens(text: string): number {
+  private estimateTextTokens(text: string): number {
     // 简单估算：中文字符计数 + 英文单词数
     const chineseChars = (text.match(/[\u4e00-\u9fa5]/g) || []).length;
     const englishChars = text.length - chineseChars;

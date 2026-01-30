@@ -17,7 +17,11 @@ export {
   resetGlobalPermissionManager,
 } from './permissions';
 export {
-  ContextOptimizer,
-  CompressionStrategy,
-  CompressionPresets,
-} from './context-optimizer';
+  ContextCompactor,
+  createContextCompactor,
+} from './context-compactor';
+export { TokenEstimator } from './token-estimator';
+export {
+  SessionManager,
+  createSessionManager,
+} from './session-manager';

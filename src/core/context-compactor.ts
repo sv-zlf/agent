@@ -1,0 +1,276 @@
+/**
+ * 上下文压缩器
+ * 参考 OpenCode 实现，提供智能的上下文压缩和修剪功能
+ */
+
+import type { Message, EnhancedMessage, MessagePart } from '../types';
+import { PartType } from '../types/message';
+import { TokenEstimator } from './token-estimator';
+
+/**
+ * 压缩配置
+ */
+export interface CompactionConfig {
+  enabled: boolean; // 是否启用自动压缩
+  maxTokens: number; // 最大 token 数量
+  reserveTokens: number; // 保留的 token 数量（给输出等）
+  pruneMinimum: number; // 最少修剪多少 tokens 才触发
+  pruneProtect: number; // 保护最近多少 tokens 的工具调用
+  protectedTools: string[]; // 受保护的工具列表（不修剪）
+}
+
+/**
+ * 压缩结果
+ */
+export interface CompactionResult {
+  compressed: boolean; // 是否发生了压缩
+  messages: (Message | EnhancedMessage)[]; // 压缩后的消息
+  originalTokens: number; // 原始 token 数
+  compressedTokens: number; // 压缩后 token 数
+  savedTokens: number; // 节省的 token 数
+  prunedParts: number; // 修剪的部件数量
+}
+
+/**
+ * 上下文压缩器
+ */
+export class ContextCompactor {
+  private config: CompactionConfig;
+
+  constructor(config: Partial<CompactionConfig> = {}) {
+    this.config = {
+      enabled: true,
+      maxTokens: 8000, // 默认 8k 上下文
+      reserveTokens: 2000, // 保留 2k 给输出
+      pruneMinimum: 2000, // 至少节省 2k tokens 才修剪
+      pruneProtect: 4000, // 保护最近 4k tokens
+      protectedTools: [], // 默认无受保护工具
+      ...config,
+    };
+  }
+
+  /**
+   * 更新配置
+   */
+  updateConfig(config: Partial<CompactionConfig>): void {
+    this.config = { ...this.config, ...config };
+  }
+
+  /**
+   * 获取配置
+   */
+  getConfig(): CompactionConfig {
+    return { ...this.config };
+  }
+
+  /**
+   * 检查是否需要压缩
+   */
+  needsCompaction(messages: (Message | EnhancedMessage)[]): boolean {
+    if (!this.config.enabled) return false;
+
+    const tokens = this.estimateMessages(messages);
+    const usable = this.config.maxTokens - this.config.reserveTokens;
+
+    return tokens > usable;
+  }
+
+  /**
+   * 估算消息列表的 token 数量
+   */
+  estimateMessages(messages: (Message | EnhancedMessage)[]): number {
+    let total = 0;
+
+    for (const msg of messages) {
+      if (this.isEnhancedMessage(msg)) {
+        // 增强消息：计算所有部件
+        for (const part of msg.parts) {
+          if (part.ignored) continue; // 跳过被忽略的部件
+          total += TokenEstimator.estimate(part.content || '');
+        }
+      } else {
+        // 普通消息
+        total += TokenEstimator.estimateMessage(msg);
+      }
+    }
+
+    return total;
+  }
+
+  /**
+   * 压缩消息列表
+   */
+  async compact(messages: (Message | EnhancedMessage)[]): Promise<CompactionResult> {
+    const originalTokens = this.estimateMessages(messages);
+
+    // 如果不需要压缩，直接返回
+    if (!this.needsCompaction(messages)) {
+      return {
+        compressed: false,
+        messages,
+        originalTokens,
+        compressedTokens: originalTokens,
+        savedTokens: 0,
+        prunedParts: 0,
+      };
+    }
+
+    // 创建消息副本
+    const compressed = [...messages];
+    let prunedParts = 0;
+
+    // 第一步：智能修剪工具输出
+    const pruneResult = this.pruneToolOutputs(compressed);
+    prunedParts += pruneResult.prunedParts;
+
+    // 第二步：如果还是太大，移除旧消息
+    let afterPruneTokens = this.estimateMessages(compressed);
+    if (afterPruneTokens > this.config.maxTokens - this.config.reserveTokens) {
+      this.removeOldMessages(compressed);
+    }
+
+    const compressedTokens = this.estimateMessages(compressed);
+    const savedTokens = originalTokens - compressedTokens;
+
+    return {
+      compressed: true,
+      messages: compressed,
+      originalTokens,
+      compressedTokens,
+      savedTokens,
+      prunedParts,
+    };
+  }
+
+  /**
+   * 智能修剪工具输出
+   * 参考 OpenCode 的 prune 函数
+   */
+  private pruneToolOutputs(messages: (Message | EnhancedMessage)[]): {
+    prunedParts: number;
+  } {
+    let prunedParts = 0;
+    let totalProtectedTokens = 0;
+    const toPrune: { part: MessagePart; msgIndex: number; partIndex: number }[] = [];
+    let turns = 0; // 对话轮数
+
+    // 从后向前遍历（保护最新的内容）
+    for (let msgIndex = messages.length - 1; msgIndex >= 0; msgIndex--) {
+      const msg = messages[msgIndex];
+
+      // 统计对话轮数
+      if (msg.role === 'user') turns++;
+
+      // 保留最近 2 轮对话的完整内容
+      if (turns < 2) continue;
+
+      // 如果遇到摘要消息，停止修剪
+      if (this.isEnhancedMessage(msg) && (msg as any).summary) {
+        break;
+      }
+
+      // 处理增强消息的部件
+      if (this.isEnhancedMessage(msg)) {
+        for (let partIndex = msg.parts.length - 1; partIndex >= 0; partIndex--) {
+          const part = msg.parts[partIndex];
+
+          // 只修剪工具结果
+          if (part.type === PartType.TOOL_RESULT) {
+            const metadata = part.metadata as any;
+
+            // 检查是否是受保护的工具
+            if (metadata?.tool && this.config.protectedTools.includes(metadata.tool)) {
+              continue;
+            }
+
+            // 检查是否已经被修剪过
+            if (metadata?.compacted) {
+              break;
+            }
+
+            // 估算这个结果的 token 数量
+            const partTokens = TokenEstimator.estimate(part.content || '');
+
+            // 如果已经保护了足够的 tokens，加入修剪列表
+            if (totalProtectedTokens > this.config.pruneProtect) {
+              toPrune.push({ part, msgIndex, partIndex });
+              prunedParts += partTokens;
+            } else {
+              totalProtectedTokens += partTokens;
+            }
+          }
+        }
+      }
+    }
+
+    // 只有当修剪量超过最小阈值时才执行修剪
+    if (prunedParts > this.config.pruneMinimum) {
+      for (const { part, msgIndex, partIndex } of toPrune) {
+        // 截断内容
+        const originalContent = part.content || '';
+        const truncated = this.truncateContent(originalContent, 500); // 保留前 500 字符
+        part.content = truncated + '\n... (内容已压缩，节省 tokens)';
+        (part.metadata as any).compacted = true;
+        (part.metadata as any).originalLength = originalContent.length;
+      }
+    }
+
+    return { prunedParts: toPrune.length };
+  }
+
+  /**
+   * 移除旧消息
+   */
+  private removeOldMessages(messages: (Message | EnhancedMessage)[]): void {
+    const targetTokens = this.config.maxTokens - this.config.reserveTokens;
+    let currentTokens = 0;
+    let keepFromIndex = messages.length;
+
+    // 从后向前保留消息，直到达到目标 token 数量
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i];
+      const msgTokens = this.estimateMessages([msg]);
+
+      // 总是保留 system 消息
+      if (msg.role === 'system') {
+        keepFromIndex = Math.min(keepFromIndex, i);
+        currentTokens += msgTokens;
+        continue;
+      }
+
+      if (currentTokens + msgTokens <= targetTokens) {
+        keepFromIndex = i;
+        currentTokens += msgTokens;
+      } else {
+        break;
+      }
+    }
+
+    // 移除前面的消息
+    if (keepFromIndex > 0) {
+      messages.splice(0, keepFromIndex);
+    }
+  }
+
+  /**
+   * 截断内容到指定字符数
+   */
+  private truncateContent(content: string, maxLength: number): string {
+    if (content.length <= maxLength) return content;
+    return content.substring(0, maxLength);
+  }
+
+  /**
+   * 检查是否是增强消息
+   */
+  private isEnhancedMessage(msg: Message | EnhancedMessage): msg is EnhancedMessage {
+    return 'parts' in msg;
+  }
+}
+
+/**
+ * 创建上下文压缩器
+ */
+export function createContextCompactor(config?: Partial<CompactionConfig>): ContextCompactor {
+  return new ContextCompactor(config);
+}

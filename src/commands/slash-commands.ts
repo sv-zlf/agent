@@ -8,6 +8,7 @@ import * as path from 'path';
 import chalk from 'chalk';
 import { getConfig } from '../config';
 import type { Message } from '../types';
+import type { Session } from '../core/session-manager';
 
 /**
  * 命令处理结果
@@ -33,6 +34,8 @@ export interface CommandContext {
   workingDirectory: string;
   config: any;
   messages: Message[];
+  sessionManager?: any; // SessionManager 实例（可选）
+  contextManager?: any; // ContextManager 实例（可选）
 }
 
 /**
@@ -81,6 +84,27 @@ export class CommandManager {
       name: 'help',
       description: '显示可用命令列表',
       handler: this.handleHelpCommand,
+    });
+
+    // 会话管理命令
+    this.registerCommand({
+      name: 'session',
+      description: '会话管理 (new/list/switch/delete)',
+      handler: this.handleSessionCommand,
+    });
+
+    // 压缩管理命令
+    this.registerCommand({
+      name: 'compress',
+      description: '上下文压缩管理 (on/off/status/manual)',
+      handler: this.handleCompressCommand,
+    });
+
+    // Token 统计命令
+    this.registerCommand({
+      name: 'tokens',
+      description: '显示当前 token 使用情况',
+      handler: this.handleTokensCommand,
     });
   }
 
@@ -422,6 +446,321 @@ export class CommandManager {
     return {
       shouldContinue: false,
     };
+  }
+
+  /**
+   * /session 命令处理器 - 会话管理
+   */
+  private async handleSessionCommand(
+    args: string,
+    context: CommandContext
+  ): Promise<CommandResult> {
+    const { sessionManager, contextManager } = context;
+
+    if (!sessionManager) {
+      console.log(chalk.red('✗ 会话管理器未初始化\n'));
+      return { shouldContinue: false };
+    }
+
+    // 解析子命令
+    const parts = args.trim().split(/\s+/);
+    const subCommand = parts[0] || 'list';
+
+    switch (subCommand) {
+      case 'new':
+        return this.handleNewSession(parts.slice(1).join(' '), sessionManager, contextManager);
+      case 'list':
+        return this.handleListSessions(sessionManager);
+      case 'switch':
+        return this.handleSwitchSession(parts[1], sessionManager, contextManager);
+      case 'delete':
+        return this.handleDeleteSession(parts[1], sessionManager);
+      default:
+        console.log(chalk.yellow('\n📋 会话管理命令:\n'));
+        console.log(chalk.gray('  /session new [名称]     - 创建新会话'));
+        console.log(chalk.gray('  /session list           - 列出所有会话'));
+        console.log(chalk.gray('  /session switch <id>    - 切换到指定会话'));
+        console.log(chalk.gray('  /session delete <id>    - 删除指定会话'));
+        console.log();
+        return { shouldContinue: false };
+    }
+  }
+
+  /**
+   * 创建新会话
+   */
+  private async handleNewSession(
+    name: string,
+    sessionManager: any,
+    contextManager: any
+  ): Promise<CommandResult> {
+    const sessionName = name.trim() || `会话 ${new Date().toLocaleString('zh-CN')}`;
+    const newSession = await sessionManager.createSession(sessionName, 'default');
+
+    // 更新 contextManager 的会话ID
+    if (contextManager) {
+      contextManager.setSessionId(newSession.id);
+      contextManager.clearContext();
+    }
+
+    console.log(chalk.green(`✓ 已创建新会话:`));
+    console.log(chalk.gray(`  ID: ${newSession.id}`));
+    console.log(chalk.gray(`  名称: ${newSession.name}`));
+    console.log();
+
+    return { shouldContinue: false };
+  }
+
+  /**
+   * 列出所有会话
+   */
+  private async handleListSessions(sessionManager: any): Promise<CommandResult> {
+    const sessions = sessionManager.getAllSessions();
+    const currentSession = sessionManager.getCurrentSession();
+
+    console.log(chalk.cyan('\n📋 所有会话:\n'));
+
+    if (sessions.length === 0) {
+      console.log(chalk.gray('  (暂无会话)\n'));
+      return { shouldContinue: false };
+    }
+
+    for (const session of sessions) {
+      const isCurrent = currentSession && session.id === currentSession.id;
+      const prefix = isCurrent ? chalk.green('→ ') : '  ';
+      const nameDisplay = isCurrent ? chalk.green(session.name) : session.name;
+      const time = new Date(session.lastActiveAt).toLocaleString('zh-CN');
+
+      console.log(`${prefix}${nameDisplay}`);
+      console.log(chalk.gray(`    ID: ${session.id.substring(0, 8)}...`));
+      console.log(chalk.gray(`    最后活跃: ${time}`));
+      console.log();
+    }
+
+    return { shouldContinue: false };
+  }
+
+  /**
+   * 切换会话
+   */
+  private async handleSwitchSession(
+    sessionId: string,
+    sessionManager: any,
+    contextManager: any
+  ): Promise<CommandResult> {
+    if (!sessionId) {
+      console.log(chalk.red('✗ 请指定会话 ID\n'));
+      console.log(chalk.gray('使用方法: /session switch <会话ID>'));
+      console.log(chalk.gray('提示: 使用 /session list 查看所有会话'));
+      console.log();
+      return { shouldContinue: false };
+    }
+
+    try {
+      // 支持短ID（前8位）或完整ID
+      const sessions = sessionManager.getAllSessions();
+      const targetSession = sessions.find((s: Session) =>
+        s.id === sessionId || s.id.startsWith(sessionId)
+      );
+
+      if (!targetSession) {
+        console.log(chalk.red(`✗ 会话不存在: ${sessionId}\n`));
+        return { shouldContinue: false };
+      }
+
+      await sessionManager.switchSession(targetSession.id);
+
+      // 更新 contextManager 的会话ID并清空上下文
+      if (contextManager) {
+        contextManager.setSessionId(targetSession.id);
+        contextManager.clearContext();
+      }
+
+      console.log(chalk.green(`✓ 已切换到会话:`));
+      console.log(chalk.gray(`  名称: ${targetSession.name}`));
+      console.log(chalk.gray(`  ID: ${targetSession.id}`));
+      console.log();
+
+      return {
+        shouldContinue: false,
+        message: `已切换到会话: ${targetSession.name}`,
+      };
+    } catch (error) {
+      console.log(chalk.red(`✗ 切换会话失败: ${(error as Error).message}\n`));
+      return { shouldContinue: false };
+    }
+  }
+
+  /**
+   * 删除会话
+   */
+  private async handleDeleteSession(
+    sessionId: string,
+    sessionManager: any
+  ): Promise<CommandResult> {
+    if (!sessionId) {
+      console.log(chalk.red('✗ 请指定会话 ID\n'));
+      console.log(chalk.gray('使用方法: /session delete <会话ID>'));
+      console.log(chalk.gray('提示: 使用 /session list 查看所有会话'));
+      console.log();
+      return { shouldContinue: false };
+    }
+
+    try {
+      // 支持短ID（前8位）或完整ID
+      const sessions = sessionManager.getAllSessions();
+      const targetSession = sessions.find((s: Session) =>
+        s.id === sessionId || s.id.startsWith(sessionId)
+      );
+
+      if (!targetSession) {
+        console.log(chalk.red(`✗ 会话不存在: ${sessionId}\n`));
+        return { shouldContinue: false };
+      }
+
+      const currentSession = sessionManager.getCurrentSession();
+      const isCurrent = currentSession && targetSession.id === currentSession.id;
+
+      await sessionManager.deleteSession(targetSession.id);
+
+      console.log(chalk.green(`✓ 已删除会话:`));
+      console.log(chalk.gray(`  名称: ${targetSession.name}`));
+      console.log(chalk.gray(`  ID: ${targetSession.id}`));
+
+      if (isCurrent) {
+        console.log(chalk.yellow('  注意: 已删除当前会话，已自动切换到其他会话'));
+      }
+
+      console.log();
+
+      return { shouldContinue: false };
+    } catch (error) {
+      console.log(chalk.red(`✗ 删除会话失败: ${(error as Error).message}\n`));
+      return { shouldContinue: false };
+    }
+  }
+
+  /**
+   * /compress 命令处理器 - 压缩管理
+   */
+  private async handleCompressCommand(
+    args: string,
+    context: CommandContext
+  ): Promise<CommandResult> {
+    const { contextManager } = context;
+
+    if (!contextManager) {
+      console.log(chalk.red('✗ 上下文管理器未初始化\n'));
+      return { shouldContinue: false };
+    }
+
+    const subCommand = args.trim() || 'status';
+
+    switch (subCommand) {
+      case 'on':
+        contextManager.enableAutoCompress();
+        console.log(chalk.green('✓ 已启用自动压缩\n'));
+        console.log(chalk.gray('  当上下文接近限制时自动压缩历史消息'));
+        console.log();
+        return { shouldContinue: false };
+
+      case 'off':
+        contextManager.disableAutoCompress();
+        console.log(chalk.yellow('✓ 已禁用自动压缩\n'));
+        return { shouldContinue: false };
+
+      case 'manual':
+        console.log(chalk.cyan('🔄 手动压缩上下文...\n'));
+        const result = await contextManager.compact();
+        if (result.compressed) {
+          console.log(chalk.green('✓ 压缩完成:'));
+          console.log(chalk.gray(`  原始: ${result.originalTokens} tokens`));
+          console.log(chalk.gray(`  压缩后: ${result.compressedTokens} tokens`));
+          console.log(chalk.gray(`  节省: ${result.savedTokens} tokens (${Math.round(result.savedTokens / result.originalTokens * 100)}%)`));
+          if (result.prunedParts > 0) {
+            console.log(chalk.gray(`  修剪: ${result.prunedParts} 个部件`));
+          }
+          console.log();
+        } else {
+          console.log(chalk.yellow('  上下文无需压缩\n'));
+        }
+        return { shouldContinue: false };
+
+      case 'status':
+        const compactor = contextManager.getCompactor();
+        const config = compactor.getConfig();
+        const needsCompaction = compactor.needsCompaction(contextManager.getRawMessages());
+        const currentTokens = contextManager.estimateTokens();
+
+        console.log(chalk.cyan('📊 压缩状态:\n'));
+        console.log(chalk.gray(`  自动压缩: ${config.enabled ? chalk.green('启用') : chalk.yellow('禁用')}`));
+        console.log(chalk.gray(`  当前 tokens: ${currentTokens}`));
+        console.log(chalk.gray(`  最大限制: ${config.maxTokens}`));
+        console.log(chalk.gray(`  保留空间: ${config.reserveTokens}`));
+        console.log(chalk.gray(`  使用率: ${Math.round(currentTokens / (config.maxTokens - config.reserveTokens) * 100)}%`));
+        console.log(chalk.gray(`  需要压缩: ${needsCompaction ? chalk.red('是') : chalk.green('否')}`));
+        console.log();
+        return { shouldContinue: false };
+
+      default:
+        console.log(chalk.yellow('\n📋 压缩管理命令:\n'));
+        console.log(chalk.gray('  /compress on        - 启用自动压缩'));
+        console.log(chalk.gray('  /compress off       - 禁用自动压缩'));
+        console.log(chalk.gray('  /compress manual    - 立即压缩上下文'));
+        console.log(chalk.gray('  /compress status    - 查看压缩状态'));
+        console.log();
+        return { shouldContinue: false };
+    }
+  }
+
+  /**
+   * /tokens 命令处理器 - 显示 token 使用情况
+   */
+  private async handleTokensCommand(
+    args: string,
+    context: CommandContext
+  ): Promise<CommandResult> {
+    const { contextManager } = context;
+
+    if (!contextManager) {
+      console.log(chalk.red('✗ 上下文管理器未初始化\n'));
+      return { shouldContinue: false };
+    }
+
+    const messages = contextManager.getRawMessages();
+    const compactor = contextManager.getCompactor();
+    const totalTokens = compactor.estimateMessages(messages);
+
+    console.log(chalk.cyan('📊 Token 使用情况:\n'));
+    console.log(chalk.gray(`  总 tokens: ${totalTokens}`));
+
+    // 按消息类型统计
+    let userMsgs = 0;
+    let assistantMsgs = 0;
+    let systemMsgs = 0;
+
+    for (const msg of messages) {
+      if (msg.role === 'user') userMsgs++;
+      else if (msg.role === 'assistant') assistantMsgs++;
+      else if (msg.role === 'system') systemMsgs++;
+    }
+
+    console.log(chalk.gray(`  消息数量:`));
+    console.log(chalk.gray(`    用户: ${userMsgs}`));
+    console.log(chalk.gray(`    助手: ${assistantMsgs}`));
+    console.log(chalk.gray(`    系统: ${systemMsgs}`));
+    console.log();
+
+    const config = compactor.getConfig();
+    const usagePercent = Math.round(totalTokens / (config.maxTokens - config.reserveTokens) * 100);
+
+    if (usagePercent > 80) {
+      console.log(chalk.yellow('⚠️  上下文使用率较高，建议启用压缩: /compress on\n'));
+    } else if (usagePercent > 50) {
+      console.log(chalk.gray('ℹ️  可以使用 /compress status 查看详细状态\n'));
+    }
+
+    return { shouldContinue: false };
   }
 }
 

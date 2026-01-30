@@ -7,6 +7,7 @@ import { createAPIAdapter } from '../api';
 import { createToolEngine, createContextManager } from '../core';
 import { getInterruptManager } from '../core/interrupt';
 import { getAgentManager } from '../core/agent';
+import { createSessionManager } from '../core/session-manager';
 import { builtinTools, enhancedBuiltinTools } from '../tools';
 import { createLogger } from '../utils';
 import { displayBanner } from '../utils/logo';
@@ -48,11 +49,28 @@ export const agentCommand = new Command('agent')
     // - Bash: 危险命令拦截、退出码记录
     toolEngine.registerTools(enhancedBuiltinTools);
 
+    // 创建会话管理器
+    const sessionManager = createSessionManager({
+      sessionsDir: path.join(process.cwd(), '.agent-sessions'),
+      currentSessionFile: path.join(process.cwd(), '.agent-current-session'),
+    });
+    await sessionManager.initialize();
+
+    // 获取或创建当前会话
+    let currentSession = sessionManager.getCurrentSession();
+    if (!currentSession) {
+      // 创建新的默认会话
+      currentSession = await sessionManager.createSession('默认会话', options.agent || 'default');
+    }
+
     const agentConfig = config.getAgentConfig();
     const contextManager = createContextManager(
       agentConfig.max_history,
       agentConfig.max_context_tokens
     );
+
+    // 设置会话ID以隔离历史记录
+    contextManager.setSessionId(currentSession.id);
 
     // 加载历史记录
     if (options.history) {
@@ -295,11 +313,17 @@ export const agentCommand = new Command('agent')
             workingDirectory: workingDirectory,
             config: config,
             messages: contextManager.getContext(),
+            sessionManager: sessionManager,
+            contextManager: contextManager,
           });
 
           // 根据命令结果决定是否继续
           if (!result.shouldContinue) {
             // 命令已处理，继续等待下一个输入
+            // 如果系统提示词未设置（比如切换会话后），重新设置
+            if (!contextManager.isSystemPromptSet()) {
+              contextManager.setSystemPrompt(systemPrompt);
+            }
             chatLoop();
             return;
           }

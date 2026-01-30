@@ -8,6 +8,11 @@ backups/
 *.tsbuildinfo
 /.idea/
 /.claude/
-/temp/
+/temp/*
+!/temp/opencode/  # 保留 opencode 参考项目
 /.github/
 /.vscode/
+# 会话管理
+.agent-sessions/
+.agent-current-session
+.agent-history*.json
