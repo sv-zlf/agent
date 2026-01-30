@@ -11,6 +11,7 @@ GG CODE 是一个 TypeScript CLI 应用，实现了 AI 驱动的代码编辑助�
 - **运行 Agent**: `npm run agent` (启动 AI 助手)
 - **开发模式**: `npm run dev -- [command]` (使用 ts-node)
 - **测试**: `npm test` (运行 Jest 测试)
+- **单文件测试**: `npm test -- path/to/test.test.ts`
 - **测试监听**: `npm run test:watch`
 - **Lint**: `npm run lint` (ESLint)
 - **格式化**: `npm run format` (Prettier)
@@ -18,14 +19,20 @@ GG CODE 是一个 TypeScript CLI 应用，实现了 AI 驱动的代码编辑助�
 ## 代码风格
 
 - **运行时**: Node.js >= 16.0.0 with TypeScript
-- **模块系统**: CommonJS (ESM 导入)
-- **类型安全**: Zod schemas 用于验证，TypeScript 接口用于结构
+- **模块系统**: CommonJS (ESM 导入), tsconfig strict mode enabled
+- **类型安全**: Zod schemas 用于工具参数验证，TypeScript 接口用于数据结构
+- **导入风格**:
+  - 第三方库: `import * as z from 'zod'`, `import chalk from 'chalk'`
+  - 本地模块: `import { Logger } from '../utils'`, `import * as fs from 'fs/promises'`
+  - 类型导出: `export * from './message'` 用于批量导出
+  - 工具别名: `import { ReadTool, WriteTool } from './read'` 等
 - **命名约定**:
-  - 变量/函数: camelCase
-  - 类/接口/类型: PascalCase
-  - 常量: UPPER_SNAKE_CASE
-- **错误处理**: 使用自定义错误类型，避免在工具中抛出异常
-- **文件组织**: 基于功能的命名空间组织 (如 `ToolEngine`, `ContextManager`)
+  - 变量/函数: camelCase (如 `toolCallStartTime`, `executeToolCall`)
+  - 类/接口/类型: PascalCase (如 `ToolEngine`, `AgentOrchestrator`)
+  - 常量: UPPER_SNAKE_CASE (如 `DEFAULT_READ_LIMIT`, `MAX_BYTES`)
+  - 工具导出: PascalCase + Tool 后缀 (如 `ReadTool`, `BashTool`)
+- **文件组织**: 按功能模块化 (core/, tools/, utils/, types/)
+- **错误处理**: 工具函数返回错误对象而非抛出异常，避免中断 Agent 执行
 
 ## 架构
 
@@ -112,6 +119,12 @@ export const ToolName = defineTool('tool-id', {
 3. **修改系统提示**: 更新 `src/tools/prompts/default.txt`
 4. **测试**: 使用 `/test` 命令测试交互功能
 
+## 代码模式
+
+- **Logger**: `import { createLogger } from '../utils'; const logger = createLogger(debugMode);`
+- **类型导出**: `export * from './message'` 用于批量导出类型
+- **异步错误处理**: 工具返回 `{ success, output?, error?, metadata }` 而非抛出异常
+
 ## 常见任务
 
 ### 添加新工具
@@ -137,3 +150,4 @@ export const ToolName = defineTool('tool-id', {
 - **会话隔离**: 每个会话有独立的历史文件
 - **Token 限制**: 接近限制时自动触发上下文压缩
 - **P 键中断**: 支持 P 键中断 AI 思考或工具执行
+- **工具输出截断**: 大文件自动截断到 50KB/2000 行，完整内容保存到临时文件
