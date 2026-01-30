@@ -384,11 +384,10 @@ export class CommandManager {
 
     // 常用模型列表
     const commonModels = [
-      { name: 'F-G-9B-V20241220-0000-00', provider: '内部', description: 'F-G-9B 模型 (默认)' },
-      { name: 'F-G-9B-V20241220-0000-01', provider: '内部', description: 'F-G-9B 变体' },
-      { name: 'claude-3-5-sonnet-20241022', provider: 'Anthropic', description: 'Claude 3.5 Sonnet' },
-      { name: 'gpt-4o', provider: 'OpenAI', description: 'GPT-4o' },
-      { name: 'deepseek-chat', provider: 'DeepSeek', description: 'DeepSeek Chat' },
+      { name: 'F-G-9B-V20241220-0000-00', provider: '内部', description: 'F-G-9B 模型' },
+      { name: 'Qwen3-32B-20250627', provider: 'Aliyun', description: 'Qwen3' },
+      { name: 'QWQ-32B_DPO_20250523', provider: 'Aliyun', description: 'QWQ' },
+      { name: 'DeepSeek-V3-671B_20250725', provider: 'DeepSeek', description: 'DeepSeek Chat' },
     ];
 
     // 找到当前模型的索引

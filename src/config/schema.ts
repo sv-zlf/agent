@@ -22,7 +22,7 @@ const DEFAULT_CONFIG: AgentConfig = {
     access_key_id: process.env.ACCESS_KEY_ID || '1305842310935769088',
     tx_code: process.env.TX_CODE || 'A4011LM01',
     sec_node_no: process.env.SEC_NODE_NO || '400136',
-    model: process.env.MODEL_ID || 'F-G-9B-V20241220-0000-00',
+    model: process.env.MODEL_ID || 'DeepSeek-V3-671B_20250725',
     timeout: 30000,
   },
   agent: {
