@@ -488,15 +488,13 @@ export const agentCommand = new Command('agent')
           }
 
           // 每次新的用户输入时，重置所有状态
-          if (!options.yes) {
-            autoApproveAll = false;
-          }
+          autoApproveAll = options.yes || agentConfig.auto_approve || false;
 
           // 重置中断管理器状态
           interruptManager.fullReset();
 
           // 持续对话循环：AI响应 -> 检查工具调用 -> 执行工具 -> 继续对话
-          let maxToolRounds = parseInt(options.iterations, 10);
+          let maxToolRounds = parseInt(options.iterations, 10) || agentConfig.max_iterations || 10;
           let currentRound = 0;
 
           while (currentRound < maxToolRounds) {
