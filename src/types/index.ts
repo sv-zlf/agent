@@ -161,12 +161,18 @@ export interface ToolCallParameter {
 }
 
 /**
+ * 工具权限级别
+ */
+export type ToolPermissionLevel = 'safe' | 'local-modify' | 'network' | 'dangerous';
+
+/**
  * 工具定义
  */
 export interface ToolDefinition {
   name: string;
   description: string;
   category: 'file' | 'search' | 'command' | 'system';
+  permission: ToolPermissionLevel; // 权限级别
   parameters: Record<string, ToolCallParameter>;
   handler: (args: Record<string, unknown>) => Promise<ToolResult>;
 }

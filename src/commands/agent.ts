@@ -439,17 +439,59 @@ export const agentCommand = new Command('agent')
                 }
 
                 try {
+                  // 获取工具定义以检查权限级别
+                  const tool = toolEngine.getTool(call.tool);
+                  if (!tool) {
+                    toolResults.push({
+                      success: false,
+                      error: `未知工具: ${call.tool}`,
+                    });
+                    continue;
+                  }
+
                   // 格式化工具参数显示
                   const paramsStr = Object.entries(call.parameters)
                     .map(([k, v]) => `${k}=${JSON.stringify(v)}`)
                     .join(' ');
 
-                  // 显示工具调用（等待批准）
+                  // 根据权限级别决定是否需要确认
+                  let needsApproval = false;
+                  switch (tool.permission) {
+                    case 'safe':
+                      // 安全操作（只读），不需要确认
+                      needsApproval = false;
+                      break;
+                    case 'local-modify':
+                      // 本地文件修改，需要确认
+                      needsApproval = true;
+                      break;
+                    case 'network':
+                      // 网络操作，需要确认
+                      needsApproval = true;
+                      break;
+                    case 'dangerous':
+                      // 危险操作（执行命令等），必须确认
+                      needsApproval = true;
+                      break;
+                    default:
+                      // 未知权限级别，默认需要确认
+                      needsApproval = true;
+                  }
+
+                  // 显示工具调用
                   console.log(chalk.yellow(`\n○ ${call.tool}(${paramsStr})`));
 
-                  // 询问是否批准
-                  let approved = options.yes || autoApproveAll;
-                  if (!approved) {
+                  // 询问是否批准（根据权限级别和全局设置）
+                  let approved = !needsApproval || options.yes || autoApproveAll;
+                  if (needsApproval && !approved) {
+                    // 显示权限级别提示
+                    const permissionLabel: Record<string, string> = {
+                      'safe': '安全操作',
+                      'local-modify': '文件修改',
+                      'network': '网络操作',
+                      'dangerous': '危险操作',
+                    };
+                    console.log(chalk.gray(`  [${permissionLabel[tool.permission] || '需要确认'}]`));
                     console.log(chalk.gray('  等待批准...'));
                     const choice = await askForApproval();
 
@@ -472,7 +514,12 @@ export const agentCommand = new Command('agent')
                       console.log(chalk.green('✓ 已批准\n'));
                     }
                   } else {
-                    console.log(chalk.green('✓ 自动批准\n'));
+                    // 自动批准
+                    if (needsApproval) {
+                      console.log(chalk.green('✓ 自动批准\n'));
+                    } else {
+                      console.log(chalk.gray('  [安全操作，自动执行]\n'));
+                    }
                   }
 
                   // 显示执行中状态

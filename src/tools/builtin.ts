@@ -18,6 +18,7 @@ export const ReadTool: ToolDefinition = {
   name: 'Read',
   description: '读取文件内容。这是用于读取文件的主要工具。在你想要查看文件内容时使用此工具。',
   category: 'file',
+  permission: 'safe',
   parameters: {
     file_path: {
       type: 'string',
@@ -94,6 +95,7 @@ export const WriteTool: ToolDefinition = {
   name: 'Write',
   description: '写入文件内容。此工具会覆盖整个文件。仅在你确定需要完全覆盖文件时使用此工具。否则，应该使用Edit工具。',
   category: 'file',
+  permission: 'local-modify',
   parameters: {
     file_path: {
       type: 'string',
@@ -147,6 +149,7 @@ export const EditTool: ToolDefinition = {
   name: 'Edit',
   description: '对文件执行精确的字符串替换。在你想对文件进行修改时应该首选此工具。此工具执行字符串搜索和替换操作。',
   category: 'file',
+  permission: 'local-modify',
   parameters: {
     file_path: {
       type: 'string',
@@ -230,6 +233,7 @@ export const GlobTool: ToolDefinition = {
   name: 'Glob',
   description: '使用glob模式查找文件。当你需要根据模式查找文件时使用此工具。',
   category: 'search',
+  permission: 'safe',
   parameters: {
     pattern: {
       type: 'string',
@@ -277,6 +281,7 @@ export const GrepTool: ToolDefinition = {
   name: 'Grep',
   description: '在文件中搜索匹配的内容。支持正则表达式。当你想要查找代码中的特定内容时使用此工具。',
   category: 'search',
+  permission: 'safe',
   parameters: {
     pattern: {
       type: 'string',
@@ -352,6 +357,7 @@ export const BashTool: ToolDefinition = {
   name: 'Bash',
   description: '执行shell命令。用于运行测试、构建项目、git操作等。仅在你确定命令安全时使用。',
   category: 'command',
+  permission: 'dangerous',
   parameters: {
     command: {
       type: 'string',
@@ -500,6 +506,7 @@ export const MakeDirectoryTool: ToolDefinition = {
   name: 'MakeDirectory',
   description: '创建目录（文件夹）。支持递归创建多级目录。',
   category: 'file',
+  permission: 'local-modify',
   parameters: {
     path: {
       type: 'string',
