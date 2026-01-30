@@ -1,6 +1,7 @@
 import type { Message, EnhancedMessage, MessagePart, ToolCall, ToolResult } from '../types';
 import { createMessage, messageToText, filterMessageParts, PartType } from '../types/message';
 import { ContextCompactor, createContextCompactor, LLMChatFunction } from './context-compactor';
+import { TokenEstimator } from './token-estimator';
 import * as fs from 'fs-extra';
 import * as path from 'path';
 import { getHistoryBasePath } from '../utils';
@@ -17,8 +18,6 @@ export class ContextManager {
   private useEnhancedMessages: boolean = false;
   private compactor: ContextCompactor;
   private autoCompress: boolean = false;
-  private sessionId: string | null = null;
-  private baseHistoryFile: string;
   private systemPromptSet: boolean = false;
   private llmChat: LLMChatFunction | null = null;
   private llmCompactEnabled: boolean = false;
@@ -30,13 +29,11 @@ export class ContextManager {
   ) {
     this.maxHistory = maxHistory;
     this.maxTokens = maxTokens;
-    // 使用系统根目录，除非指定了自定义路径
-    this.baseHistoryFile = historyFile || path.join(getHistoryBasePath(), 'agent-history.json');
-    this.historyFile = this.baseHistoryFile;
+    this.historyFile = historyFile || path.join(getHistoryBasePath(), 'agent-history.json');
     this.compactor = createContextCompactor({
-      enabled: false, // 默认禁用自动压缩
+      enabled: false,
       maxTokens: maxTokens,
-      reserveTokens: Math.max(1000, maxTokens * 0.2), // 保留 20% 给输出
+      reserveTokens: Math.max(1000, maxTokens * 0.2),
     });
   }
 
@@ -358,24 +355,6 @@ export class ContextManager {
   }
 
   /**
-   * 设置会话ID（用于隔离不同会话的历史）
-   */
-  setSessionId(sessionId: string | null): void {
-    this.sessionId = sessionId;
-    // 更新历史文件路径
-    this.historyFile = sessionId
-      ? this.baseHistoryFile.replace('.json', `-${sessionId}.json`)
-      : this.baseHistoryFile;
-  }
-
-  /**
-   * 获取当前会话ID
-   */
-  getSessionId(): string | null {
-    return this.sessionId;
-  }
-
-  /**
    * 检查系统提示词是否已设置
    */
   isSystemPromptSet(): boolean {
@@ -393,6 +372,11 @@ export class ContextManager {
    * 设置系统提示词
    */
   setSystemPrompt(prompt: string): void {
+    // 确保 messages 是数组
+    if (!Array.isArray(this.messages)) {
+      this.messages = [];
+    }
+
     // 移除旧的系统提示词
     this.messages = this.messages.filter((m) => m.role !== 'system');
 

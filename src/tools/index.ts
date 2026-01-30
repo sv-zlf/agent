@@ -12,6 +12,9 @@ import { GrepTool } from './grep';
 import { BashTool } from './bash';
 import { MakeDirectoryTool } from './make-directory';
 import { TaskTool } from './task';
+import { TodoWriteTool, TodoReadTool, TodoDeleteTool, TodoClearTool } from './todo';
+import { BatchTool } from './batch';
+import { MultiEditTool } from './multiedit';
 import type { ToolDefinition } from '../types';
 
 /**
@@ -26,6 +29,12 @@ export const tools = {
   bash: BashTool,
   'make-directory': MakeDirectoryTool,
   task: TaskTool,
+  todowrite: TodoWriteTool,
+  todoread: TodoReadTool,
+  tododelete: TodoDeleteTool,
+  todoclear: TodoClearTool,
+  batch: BatchTool,
+  multiedit: MultiEditTool,
 };
 
 /**
@@ -95,6 +104,9 @@ export * from './grep';
 export * from './bash';
 export * from './make-directory';
 export * from './tool';
+export * from './todo';
+export * from './batch';
+export * from './multiedit';
 
 /**
  * 获取所有工具信息
@@ -219,10 +231,16 @@ function getCategory(toolId: string): ToolDefinition['category'] {
     write: 'file',
     edit: 'file',
     'make-directory': 'file',
+    multiedit: 'file',
     glob: 'search',
     grep: 'search',
     bash: 'command',
     task: 'system',
+    todowrite: 'system',
+    todoread: 'system',
+    tododelete: 'system',
+    todoclear: 'system',
+    batch: 'system',
   };
   return categories[toolId] || 'system';
 }
@@ -235,8 +253,14 @@ function getPermission(toolId: string): ToolDefinition['permission'] {
     write: 'local-modify',
     edit: 'local-modify',
     'make-directory': 'local-modify',
+    multiedit: 'local-modify',
     bash: 'dangerous',
     task: 'network',
+    todowrite: 'safe',
+    todoread: 'safe',
+    tododelete: 'local-modify',
+    todoclear: 'local-modify',
+    batch: 'safe',
   };
   return permissions[toolId] || 'safe';
 }
@@ -253,8 +277,14 @@ export function overrideToolPermission(toolId: string, permission: ToolDefinitio
     write: 'local-modify',
     edit: 'local-modify',
     'make-directory': 'local-modify',
+    multiedit: 'local-modify',
     bash: 'dangerous',
     task: 'network',
+    todowrite: 'safe',
+    todoread: 'safe',
+    tododelete: 'local-modify',
+    todoclear: 'local-modify',
+    batch: 'safe',
   };
   permissions[toolId] = permission;
 }

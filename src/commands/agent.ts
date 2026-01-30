@@ -4,10 +4,7 @@ import chalk from 'chalk';
 import ora = require('ora');
 import { getConfig } from '../config';
 import { createAPIAdapter } from '../api';
-import { createToolEngine, createContextManager } from '../core';
-import { getInterruptManager } from '../core/interrupt';
-import { getAgentManager } from '../core/agent';
-import { createSimpleSessionManager, createFunctionalAgentManager } from '../core';
+import { createToolEngine, createContextManager, createSessionManager, createFunctionalAgentManager, getInterruptManager, getAgentManager } from '../core';
 import { getBuiltinTools } from '../tools';
 import { PermissionManager, PermissionAction } from '../core/permissions';
 import { createLogger } from '../utils';
@@ -116,29 +113,31 @@ export const agentCommand = new Command('agent')
       });
     });
 
-    // 创建简化的会话管理器（单一会话模式）
-    const sessionManager = createSimpleSessionManager();
+    // 创建会话管理器
+    const sessionManager = createSessionManager();
     await sessionManager.initialize();
 
-    // 设置 agent 类型
+    // 如果指定了 agent，创建新会话或更新现有会话
     if (options.agent) {
-      sessionManager.setAgent(options.agent);
+      const currentSession = sessionManager.getCurrentSession();
+      if (currentSession) {
+        await sessionManager.updateSessionActivity();
+        sessionManager.setAgent(options.agent);
+      }
     }
 
-    // 获取当前会话（始终存在）
+    // 获取当前会话
     const currentSession = sessionManager.getCurrentSession();
 
     const agentConfig = config.getAgentConfig();
     const contextManager = createContextManager(
       agentConfig.max_history,
-      agentConfig.max_context_tokens
+      agentConfig.max_context_tokens,
+      currentSession?.historyFile
     );
 
-    // 设置会话ID以隔离历史记录
-    contextManager.setSessionId(currentSession.id);
-
     // 加载历史记录
-    if (options.history) {
+    if (options.history && currentSession) {
       await contextManager.loadHistory();
     }
 

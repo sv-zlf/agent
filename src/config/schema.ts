@@ -26,8 +26,8 @@ const DEFAULT_CONFIG: AgentConfig = {
   },
   agent: {
     max_context_tokens: 8000,
-    max_history: 10,
-    max_iterations: 10,
+    max_history: 20,
+    max_iterations: 20,
     auto_approve: false,
   },
 };

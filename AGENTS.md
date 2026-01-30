@@ -82,11 +82,17 @@ export const ToolName = defineTool('tool-id', {
 - `read` - 读取文件内容
 - `write` - 写入文件
 - `edit` - 编辑文件（字符串替换）
+- `multiedit` - 多文件编辑（对单个文件执行多次编辑）
 - `glob` - 文件模式匹配
 - `grep` - 内容搜索
 - `bash` - 执行命令
 - `make-directory` - 创建目录
 - `task` - 启动子 agent 执行复杂任务
+- `batch` - 批量并行执行多个工具调用
+- `todowrite` - 创建或更新任务列表
+- `todoread` - 读取任务列表（支持过滤）
+- `tododelete` - 删除指定任务
+- `todoclear` - 清空所有任务
 
 ### 配置系统
 

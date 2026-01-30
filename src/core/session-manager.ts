@@ -177,6 +177,24 @@ export class SessionManager {
   }
 
   /**
+   * 设置当前会话的 agent 类型
+   */
+  async setAgent(agentType: string): Promise<void> {
+    const session = this.getCurrentSession();
+    if (session) {
+      session.agentType = agentType;
+      await this.saveSession(session);
+    }
+  }
+
+  /**
+   * 获取当前会话的 agent 类型
+   */
+  getAgent(): string {
+    return this.getCurrentSession()?.agentType || 'default';
+  }
+
+  /**
    * 保存会话信息
    */
   private async saveSession(session: Session): Promise<void> {

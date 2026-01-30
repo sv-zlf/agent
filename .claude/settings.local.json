@@ -36,7 +36,11 @@
       "Bash(wc:*)",
       "Bash(npx tsx:*)",
       "Bash(cmd.exe:*)",
-      "Bash(./node_modules/.bin/tsc.cmd:*)"
+      "Bash(./node_modules/.bin/tsc.cmd:*)",
+      "Bash(./node_modules/.bin/tsc:*)",
+      "Bash(test:*)",
+      "Bash(tee:*)",
+      "Bash(git add:*)"
     ]
   }
 }

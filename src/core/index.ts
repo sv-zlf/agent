@@ -26,11 +26,9 @@ export {
   createSessionManager,
 } from './session-manager';
 export {
-  SimpleSessionManager,
-  createSimpleSessionManager,
-} from './simple-session';
-export {
   FunctionalAgentManager,
   createFunctionalAgentManager,
   FunctionalAgentType,
 } from './functional-agents';
+export { AgentManager, getAgentManager } from './agent';
+export { InterruptManager, getInterruptManager } from './interrupt';
