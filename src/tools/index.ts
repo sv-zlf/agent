@@ -10,7 +10,6 @@ import { EditTool } from './edit';
 import { GlobTool } from './glob';
 import { GrepTool } from './grep';
 import { BashTool } from './bash';
-import { MakeDirectoryTool } from './make-directory';
 import { TaskTool } from './task';
 import { TodoWriteTool, TodoReadTool, TodoDeleteTool, TodoClearTool } from './todo';
 import { BatchTool } from './batch';
@@ -27,7 +26,6 @@ export const tools = {
   glob: GlobTool,
   grep: GrepTool,
   bash: BashTool,
-  'make-directory': MakeDirectoryTool,
   task: TaskTool,
   todowrite: TodoWriteTool,
   todoread: TodoReadTool,
@@ -102,7 +100,6 @@ export * from './edit';
 export * from './glob';
 export * from './grep';
 export * from './bash';
-export * from './make-directory';
 export * from './tool';
 export * from './todo';
 export * from './batch';
@@ -230,7 +227,6 @@ function getCategory(toolId: string): ToolDefinition['category'] {
     read: 'file',
     write: 'file',
     edit: 'file',
-    'make-directory': 'file',
     multiedit: 'file',
     glob: 'search',
     grep: 'search',
@@ -252,7 +248,6 @@ function getPermission(toolId: string): ToolDefinition['permission'] {
     grep: 'safe',
     write: 'local-modify',
     edit: 'local-modify',
-    'make-directory': 'local-modify',
     multiedit: 'local-modify',
     bash: 'dangerous',
     task: 'network',
@@ -276,7 +271,6 @@ export function overrideToolPermission(toolId: string, permission: ToolDefinitio
     grep: 'safe',
     write: 'local-modify',
     edit: 'local-modify',
-    'make-directory': 'local-modify',
     multiedit: 'local-modify',
     bash: 'dangerous',
     task: 'network',

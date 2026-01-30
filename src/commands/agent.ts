@@ -27,6 +27,67 @@ const PERMISSION_LABELS: Record<string, string> = {
 };
 
 /**
+ * 格式化消息显示 - 参考 OpenCode 紧凑格式
+ */
+function formatTimestamp(): string {
+  return new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+function printSeparator(color: chalk.Chalk = chalk.gray): void {
+  console.log(color('─'.repeat(60)));
+}
+
+function printUserMessage(message: string): void {
+  console.log();
+  printSeparator(chalk.cyan);
+  console.log(chalk.cyan('👤 用户') + chalk.gray(`  ${formatTimestamp()}`));
+  console.log();
+  console.log(chalk.white(message));
+  console.log();
+}
+
+function printAssistantMessage(message: string): void {
+  printSeparator(chalk.magenta);
+  console.log(chalk.magenta('🤖 AI 助手') + chalk.gray(`  ${formatTimestamp()}`));
+  console.log();
+  console.log(chalk.white(message));
+  console.log();
+}
+
+function printCompactAssistant(response: string): void {
+  const brief = response.split('\n')[0].substring(0, 80) + (response.length > 80 ? '...' : '');
+  console.log(chalk.magenta('● ') + brief);
+}
+
+function printCompactToolCall(tool: string, params: Record<string, unknown>): void {
+  const paramsStr = Object.entries(params)
+    .map(([k, v]) => `${k}=${JSON.stringify(v)}`)
+    .join(', ');
+  console.log(chalk.yellow('● ') + chalk.cyan(tool) + (paramsStr ? `(${paramsStr})` : ''));
+}
+
+function printToolCompactResult(success: boolean, result: { output?: string; error?: string }): void {
+  if (success && result.output) {
+    const lines = result.output.split('\n');
+    const brief = lines.slice(0, 2).join(' | ');
+    const truncated = lines.length > 2 || result.output.length > 150;
+    console.log(chalk.gray(`  ⎿  ${brief}${truncated ? '... (ctrl+o expand)' : ''}`));
+  } else if (!success && result.error) {
+    console.log(chalk.red(`  ⎿  ✗ ${result.error.substring(0, 100)}`));
+  } else {
+    console.log(chalk.gray('  ⎿  ✓'));
+  }
+}
+
+function printSection(title: string, color: chalk.Chalk = chalk.cyan): void {
+  console.log();
+  printSeparator(color);
+  console.log(color(title));
+  printSeparator(color);
+  console.log();
+}
+
+/**
  * 从工具参数中提取路径（用于权限检查）
  */
 function extractPathFromParams(tool: string, params: Record<string, unknown>): string | undefined {
@@ -678,18 +739,20 @@ export const agentCommand = new Command('agent')
               if (toolCalls.length === 0) {
                 // 没有工具调用，这是最终答案
                 contextManager.addMessage('assistant', response);
-                console.log(chalk.green('AI:'), response);
-                console.log();
+                printAssistantMessage(response);
                 break; // 退出工具调用循环，等待用户输入
               }
 
-              // 有工具调用，显示AI的响应
-              console.log(chalk.green('AI:'), response);
+              // 有工具调用，使用紧凑格式显示
+              console.log();
+              printCompactAssistant(response);
               console.log();
 
-              // 执行工具调用
-              console.log(chalk.gray(`⚙️  执行 ${toolCalls.length} 个工具调用...`));
-              console.log(chalk.gray('💡 提示: 按 P 键可中断当前工具执行\n'));
+              // 显示工具调用（紧凑格式）
+              for (const call of toolCalls) {
+                printCompactToolCall(call.tool, call.parameters);
+              }
+              console.log();
 
               const toolResults: any[] = [];
               for (const call of toolCalls) {
@@ -739,8 +802,8 @@ export const agentCommand = new Command('agent')
 
                   // 如果需要确认但未自动批准
                   if (needsApproval && !approved) {
-                    // 显示工具调用和权限提示
-                    console.log(`\n${chalk.yellow('○')} ${chalk.cyan(call.tool)}(${paramsStr})`);
+                    // 显示工具调用和权限提示（紧凑格式）
+                    printCompactToolCall(call.tool, call.parameters);
                     const permissionLabel = PERMISSION_LABELS[tool.permission] || '需要确认';
                     console.log(chalk.gray(`  [${permissionLabel}]`));
 
@@ -800,14 +863,15 @@ export const agentCommand = new Command('agent')
                   // 更新同一行显示结果
                   const timeStr = `${duration}ms`;
                   if (result.success) {
-                    // 成功：绿色实心圆 + 执行时间
-                    // 使用 \r 回到行首，然后用空格清除行尾，再写入新内容
-                    process.stdout.write(`\r${chalk.green('●')} ${chalk.cyan(call.tool)}(${paramsStr}) ${chalk.gray(`(${timeStr})`)}   `);
+                    // 成功：绿色实心圆 + 工具名 + 时间
+                    process.stdout.write(`\r${chalk.green('●')} ${chalk.cyan(call.tool)}(${paramsStr}) ${chalk.gray(`(${timeStr})`)}   \n`);
+                    // 在下行显示简要结果
+                    printToolCompactResult(true, result);
                   } else {
-                    // 失败：红色叉号 + 执行时间
-                    process.stdout.write(`\r${chalk.red('✗')} ${chalk.cyan(call.tool)}(${paramsStr}) ${chalk.gray(`(${timeStr})`)}   `);
-                    // 失败时在下一行显示错误信息
-                    process.stdout.write(`\n  ${chalk.red(`错误: ${result.error}`)}`);
+                    // 失败：红色叉号 + 工具名 + 时间
+                    process.stdout.write(`\r${chalk.red('✗')} ${chalk.cyan(call.tool)}(${paramsStr}) ${chalk.gray(`(${timeStr})`)}   \n`);
+                    // 在下行显示错误信息
+                    printToolCompactResult(false, result);
                   }
 
                   // 如果工具失败且不是因为中断，停止后续工具
@@ -853,6 +917,11 @@ export const agentCommand = new Command('agent')
               }
 
               console.log(); // 空行分隔
+
+              // 工具执行完成，显示分隔线
+              printSeparator(chalk.gray);
+              console.log();
+
             } catch (roundError) {
               // 单轮工具调用出错，记录错误并继续
               console.log(chalk.red(`\n❌ 工具调用轮次错误: ${(roundError as Error).message}`));
@@ -882,8 +951,7 @@ export const agentCommand = new Command('agent')
               const finalResponse = await apiAdapter.chat(finalMessages);
 
               contextManager.addMessage('assistant', finalResponse);
-              console.log(chalk.green('AI 总结:'), finalResponse);
-              console.log();
+              printAssistantMessage(finalResponse);
             } catch (error) {
               console.log(chalk.red(`生成总结失败: ${(error as Error).message}\n`));
             }
