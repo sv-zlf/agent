@@ -222,6 +222,7 @@ function getCategory(toolId: string): ToolDefinition['category'] {
     glob: 'search',
     grep: 'search',
     bash: 'command',
+    task: 'system',
   };
   return categories[toolId] || 'system';
 }
@@ -235,6 +236,7 @@ function getPermission(toolId: string): ToolDefinition['permission'] {
     edit: 'local-modify',
     'make-directory': 'local-modify',
     bash: 'dangerous',
+    task: 'network',
   };
   return permissions[toolId] || 'safe';
 }
@@ -252,6 +254,7 @@ export function overrideToolPermission(toolId: string, permission: ToolDefinitio
     edit: 'local-modify',
     'make-directory': 'local-modify',
     bash: 'dangerous',
+    task: 'network',
   };
   permissions[toolId] = permission;
 }

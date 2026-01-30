@@ -13,7 +13,7 @@ const logger = createLogger(true);
 /**
  * Agent执行配置
  */
-interface AgentExecutionConfig extends AgentRuntimeConfig {
+export interface AgentExecutionConfig extends AgentRuntimeConfig {
   onToolCall?: (call: ToolCall) => Promise<boolean>; // 返回true表示批准
   onStatusChange?: (status: AgentStatus, message?: string) => void;
 }

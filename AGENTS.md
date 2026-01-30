@@ -86,6 +86,7 @@ export const ToolName = defineTool('tool-id', {
 - `grep` - 内容搜索
 - `bash` - 执行命令
 - `make-directory` - 创建目录
+- `task` - 启动子 agent 执行复杂任务
 
 ### 配置系统
 

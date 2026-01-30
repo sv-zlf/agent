@@ -1,75 +1,187 @@
 /**
  * GG CODE - Task Tool
  * 启动专门的 agent 处理复杂的多步骤任务
+ * 当前主要支持 explore（代码探索）子 agent
  */
 
 import * as z from 'zod';
-import * as fs from 'fs/promises';
-import * as path from 'path';
-import { defineTool } from './tool';
-import { readFileSync } from 'fs';
+import { defineTool, type ToolExecuteResult } from './tool';
+import { getAgentManager } from '../core/agent';
+import { createSessionManager, type Session } from '../core/session-manager';
+import { createContextManager, type ContextManager } from '../core/context-manager';
+import { createAPIAdapter } from '../api';
+import { createToolEngine } from '../core/tool-engine';
+import { createAgentOrchestrator, type AgentExecutionConfig } from '../core/agent';
+import { getConfig } from '../config';
+
+interface TaskMetadata {
+  sessionId: string;
+  subagentType: string;
+  description: string;
+  summary?: Array<{
+    id: string;
+    tool: string;
+    state: {
+      status: string;
+      title?: string;
+    };
+  }>;
+}
+
+const TaskParameters = z.object({
+  description: z.string().describe('任务的简短描述（3-5个词）'),
+  prompt: z.string().describe('agent 要执行的具体任务'),
+  subagent_type: z.string().describe('子 agent 类型').default('explore'),
+  session_id: z.string().describe('继续现有任务会话').optional(),
+});
 
 export const TaskTool = defineTool('task', {
-  description: '启动专门的 agent 来处理复杂、多步骤的任务。可用于代码探索、代码审查等专门任务。',
-  parameters: z.object({
-    description: z.string().describe('任务的简短描述（3-5个词）'),
-    prompt: z.string().describe('agent 要执行的具体任务'),
-    subagent_type: z.string().describe('要使用的专门 agent 类型 (explore)'),
-  }),
-  async execute(args, ctx) {
-    const { description, prompt, subagent_type } = args;
+  description: `启动专门的 agent 来处理复杂、多步骤的任务。
 
-    // 验证 subagent_type
-    const validAgents = ['explore'];
-    if (!validAgents.includes(subagent_type)) {
+**主要用途**：代码探索和搜索
+
+可用子 agent 类型:
+- \`explore\`: 代码探索专家，只进行只读操作（读取、搜索、分析）
+
+使用场景:
+- 深入探索代码库结构
+- 系统性地审查代码
+- 查找特定功能或模式
+
+**注意**: 当前主要支持 \`explore\` 子 agent，后续可扩展更多类型。`,
+  parameters: TaskParameters,
+  async execute(args, ctx): Promise<ToolExecuteResult<TaskMetadata>> {
+    const { description, prompt, subagent_type, session_id } = args;
+
+    const agentManager = getAgentManager();
+    const config = getConfig();
+    const apiConfig = config.getAPIConfig();
+    const agentConfig = config.getAgentConfig();
+
+    const agent = agentManager.getAgent(subagent_type);
+    if (!agent) {
       return {
-        title: 'Invalid Agent Type',
-        output: `Unknown agent type: ${subagent_type}. Valid types: ${validAgents.join(', ')}`,
-        metadata: { error: true },
+        title: 'Unknown Agent Type',
+        output: `Unknown agent type: ${subagent_type}. Currently only 'explore' is supported.`,
+        metadata: {
+          sessionId: '',
+          subagentType: subagent_type,
+          description,
+        },
       };
     }
 
-    // 读取 agent prompt
-    let agentPrompt = '';
+    const sessionManager = createSessionManager();
+    await sessionManager.initialize();
+
+    let session: Session;
+    let subagentContextManager: ContextManager;
+
+    if (session_id) {
+      const existingSession = Array.from(sessionManager.getAllSessions()).find(s => s.id === session_id);
+      if (existingSession) {
+        session = existingSession;
+        subagentContextManager = createContextManager(
+          agentConfig.max_history,
+          agentConfig.max_context_tokens,
+          session.contextFile
+        );
+        await subagentContextManager.loadHistory();
+      } else {
+        session = await sessionManager.createSession(`${description} (@${subagent_type})`, subagent_type);
+        subagentContextManager = createContextManager(
+          agentConfig.max_history,
+          agentConfig.max_context_tokens,
+          session.contextFile
+        );
+      }
+    } else {
+      session = await sessionManager.createSession(`${description} (@${subagent_type})`, subagent_type);
+      subagentContextManager = createContextManager(
+        agentConfig.max_history,
+        agentConfig.max_context_tokens,
+        session.contextFile
+      );
+    }
+
+    ctx.metadata({
+      title: description,
+      metadata: {
+        sessionId: session.id,
+        subagentType: subagent_type,
+        description,
+      },
+    });
+
+    const parentContext = subagentContextManager.getRawMessages();
+    const lastMessages = parentContext.slice(-20);
+    const systemPrompt = await agentManager.loadAgentPrompt(subagent_type);
+
+    subagentContextManager.clearContext();
+    subagentContextManager.setSystemPrompt(systemPrompt);
+
+    for (const msg of lastMessages) {
+      if (msg.role === 'system') continue;
+      subagentContextManager.addMessage(msg.role as 'user' | 'assistant', 'content' in msg ? msg.content : '');
+    }
+
+    const userPrompt = `## 主任务\n${prompt}\n\n## 背景信息\n这是从主会话传递过来的任务。请完成上述任务，并在最后提供清晰的总结。`;
+
+    subagentContextManager.addMessage('user', userPrompt);
+
+    const apiAdapter = createAPIAdapter(apiConfig);
+    const toolEngine = createToolEngine();
+
+    const execConfig: AgentExecutionConfig = {
+      workingDirectory: process.cwd(),
+      maxIterations: agent.maxSteps || 20,
+      autoApprove: false,
+      dangerousCommands: [],
+    };
+
+    const orchestrator = createAgentOrchestrator(
+      apiAdapter,
+      toolEngine,
+      subagentContextManager,
+      execConfig
+    );
+
+    let subagentResult: Awaited<ReturnType<typeof orchestrator.execute>>;
     try {
-      const promptPath = path.join(process.cwd(), 'src/tools/prompts', `${subagent_type}.txt`);
-      agentPrompt = readFileSync(promptPath, 'utf-8');
-    } catch (error) {
-      return {
-        title: 'Agent Not Found',
-        output: `Agent prompt file not found for: ${subagent_type}`,
-        metadata: { error: true },
-      };
+      subagentResult = await orchestrator.execute(prompt);
+    } finally {
+      await subagentContextManager.saveHistory();
     }
 
-    // 模拟 agent 执行（这里应该调用实际的 agent 系统）
-    // 在简化版本中，我们返回一个提示告诉用户这个功能需要进一步实现
-    const result = `
-[Task: ${description}]
-[Agent: ${subagent_type}]
+    const messages = subagentContextManager.getRawMessages();
+    const assistantMessages = messages.filter(m => m.role === 'assistant');
 
-任务说明：
-${prompt}
+    const summary = assistantMessages.flatMap((msg: any) => {
+      if ('parts' in msg) {
+        return msg.parts
+          .filter((p: any) => p.type === 'tool')
+          .map((p: any) => ({
+            id: p.id,
+            tool: p.tool,
+            state: {
+              status: p.state?.status || 'completed',
+              title: p.state?.status === 'completed' ? p.state?.title : undefined,
+            },
+          }));
+      }
+      return [];
+    });
 
-Agent 提示词：
-${agentPrompt.substring(0, 200)}...
-
-注意：完整的 Task 工具实现需要：
-1. 创建独立的 agent 会话
-2. 继承父会话的权限和上下文
-3. 执行完成后返回结果给主 agent
-4. 关闭 agent 会话
-
-这是一个简化版本，完整的实现需要集成到 agent orchestrator 中。
-    `.trim();
+    const finalOutput = subagentResult.finalAnswer || subagentResult.error || '任务执行完成';
 
     return {
-      title: `Task: ${description}`,
-      output: result,
+      title: description,
+      output: `${finalOutput}\n\n<task_metadata>\nsession_id: ${session.id}\n</task_metadata>`,
       metadata: {
-        subagent: subagent_type,
+        sessionId: session.id,
+        subagentType: subagent_type,
         description,
-        status: 'completed',
+        summary,
       },
     };
   },
