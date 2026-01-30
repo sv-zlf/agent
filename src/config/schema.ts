@@ -153,6 +153,13 @@ export class ConfigManager {
   }
 
   /**
+   * 更新 API 配置中的单个字段
+   */
+  updateAPIConfig<K extends keyof AgentConfig['api']>(key: K, value: AgentConfig['api'][K]): void {
+    this.config.api[key] = value;
+  }
+
+  /**
    * 获取API配置
    */
   getAPIConfig() {

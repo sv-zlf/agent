@@ -471,7 +471,7 @@ export class CommandManager {
       await fs.writeFile(configPath, JSON.stringify(configObj, null, 2), 'utf-8');
 
       // 更新内存中的配置（立即生效）
-      config.set('api', { ...config.getAPIConfig(), model: modelName });
+      config.updateAPIConfig('model', modelName);
 
       console.log(chalk.green(`✓ 已切换模型:`));
       console.log(chalk.gray(`  从: ${oldModel}`));
