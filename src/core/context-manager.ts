@@ -1,6 +1,6 @@
 import type { Message, EnhancedMessage, MessagePart, ToolCall, ToolResult } from '../types';
 import { createMessage, messageToText, filterMessageParts, PartType } from '../types/message';
-import { ContextCompactor, createContextCompactor } from './context-compactor';
+import { ContextCompactor, createContextCompactor, LLMChatFunction } from './context-compactor';
 import * as fs from 'fs-extra';
 import * as path from 'path';
 import { getHistoryBasePath } from '../utils';
@@ -14,12 +14,14 @@ export class ContextManager {
   private maxHistory: number;
   private maxTokens: number;
   private historyFile: string;
-  private useEnhancedMessages: boolean = false; // 是否使用增强消息格式
-  private compactor: ContextCompactor; // 上下文压缩器
-  private autoCompress: boolean = false; // 是否自动压缩
-  private sessionId: string | null = null; // 会话ID，用于隔离不同会话的历史
-  private baseHistoryFile: string; // 基础历史文件路径（不包含会话ID）
-  private systemPromptSet: boolean = false; // 是否已设置系统提示词
+  private useEnhancedMessages: boolean = false;
+  private compactor: ContextCompactor;
+  private autoCompress: boolean = false;
+  private sessionId: string | null = null;
+  private baseHistoryFile: string;
+  private systemPromptSet: boolean = false;
+  private llmChat: LLMChatFunction | null = null;
+  private llmCompactEnabled: boolean = false;
 
   constructor(
     maxHistory: number = 10,
@@ -219,6 +221,52 @@ export class ContextManager {
     prunedParts: number;
   }> {
     const result = await this.compactor.compact(this.messages);
+    if (result.compressed) {
+      this.messages = result.messages;
+    }
+    return result;
+  }
+
+  /**
+   * 设置 LLM 聊天函数（用于 LLM 压缩）
+   */
+  setLLMChat(llmChat: LLMChatFunction): void {
+    this.llmChat = llmChat;
+  }
+
+  /**
+   * 检查是否支持 LLM 压缩
+   */
+  supportsLLMCompact(): boolean {
+    return this.llmChat !== null;
+  }
+
+  /**
+   * 启用/禁用 LLM 压缩
+   */
+  setLLMCompactEnabled(enabled: boolean): void {
+    this.llmCompactEnabled = enabled && this.supportsLLMCompact();
+  }
+
+  /**
+   * 使用 LLM 进行智能压缩（集成 compaction.txt）
+   */
+  async llmCompact(): Promise<{
+    compressed: boolean;
+    messages: (Message | EnhancedMessage)[];
+    originalTokens: number;
+    compressedTokens: number;
+    savedTokens: number;
+    prunedParts: number;
+  }> {
+    if (!this.supportsLLMCompact()) {
+      throw new Error('未配置 LLM 聊天函数，无法进行 LLM 压缩');
+    }
+
+    const result = await this.compactor.llmCompact(this.messages, {
+      llmChat: this.llmChat!,
+    });
+
     if (result.compressed) {
       this.messages = result.messages;
     }

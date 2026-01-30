@@ -579,6 +579,28 @@ export class CommandManager {
         }
         return { shouldContinue: false };
 
+      case 'llm':
+        if (!contextManager.supportsLLMCompact()) {
+          console.log(chalk.red('✗ LLM 压缩不可用，请先配置 API 适配器\n'));
+          return { shouldContinue: false };
+        }
+        console.log(chalk.cyan('🤖 使用 LLM 智能压缩上下文...\n'));
+        try {
+          const llmResult = await contextManager.llmCompact();
+          if (llmResult.compressed) {
+            console.log(chalk.green('✓ LLM 压缩完成:'));
+            console.log(chalk.gray(`  原始: ${llmResult.originalTokens} tokens`));
+            console.log(chalk.gray(`  压缩后: ${llmResult.compressedTokens} tokens`));
+            console.log(chalk.gray(`  节省: ${llmResult.savedTokens} tokens (${Math.round(llmResult.savedTokens / llmResult.originalTokens * 100)}%)`));
+            console.log();
+          } else {
+            console.log(chalk.yellow('  LLM 压缩返回空结果\n'));
+          }
+        } catch (error) {
+          console.log(chalk.red(`✗ LLM 压缩失败: ${(error as Error).message}\n`));
+        }
+        return { shouldContinue: false };
+
       case 'status':
         const compactor = contextManager.getCompactor();
         const config = compactor.getConfig();
@@ -592,6 +614,7 @@ export class CommandManager {
         console.log(chalk.gray(`  保留空间: ${config.reserveTokens}`));
         console.log(chalk.gray(`  使用率: ${Math.round(currentTokens / (config.maxTokens - config.reserveTokens) * 100)}%`));
         console.log(chalk.gray(`  需要压缩: ${needsCompaction ? chalk.red('是') : chalk.green('否')}`));
+        console.log(chalk.gray(`  LLM 压缩: ${contextManager.supportsLLMCompact() ? chalk.green('可用 (/compress llm)') : chalk.gray('不可用')}`));
         console.log();
         return { shouldContinue: false };
 
@@ -599,7 +622,8 @@ export class CommandManager {
         console.log(chalk.yellow('\n📋 压缩管理命令:\n'));
         console.log(chalk.gray('  /compress on        - 启用自动压缩'));
         console.log(chalk.gray('  /compress off       - 禁用自动压缩'));
-        console.log(chalk.gray('  /compress manual    - 立即压缩上下文'));
+        console.log(chalk.gray('  /compress manual    - 立即压缩上下文（规则-based）'));
+        console.log(chalk.gray('  /compress llm       - 使用 LLM 智能压缩（集成 compaction.txt）'));
         console.log(chalk.gray('  /compress status    - 查看压缩状态'));
         console.log();
         return { shouldContinue: false };

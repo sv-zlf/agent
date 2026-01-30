@@ -4,8 +4,22 @@
  */
 
 import type { Message, EnhancedMessage, MessagePart } from '../types';
-import { PartType } from '../types/message';
+import { PartType, messageToText } from '../types/message';
 import { TokenEstimator } from './token-estimator';
+import * as fs from 'fs-extra';
+import * as path from 'path';
+
+export type LLMChatFunction = (
+  messages: Message[],
+  options?: { temperature?: number; maxTokens?: number; abortSignal?: AbortSignal }
+) => Promise<string>;
+
+export interface LLMCompactionConfig {
+  llmChat: LLMChatFunction;
+  promptPath?: string;
+  maxOutputTokens?: number;
+  temperature?: number;
+}
 
 /**
  * 压缩配置
@@ -140,6 +154,87 @@ export class ContextCompactor {
       savedTokens,
       prunedParts,
     };
+  }
+
+  /**
+   * 使用 LLM 进行智能压缩（集成 compaction.txt 提示词）
+   * 参考 OpenCode 的 compaction.ts 实现
+   */
+  async llmCompact(
+    messages: (Message | EnhancedMessage)[],
+    config: LLMCompactionConfig
+  ): Promise<CompactionResult> {
+    const originalTokens = this.estimateMessages(messages);
+
+    try {
+      const promptPath = config.promptPath || path.join(process.cwd(), 'src/tools/prompts/compaction.txt');
+      const systemPrompt = await fs.readFile(promptPath, 'utf-8');
+
+      const messagesText = messages
+        .map((m) => {
+          const role = m.role;
+          const content = 'parts' in m ? messageToText(m) : m.content;
+          return `[${role}]: ${content}`;
+        })
+        .join('\n\n---\n\n');
+
+      const userContent = `当前对话共有 ${messages.length} 条消息，约 ${originalTokens} tokens。
+
+请压缩以下对话历史，保留关键上下文：
+
+${messagesText}`;
+
+      const llmResponse = await config.llmChat(
+        [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userContent },
+        ],
+        {
+          temperature: config.temperature ?? 0.3,
+          maxTokens: config.maxOutputTokens ?? 4000,
+        }
+      );
+
+      const compressedMessages = this.parseLLMResponse(llmResponse);
+      if (!compressedMessages || compressedMessages.length === 0) {
+        throw new Error('LLM 压缩返回空结果');
+      }
+
+      const compressedTokens = this.estimateMessages(compressedMessages);
+      const savedTokens = originalTokens - compressedTokens;
+
+      return {
+        compressed: true,
+        messages: compressedMessages,
+        originalTokens,
+        compressedTokens,
+        savedTokens,
+        prunedParts: 0,
+      };
+    } catch (error) {
+      console.error(`LLM 压缩失败: ${(error as Error).message}`);
+      throw error;
+    }
+  }
+
+  /**
+   * 解析 LLM 压缩响应
+   */
+  private parseLLMResponse(response: string): (Message | EnhancedMessage)[] {
+    const jsonMatch = response.match(/\[[\s\S]*\]/);
+    if (!jsonMatch) {
+      throw new Error('无法解析 LLM 响应');
+    }
+
+    try {
+      const parsed = JSON.parse(jsonMatch[0]);
+      if (!Array.isArray(parsed)) {
+        throw new Error('LLM 响应格式错误');
+      }
+      return parsed as (Message | EnhancedMessage)[];
+    } catch {
+      throw new Error('JSON 解析失败');
+    }
   }
 
   /**

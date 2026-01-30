@@ -40,7 +40,7 @@ export const TaskTool = defineTool('task', {
 
 **主要用途**：代码探索和搜索
 
-可用子 agent 类型:
+子 agent 类型:
 - \`explore\`: 代码探索专家，只进行只读操作（读取、搜索、分析）
 
 使用场景:
@@ -48,7 +48,7 @@ export const TaskTool = defineTool('task', {
 - 系统性地审查代码
 - 查找特定功能或模式
 
-**注意**: 当前主要支持 \`explore\` 子 agent，后续可扩展更多类型。`,
+**说明**: GG CODE 当前仅支持 \`explore\` 子 agent（参考 OpenCode 实现）。未来可扩展支持 \`general\`（通用研究）等更多类型。`,
   parameters: TaskParameters,
   async execute(args, ctx): Promise<ToolExecuteResult<TaskMetadata>> {
     const { description, prompt, subagent_type, session_id } = args;
