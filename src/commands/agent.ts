@@ -300,11 +300,11 @@ export const agentCommand = new Command('agent')
           return;
         }
 
-        // 特殊处理：只输入 "/" 时显示命令列表
+        // 特殊处理：只输入 "/" 时显示交互式命令选择器
         if (input.trim() === '/') {
-          console.log(commandCompleter.formatCommandList());
-          chatLoop();
-          return;
+          const selectedCommand = await commandCompleter.showCommandSelector();
+          // 将选中的命令作为输入继续处理
+          input = selectedCommand;
         }
 
         // 检测是否是斜杠命令

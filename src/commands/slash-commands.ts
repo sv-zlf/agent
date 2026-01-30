@@ -4,11 +4,13 @@
  */
 
 import * as fs from 'fs/promises';
+import * as fsSync from 'fs';
 import * as path from 'path';
 import chalk from 'chalk';
 import { getConfig } from '../config';
 import type { Message } from '../types';
 import type { Session } from '../core/session-manager';
+import { select, confirm, question, multiSelect, type SelectOption } from '../utils';
 
 /**
  * 命令处理结果
@@ -76,7 +78,7 @@ export class CommandManager {
 
     this.registerCommand({
       name: 'models',
-      description: '列出可用模型或切换模型',
+      description: '设置或查看模型名称',
       handler: this.handleModelsCommand,
     });
 
@@ -105,6 +107,20 @@ export class CommandManager {
       name: 'tokens',
       description: '显示当前 token 使用情况',
       handler: this.handleTokensCommand,
+    });
+
+    // 设置命令
+    this.registerCommand({
+      name: 'setting',
+      description: 'API 参数设置 (temperature/top_p/top_k/repetition_penalty)',
+      handler: this.handleSettingCommand,
+    });
+
+    // 交互式测试命令
+    this.registerCommand({
+      name: 'test',
+      description: '测试交互式选择功能',
+      handler: this.handleTestCommand,
     });
   }
 
@@ -361,15 +377,15 @@ export class CommandManager {
   private async listModels(config: any): Promise<CommandResult> {
     const currentModel = config.getAPIConfig().model;
 
-    console.log(chalk.cyan('\n📋 可用模型列表:\n'));
+    console.log(chalk.cyan('\n📋 模型配置\n'));
     console.log(chalk.yellow(`当前模型: ${currentModel}\n`));
 
     // 常用模型列表
     const commonModels = [
-      { name: 'claude-3-5-sonnet-20241022', provider: 'Anthropic', description: 'Claude 3.5 Sonnet (推荐)' },
-      { name: 'claude-3-opus-20240229', provider: 'Anthropic', description: 'Claude 3 Opus' },
+      { name: 'F-G-9B-V20241220-0000-00', provider: '内部', description: 'F-G-9B 模型 (默认)' },
+      { name: 'F-G-9B-V20241220-0000-01', provider: '内部', description: 'F-G-9B 变体' },
+      { name: 'claude-3-5-sonnet-20241022', provider: 'Anthropic', description: 'Claude 3.5 Sonnet' },
       { name: 'gpt-4o', provider: 'OpenAI', description: 'GPT-4o' },
-      { name: 'gpt-4o-mini', provider: 'OpenAI', description: 'GPT-4o Mini (快速)' },
       { name: 'deepseek-chat', provider: 'DeepSeek', description: 'DeepSeek Chat' },
     ];
 
@@ -383,8 +399,10 @@ export class CommandManager {
     }
 
     console.log();
-    console.log(chalk.gray('使用方法:'));
-    console.log(chalk.gray('  /models <模型名称>    # 切换到指定模型'));
+    console.log(chalk.gray('💡 提示:'));
+    console.log(chalk.gray('  /models <模型名称>      # 切换模型'));
+    console.log(chalk.gray('  /setting                  # 查看所有 API 参数'));
+    console.log(chalk.gray('  /setting set <参数> <值>  # 设置 temperature、top_p 等参数'));
     console.log();
 
     return {
@@ -759,6 +777,239 @@ export class CommandManager {
     } else if (usagePercent > 50) {
       console.log(chalk.gray('ℹ️  可以使用 /compress status 查看详细状态\n'));
     }
+
+    return { shouldContinue: false };
+  }
+
+  /**
+   * /setting 命令处理器 - API 参数设置
+   */
+  private async handleSettingCommand(
+    args: string,
+    context: CommandContext
+  ): Promise<CommandResult> {
+    const { config, workingDirectory } = context;
+    const parts = args.trim().split(/\s+/);
+    const subCommand = parts[0] || 'list';
+
+    switch (subCommand) {
+      case 'list':
+      case 'show':
+        return this.listCurrentSettings(config);
+
+      case 'set':
+        if (parts.length < 3) {
+          console.log(chalk.yellow('\n📋 API 参数设置\n'));
+          console.log(chalk.gray('用法: /setting set <参数名> <值>\n'));
+          console.log(chalk.gray('可设置的参数:'));
+          console.log(chalk.gray('  temperature       - 温度 (0.0-2.0, 默认 0.7)'));
+          console.log(chalk.gray('  top_p             - Top-P 采样 (0.0-1.0, 默认 0.9)'));
+          console.log(chalk.gray('  top_k             - Top-K 采样 (1-100, 默认 -1)'));
+          console.log(chalk.gray('  repetition_penalty - 重复惩罚 (1.0-2.0, 默认 1.0)'));
+          console.log(chalk.gray('\n示例:'));
+          console.log(chalk.gray('  /setting set temperature 0.8'));
+          console.log(chalk.gray('  /setting set top_p 0.95'));
+          console.log();
+          return { shouldContinue: false };
+        }
+        return this.updateSetting(parts[1], parts.slice(2).join(' '), config, workingDirectory);
+
+      case 'reset':
+        return this.resetSettings(config, workingDirectory);
+
+      default:
+        return this.listCurrentSettings(config);
+    }
+  }
+
+  /**
+   * 列出当前 API 设置
+   */
+  private async listCurrentSettings(config: any): Promise<CommandResult> {
+    const apiConfig = config.getAPIConfig();
+
+    // 尝试读取配置文件获取 model_config
+    let modelConfig: any = {};
+    try {
+      const configPath = path.join(process.cwd(), '.ggrc.json');
+      if (fsSync.existsSync(configPath)) {
+        const configContent = fsSync.readFileSync(configPath, 'utf-8');
+        const configObj = JSON.parse(configContent);
+        modelConfig = configObj.model_config || {};
+      }
+    } catch {
+      // 配置文件不存在或读取失败，忽略
+    }
+
+    console.log(chalk.cyan('\n⚙️  当前 API 配置\n'));
+
+    // 基础配置
+    console.log(chalk.yellow('基础配置:'));
+    console.log(chalk.gray(`  模型:      ${apiConfig.model}`));
+    console.log(chalk.gray(`  API 地址:  ${apiConfig.base_url}`));
+    console.log();
+
+    // 模型参数
+    console.log(chalk.yellow('模型参数:'));
+    console.log(chalk.gray(`  temperature:       ${modelConfig.temperature !== undefined ? modelConfig.temperature : '未设置 (使用默认)'}`));
+    console.log(chalk.gray(`  top_p:             ${modelConfig.top_p !== undefined ? modelConfig.top_p : '未设置 (使用默认)'}`));
+    console.log(chalk.gray(`  top_k:             ${modelConfig.top_k !== undefined ? modelConfig.top_k : '未设置 (使用默认)'}`));
+    console.log(chalk.gray(`  repetition_penalty: ${modelConfig.repetition_penalty !== undefined ? modelConfig.repetition_penalty : '未设置 (使用默认)'}`));
+    console.log();
+
+    console.log(chalk.gray('💡 提示:'));
+    console.log(chalk.gray('  /models <模型名称>      # 切换模型'));
+    console.log(chalk.gray('  /setting set <参数> <值>  # 设置 temperature、top_p 等参数'));
+    console.log(chalk.gray('  /setting reset            # 重置为默认值'));
+    console.log();
+
+    return { shouldContinue: false };
+  }
+
+  /**
+   * 更新设置
+   */
+  private async updateSetting(
+    paramName: string,
+    value: string,
+    config: any,
+    workingDir: string
+  ): Promise<CommandResult> {
+    // 验证参数名
+    const validParams = ['temperature', 'top_p', 'top_k', 'repetition_penalty'];
+    if (!validParams.includes(paramName)) {
+      console.log(chalk.red(`✗ 无效的参数名: ${paramName}\n`));
+      console.log(chalk.gray('有效参数: ' + validParams.join(', ')));
+      console.log();
+      return { shouldContinue: false };
+    }
+
+    // 验证并转换值
+    let numValue: number;
+    try {
+      numValue = parseFloat(value);
+      if (isNaN(numValue)) {
+        throw new Error('不是有效数字');
+      }
+    } catch {
+      console.log(chalk.red(`✗ 无效的值: ${value}\n`));
+      return { shouldContinue: false };
+    }
+
+    // 参数范围验证
+    const validation: Record<string, { min: number; max: number; description: string }> = {
+      temperature: { min: 0, max: 2, description: '温度' },
+      top_p: { min: 0, max: 1, description: 'Top-P' },
+      top_k: { min: -1, max: 100, description: 'Top-K (-1 表示禁用)' },
+      repetition_penalty: { min: 1, max: 2, description: '重复惩罚' },
+    };
+
+    const validationRule = validation[paramName];
+    if (numValue < validationRule.min || numValue > validationRule.max) {
+      console.log(chalk.red(`✗ ${validationRule.description} 值超出范围: ${validationRule.min} - ${validationRule.max}\n`));
+      return { shouldContinue: false };
+    }
+
+    // 更新配置文件
+    const configPath = path.join(workingDir, '.ggrc.json');
+    try {
+      const configContent = await fs.readFile(configPath, 'utf-8');
+      const configObj = JSON.parse(configContent);
+
+      // 确保 model_config 存在
+      if (!configObj.model_config) {
+        configObj.model_config = {};
+      }
+
+      configObj.model_config[paramName] = numValue;
+
+      await fs.writeFile(configPath, JSON.stringify(configObj, null, 2), 'utf-8');
+
+      console.log(chalk.green(`✓ 已设置 ${paramName}:`));
+      console.log(chalk.gray(`  值: ${numValue}`));
+      console.log();
+    } catch (error) {
+      console.log(chalk.red(`✗ 设置失败: ${(error as Error).message}\n`));
+      return { shouldContinue: false };
+    }
+
+    return { shouldContinue: false };
+  }
+
+  /**
+   * 重置设置为默认值
+   */
+  private async resetSettings(config: any, workingDir: string): Promise<CommandResult> {
+    const configPath = path.join(workingDir, '.ggrc.json');
+    try {
+      const configContent = await fs.readFile(configPath, 'utf-8');
+      const configObj = JSON.parse(configContent);
+
+      // 移除 model_config
+      if (configObj.model_config) {
+        delete configObj.model_config;
+      }
+
+      await fs.writeFile(configPath, JSON.stringify(configObj, null, 2), 'utf-8');
+
+      console.log(chalk.green('✓ 已重置所有模型参数为默认值\n'));
+    } catch (error) {
+      console.log(chalk.red(`✗ 重置失败: ${(error as Error).message}\n`));
+      return { shouldContinue: false };
+    }
+
+    return { shouldContinue: false };
+  }
+
+  /**
+   * /test 命令处理器 - 测试交互式选择功能
+   */
+  private async handleTestCommand(): Promise<CommandResult> {
+    console.log(chalk.cyan('\n🧪 交互式选择功能测试\n'));
+
+    // 测试单选
+    console.log(chalk.yellow('测试 1: 单选菜单\n'));
+    const color = await select({
+      message: '请选择你喜欢的颜色：',
+      options: [
+        { label: '红色', value: 'red', description: '热情奔放' },
+        { label: '蓝色', value: 'blue', description: '冷静理智' },
+        { label: '绿色', value: 'green', description: '自然清新' },
+        { label: '紫色', value: 'purple', description: '高贵典雅' },
+      ],
+      default: 0,
+    });
+
+    console.log(chalk.green(`你选择了: ${color.label}\n`));
+
+    // 测试确认
+    console.log(chalk.yellow('测试 2: 确认对话框\n'));
+    const confirmed = await confirm('是否继续？', true);
+
+    console.log(chalk.green(`你选择了: ${confirmed ? '继续' : '取消'}\n`));
+
+    // 测试输入
+    console.log(chalk.yellow('测试 3: 文本输入\n'));
+    const name = await question('请输入你的名字', 'Guest');
+
+    console.log(chalk.green(`你好, ${name}!\n`));
+
+    // 测试多选
+    console.log(chalk.yellow('测试 4: 多选菜单\n'));
+    const features = await multiSelect({
+      message: '请选择你喜欢的功能：',
+      options: [
+        { label: '会话管理', value: 'session' },
+        { label: '上下文压缩', value: 'compress' },
+        { label: 'Token 统计', value: 'tokens' },
+        { label: '交互式选择', value: 'select' },
+      ],
+      default: 0,
+    });
+
+    console.log(chalk.green(`你选择了 ${features.length} 个功能:`));
+    features.forEach(f => console.log(chalk.gray(`  - ${f.label}`)));
+    console.log();
 
     return { shouldContinue: false };
   }
