@@ -30,7 +30,10 @@
       "Bash(else git clone:*)",
       "Bash(fi:*)",
       "Bash(npm run agent:*)",
-      "Bash(npm run clean:release:*)"
+      "Bash(npm run clean:release:*)",
+      "Bash(du:*)",
+      "Bash(find:*)",
+      "Bash(wc:*)"
     ]
   }
 }
