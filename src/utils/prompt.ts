@@ -110,7 +110,7 @@ export async function select(config: SelectConfig): Promise<SelectOption> {
       if (!wasRawMode) {
         stdin.setRawMode(false);
       }
-      stdin.pause();
+      // 不暂停 stdin，让调用者管理
     };
 
     stdin.on('data', onKeyPress);
@@ -313,7 +313,7 @@ export async function multiSelect(config: SelectConfig): Promise<SelectOption[]>
     const cleanup = () => {
       resolved = true;
       stdin.setRawMode(false);
-      stdin.pause();
+      // 不暂停 stdin，让调用者管理
       stdin.removeListener('data', onKeyPress);
     };
 
