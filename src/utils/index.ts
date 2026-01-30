@@ -1,4 +1,50 @@
+import * as path from 'path';
+import * as os from 'os';
+
 export { Logger, createLogger } from './logger';
 export { BackupManager, createBackupManager } from './backup';
 export { select, confirm, question, multiSelect } from './prompt';
 export type { SelectOption, SelectConfig } from './prompt';
+
+/**
+ * 获取系统根目录下的 .ggcode 路径
+ * 所有临时文件都保存在用户主目录的 .ggcode 文件夹中
+ */
+export function getGGCodeRoot(): string {
+  return path.join(os.homedir(), '.ggcode');
+}
+
+/**
+ * 获取会话目录路径
+ */
+export function getSessionsDir(): string {
+  return path.join(getGGCodeRoot(), 'sessions');
+}
+
+/**
+ * 获取当前会话文件路径
+ */
+export function getCurrentSessionFile(): string {
+  return path.join(getGGCodeRoot(), 'current-session');
+}
+
+/**
+ * 获取历史文件基础路径
+ */
+export function getHistoryBasePath(): string {
+  return path.join(getGGCodeRoot(), 'history');
+}
+
+/**
+ * 获取配置文件路径（项目配置保存在当前目录）
+ */
+export function getConfigPath(workingDir: string): string {
+  return path.join(workingDir, '.ggrc.json');
+}
+
+/**
+ * 获取系统级配置文件路径（系统级配置保存在 .ggcode）
+ */
+export function getSystemConfigPath(): string {
+  return path.join(getGGCodeRoot(), 'config.json');
+}

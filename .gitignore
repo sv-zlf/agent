@@ -12,7 +12,12 @@ backups/
 !/temp/opencode/  # 保留 opencode 参考项目
 /.github/
 /.vscode/
-# 会话管理
-.agent-sessions/
-.agent-current-session
-.agent-history*.json
+# 项目配置文件（保留在当前目录）
+.ggrc.json
+
+# 注意: 所有临时文件（会话、历史记录等）现在保存在系统根目录的 ~/.ggcode/
+# 包括:
+#   ~/.ggcode/sessions/     - 会话数据
+#   ~/.ggcode/current-session - 当前会话标识
+#   ~/.ggcode/history/      - 对话历史
+#   ~/.ggcode/config.json   - 系统级配置

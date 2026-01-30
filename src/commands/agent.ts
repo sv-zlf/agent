@@ -49,11 +49,8 @@ export const agentCommand = new Command('agent')
     // - Bash: 危险命令拦截、退出码记录
     toolEngine.registerTools(enhancedBuiltinTools);
 
-    // 创建会话管理器
-    const sessionManager = createSessionManager({
-      sessionsDir: path.join(process.cwd(), '.agent-sessions'),
-      currentSessionFile: path.join(process.cwd(), '.agent-current-session'),
-    });
+    // 创建会话管理器（使用系统根目录 .ggcode）
+    const sessionManager = createSessionManager();
     await sessionManager.initialize();
 
     // 获取或创建当前会话

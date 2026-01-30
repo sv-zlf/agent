@@ -6,7 +6,7 @@
 import * as fs from 'fs-extra';
 import * as path from 'path';
 import * as crypto from 'crypto';
-import { createLogger } from '../utils';
+import { createLogger, getSessionsDir, getCurrentSessionFile } from '../utils';
 
 const logger = createLogger(true);
 
@@ -267,8 +267,8 @@ export class SessionManager {
  */
 export function createSessionManager(config?: SessionConfig): SessionManager {
   const defaultConfig: SessionConfig = {
-    sessionsDir: path.join(process.cwd(), '.agent-sessions'),
-    currentSessionFile: path.join(process.cwd(), '.agent-current-session'),
+    sessionsDir: getSessionsDir(),
+    currentSessionFile: getCurrentSessionFile(),
   };
 
   return new SessionManager(config || defaultConfig);

@@ -2,6 +2,8 @@ import type { Message, EnhancedMessage, MessagePart, ToolCall, ToolResult } from
 import { createMessage, messageToText, filterMessageParts, PartType } from '../types/message';
 import { ContextCompactor, createContextCompactor } from './context-compactor';
 import * as fs from 'fs-extra';
+import * as path from 'path';
+import { getHistoryBasePath } from '../utils';
 
 /**
  * 对话上下文管理器
@@ -22,12 +24,13 @@ export class ContextManager {
   constructor(
     maxHistory: number = 10,
     maxTokens: number = 8000,
-    historyFile: string = './.agent-history.json'
+    historyFile?: string
   ) {
     this.maxHistory = maxHistory;
     this.maxTokens = maxTokens;
-    this.baseHistoryFile = historyFile;
-    this.historyFile = historyFile;
+    // 使用系统根目录，除非指定了自定义路径
+    this.baseHistoryFile = historyFile || path.join(getHistoryBasePath(), 'agent-history.json');
+    this.historyFile = this.baseHistoryFile;
     this.compactor = createContextCompactor({
       enabled: false, // 默认禁用自动压缩
       maxTokens: maxTokens,

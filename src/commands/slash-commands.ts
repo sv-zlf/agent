@@ -10,7 +10,7 @@ import chalk from 'chalk';
 import { getConfig } from '../config';
 import type { Message } from '../types';
 import type { Session } from '../core/session-manager';
-import { select, confirm, question, multiSelect, type SelectOption } from '../utils';
+import { select, confirm, question, multiSelect, type SelectOption, getConfigPath } from '../utils';
 
 /**
  * 命令处理结果
@@ -73,54 +73,54 @@ export class CommandManager {
     this.registerCommand({
       name: 'init',
       description: '创建/更新项目设计文件 (DESIGN.md)',
-      handler: this.handleInitCommand,
+      handler: this.handleInitCommand.bind(this),
     });
 
     this.registerCommand({
       name: 'models',
       description: '设置或查看模型名称',
-      handler: this.handleModelsCommand,
+      handler: this.handleModelsCommand.bind(this),
     });
 
     this.registerCommand({
       name: 'help',
       description: '显示可用命令列表',
-      handler: this.handleHelpCommand,
+      handler: this.handleHelpCommand.bind(this),
     });
 
     // 会话管理命令
     this.registerCommand({
       name: 'session',
       description: '会话管理 (new/list/switch/delete)',
-      handler: this.handleSessionCommand,
+      handler: this.handleSessionCommand.bind(this),
     });
 
     // 压缩管理命令
     this.registerCommand({
       name: 'compress',
       description: '上下文压缩管理 (on/off/status/manual)',
-      handler: this.handleCompressCommand,
+      handler: this.handleCompressCommand.bind(this),
     });
 
     // Token 统计命令
     this.registerCommand({
       name: 'tokens',
       description: '显示当前 token 使用情况',
-      handler: this.handleTokensCommand,
+      handler: this.handleTokensCommand.bind(this),
     });
 
     // 设置命令
     this.registerCommand({
       name: 'setting',
       description: 'API 参数设置 (temperature/top_p/top_k/repetition_penalty)',
-      handler: this.handleSettingCommand,
+      handler: this.handleSettingCommand.bind(this),
     });
 
     // 交互式测试命令
     this.registerCommand({
       name: 'test',
       description: '测试交互式选择功能',
-      handler: this.handleTestCommand,
+      handler: this.handleTestCommand.bind(this),
     });
   }
 
@@ -426,7 +426,7 @@ export class CommandManager {
     }
 
     // 更新配置文件
-    const configPath = path.join(workingDir, '.ggrc.json');
+    const configPath = getConfigPath(workingDir);
     try {
       const configContent = await fs.readFile(configPath, 'utf-8');
       const configObj = JSON.parse(configContent);
@@ -831,7 +831,7 @@ export class CommandManager {
     // 尝试读取配置文件获取 model_config
     let modelConfig: any = {};
     try {
-      const configPath = path.join(process.cwd(), '.ggrc.json');
+      const configPath = getConfigPath(process.cwd());
       if (fsSync.existsSync(configPath)) {
         const configContent = fsSync.readFileSync(configPath, 'utf-8');
         const configObj = JSON.parse(configContent);
@@ -911,7 +911,7 @@ export class CommandManager {
     }
 
     // 更新配置文件
-    const configPath = path.join(workingDir, '.ggrc.json');
+    const configPath = getConfigPath(workingDir);
     try {
       const configContent = await fs.readFile(configPath, 'utf-8');
       const configObj = JSON.parse(configContent);
