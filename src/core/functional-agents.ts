@@ -78,29 +78,11 @@ export class FunctionalAgentManager {
       // 构建消息列表（系统提示词 + 对话历史）
       const apiMessages: Message[] = [{ role: 'system', content: systemPrompt }, ...messages];
 
-      // 根据优先级决定是否使用并发控制
+      // 所有请求都通过并发控制，确保同一时间只有一个 API 请求
       const priority = options?.priority ?? API_PRIORITY.LOW;
-      let response: string;
-
-      if (priority === API_PRIORITY.HIGH || priority === API_PRIORITY.NORMAL) {
-        // 高优先级和普通优先级直接调用
-        response = await this.apiAdapter.chat(apiMessages);
-      } else if (priority === API_PRIORITY.LOW) {
-        // 低优先级：通过并发控制排队，但设置超时避免无限等待
-        try {
-          response = await executeAPIRequest(async () => {
-            return this.apiAdapter.chat(apiMessages);
-          }, priority);
-        } catch (error) {
-          // 如果并发控制失败，直接调用
-          response = await this.apiAdapter.chat(apiMessages);
-        }
-      } else {
-        // 其他优先级通过并发控制
-        response = await executeAPIRequest(async () => {
-          return this.apiAdapter.chat(apiMessages);
-        }, priority);
-      }
+      const response = await executeAPIRequest(async () => {
+        return this.apiAdapter.chat(apiMessages);
+      }, priority);
 
       return {
         success: true,
@@ -146,13 +128,16 @@ export class FunctionalAgentManager {
    * 生成摘要
    */
   async summarize(messages: Message[]): Promise<FunctionalAgentResult> {
-    const conversation = messages.filter((m) => m.role === 'user' || m.role === 'assistant');
+    // 只取最近的对话来生成摘要，避免 tokens 过多
+    const conversation = messages
+      .filter((m) => m.role === 'user' || m.role === 'assistant')
+      .slice(-10); // 只保留最近10条消息
 
     try {
       // 使用超时机制，避免长时间阻塞
       const response = await Promise.race([
         this.executeAgent(FunctionalAgentType.SUMMARY, conversation, {
-          maxTokens: 500,
+          maxTokens: 1000, // 增加到 1000，确保有足够空间生成摘要
           priority: API_PRIORITY.LOW,
         }),
         new Promise<FunctionalAgentResult>((_, reject) =>
@@ -165,7 +150,7 @@ export class FunctionalAgentManager {
       // 超时或失败时返回简单摘要
       return {
         success: true,
-        output: '对话摘要生成超时，使用默认摘要',
+        output: '对话摘要\n\n对话刚开始，暂无详细摘要。',
       };
     }
   }
@@ -174,8 +159,9 @@ export class FunctionalAgentManager {
    * 生成标题
    */
   async generateTitle(messages: Message[]): Promise<FunctionalAgentResult> {
-    // 只取前几条消息来生成标题
-    const context = messages.slice(0, 5);
+    // 只取第一条用户消息来生成标题，更准确反映用户意图
+    const firstUserMessage = messages.find((m) => m.role === 'user');
+    const context = firstUserMessage ? [firstUserMessage] : messages.slice(0, 2);
 
     return this.executeAgent(FunctionalAgentType.TITLE, context, {
       maxTokens: 100,

@@ -22,19 +22,15 @@ export const displayLogo = (): void => {
     '',
   ];
 
-  logo.forEach(line => console.log(line));
+  logo.forEach((line) => console.log(line));
 };
 
 /**
  * 显示启动横幅（简化版）
  */
 export const displayBanner = (version: string): void => {
-  console.log();
   displayLogo();
 
-  console.log(chalk.gray('  =========================================='));
   console.log(chalk.cyan('GG CODE') + chalk.gray(' - AI-Powered Code Editor'));
-  console.log(chalk.gray('  Version: ') + chalk.green(version));
-  console.log(chalk.gray('  =========================================='));
-  console.log();
+  console.log(chalk.gray('Version: ') + chalk.green(version));
 };

@@ -209,10 +209,23 @@ export class CommandManager {
     // 检查是否需要使用 AI 生成（有 API adapter）
     if (!context.apiAdapter) {
       console.log(chalk.yellow('⚠️  未提供 API 适配器，将使用基础模板生成文档\n'));
+      console.log(chalk.gray(`context.apiAdapter = ${context.apiAdapter}`));
       return await this.generateBasicAgentsDocument(context.workingDirectory, agentsFilePath);
     }
 
     console.log(chalk.cyan('🔍 正在分析项目并生成 AGENTS.md...\n'));
+
+    // 调试信息：检查API配置
+    const apiConfig = context.config.getAPIConfig();
+    console.log(chalk.gray(`API模式: ${apiConfig.mode}`));
+    console.log(chalk.gray(`API base_url: ${apiConfig.base_url}`));
+    if (apiConfig.mode === 'OpenApi') {
+      console.log(chalk.gray(`API model: ${apiConfig.model}`));
+      console.log(chalk.gray(`API key配置: ${apiConfig.api_key ? '已配置' : '未配置'}`));
+    } else {
+      console.log(chalk.gray(`Access Key: ${apiConfig.access_key_id}`));
+      console.log(chalk.gray(`TX Code: ${apiConfig.tx_code}`));
+    }
 
     try {
       // 1. 读取提示词模板
@@ -226,9 +239,14 @@ export class CommandManager {
       promptTemplate = promptTemplate.replace(/\$\{path\}/g, context.workingDirectory);
 
       // 3. 收集项目上下文信息
+      console.log(chalk.gray('开始收集项目上下文...'));
       const projectContext = await this.collectProjectContext(context.workingDirectory);
+      console.log(chalk.gray(`项目上下文收集完成，长度: ${projectContext.length} 字符`));
 
       // 4. 构建发送给 AI 的消息
+      const userContent = `${promptTemplate}\n\n## 项目上下文信息\n\n${projectContext}`;
+      console.log(chalk.gray(`用户提示词长度: ${userContent.length} 字符`));
+
       const messages: Message[] = [
         {
           role: 'system',
@@ -237,23 +255,79 @@ export class CommandManager {
         },
         {
           role: 'user',
-          content: `${promptTemplate}\n\n## 项目上下文信息\n\n${projectContext}`,
+          content: userContent,
         },
       ];
 
       // 5. 调用 AI 生成文档
       console.log(chalk.gray('正在调用 AI 生成文档...'));
-      const generatedDoc = await context.apiAdapter.chat(messages, {
-        temperature: 0.3, // 较低温度以确保稳定性
-      });
+      console.log(chalk.gray(`API适配器状态: ${context.apiAdapter ? '可用' : '不可用'}`));
+      console.log(chalk.gray(`API适配器类型: ${context.apiAdapter?.constructor.name}`));
+
+      let generatedDoc: string | undefined;
+      try {
+        console.log(chalk.gray('准备发送消息到AI...'));
+        console.log(chalk.gray(`消息长度: ${JSON.stringify(messages).length} 字符`));
+
+        // 检查并发控制状态
+        const controller =
+          require('../core/api-concurrency').APIConcurrencyController.getInstance();
+        const status = controller.getStatus();
+        console.log(
+          chalk.gray(
+            `API并发控制状态: 处理中=${status.isProcessing}, 队列长度=${status.queueLength}`
+          )
+        );
+
+        // 由于API有并发限制，使用重试机制
+        console.log(chalk.gray('尝试API调用（带重试）...'));
+
+        let retryCount = 0;
+        const maxRetries = 3;
+        let retryDelay = 2000; // 2秒
+
+        while (retryCount < maxRetries) {
+          try {
+            generatedDoc = await context.apiAdapter.chat(messages, {
+              temperature: 0.3, // 较低温度以确保稳定性
+            });
+            console.log(chalk.green(`API调用成功！（尝试 ${retryCount + 1}/${maxRetries})`));
+            break; // 成功则跳出重试循环
+          } catch (apiError: any) {
+            retryCount++;
+            console.log(
+              chalk.yellow(`API调用失败（尝试 ${retryCount}/${maxRetries}）: ${apiError.message}`)
+            );
+
+            // 如果是429错误且还有重试机会，等待后重试
+            if (apiError.message && apiError.message.includes('429') && retryCount < maxRetries) {
+              console.log(chalk.gray(`等待 ${retryDelay}ms 后重试...`));
+              await new Promise((resolve) => setTimeout(resolve, retryDelay));
+              retryDelay *= 2; // 指数退避
+            } else if (retryCount >= maxRetries) {
+              throw apiError; // 重试次数用完，抛出错误
+            } else {
+              throw apiError; // 非429错误，直接抛出
+            }
+          }
+        }
+
+        console.log(chalk.green(`AI响应成功，文档长度: ${generatedDoc?.length || 0} 字符`));
+      } catch (apiError) {
+        console.log(chalk.red(`❌ API调用失败: ${(apiError as Error).message}`));
+        console.log(chalk.gray(`错误详情: ${JSON.stringify(apiError, null, 2)}`));
+        throw apiError; // 重新抛出以触发降级逻辑
+      }
 
       // 6. 清理和保存生成的文档
+      if (!generatedDoc) {
+        throw new Error('生成文档失败：未获得API响应');
+      }
       const cleanedDoc = this.cleanGeneratedDoc(generatedDoc);
       await fs.writeFile(agentsFilePath, cleanedDoc, 'utf-8');
 
       console.log(chalk.green(`✓ 已生成项目文档: ${agentsFilePath}`));
-      console.log(chalk.gray(`\n文档大小: ${cleanedDoc.length} 字符`));
-      console.log();
+      console.log(chalk.gray(`\n文档大小: ${cleanedDoc?.length || 0} 字符`));
 
       return {
         shouldContinue: false,
@@ -662,11 +736,9 @@ export class CommandManager {
     for (const cmd of this.getCommands()) {
       console.log(chalk.yellow(`/${cmd.name}`));
       console.log(chalk.gray(`  ${cmd.description}`));
-      console.log();
     }
 
     console.log(chalk.gray('使用方法: 在提示符后输入 /命令名 [参数]'));
-    console.log();
 
     return {
       shouldContinue: false,
@@ -746,7 +818,6 @@ export class CommandManager {
         }
 
         console.log(chalk.gray(`\n  输入 /session 切换会话`));
-        console.log();
         return { shouldContinue: false };
       }
 
@@ -777,7 +848,6 @@ export class CommandManager {
           if (session.parentID) {
             console.log(chalk.gray(`   父会话: ${session.parentID.substring(0, 8)}...`));
           }
-          console.log();
         });
 
         return { shouldContinue: false };
@@ -791,7 +861,6 @@ export class CommandManager {
           console.log(chalk.green(`✓ Fork 成功!`));
           console.log(chalk.gray(`  新会话: ${newSession.title}`));
           console.log(chalk.gray(`  ID: ${newSession.id}`));
-          console.log();
         } catch (error) {
           console.log(chalk.red(`✗ Fork 失败: ${(error as Error).message}\n`));
         }
@@ -868,7 +937,6 @@ export class CommandManager {
           const jsonData = await sessionManager.exportSession(currentSession.id);
           console.log(chalk.green(`✓ 会话已导出:\n`));
           console.log(chalk.gray(jsonData));
-          console.log();
         } catch (error) {
           console.log(chalk.red(`✗ 导出失败: ${(error as Error).message}\n`));
         }
@@ -889,7 +957,6 @@ export class CommandManager {
           console.log(chalk.green(`✓ 会话已导入`));
           console.log(chalk.gray(`  名称: ${newSession.title}`));
           console.log(chalk.gray(`  ID: ${newSession.id}`));
-          console.log();
         } catch (error) {
           console.log(chalk.red(`✗ 导入失败: ${(error as Error).message}\n`));
         }
@@ -925,7 +992,6 @@ export class CommandManager {
         contextManager.enableAutoCompress();
         console.log(chalk.green('✓ 已启用自动压缩\n'));
         console.log(chalk.gray('  当上下文接近限制时自动压缩历史消息'));
-        console.log();
         return { shouldContinue: false };
 
       case 'off':
@@ -948,7 +1014,6 @@ export class CommandManager {
           if (result.prunedParts > 0) {
             console.log(chalk.gray(`  修剪: ${result.prunedParts} 个部件`));
           }
-          console.log();
         } else {
           console.log(chalk.yellow('  上下文无需压缩\n'));
         }
@@ -971,7 +1036,6 @@ export class CommandManager {
                 `  节省: ${llmResult.savedTokens} tokens (${Math.round((llmResult.savedTokens / llmResult.originalTokens) * 100)}%)`
               )
             );
-            console.log();
           } else {
             console.log(chalk.yellow('  LLM 压缩返回空结果\n'));
           }
@@ -1006,7 +1070,6 @@ export class CommandManager {
             `  LLM 压缩: ${contextManager.supportsLLMCompact() ? chalk.green('可用 (/compress llm)') : chalk.gray('不可用')}`
           )
         );
-        console.log();
         return { shouldContinue: false };
 
       default:
@@ -1016,7 +1079,6 @@ export class CommandManager {
         console.log(chalk.gray('  /compress manual    - 立即压缩上下文（规则-based）'));
         console.log(chalk.gray('  /compress llm       - 使用 LLM 智能压缩（集成 compaction.txt）'));
         console.log(chalk.gray('  /compress status    - 查看压缩状态'));
-        console.log();
         return { shouldContinue: false };
     }
   }
@@ -1057,7 +1119,6 @@ export class CommandManager {
     console.log(chalk.gray(`    用户: ${userMsgs}`));
     console.log(chalk.gray(`    助手: ${assistantMsgs}`));
     console.log(chalk.gray(`    系统: ${systemMsgs}`));
-    console.log();
 
     const config = compactor.getConfig();
     const usagePercent = Math.round(
@@ -1101,7 +1162,6 @@ export class CommandManager {
           console.log(chalk.gray('\n示例:'));
           console.log(chalk.gray('  /setting set temperature 0.8'));
           console.log(chalk.gray('  /setting set top_p 0.95'));
-          console.log();
           return { shouldContinue: false };
         }
         return this.updateSetting(parts[1], parts.slice(2).join(' '), config);
@@ -1139,7 +1199,6 @@ export class CommandManager {
     console.log(chalk.yellow('基础配置:'));
     console.log(chalk.gray(`  模型:      ${apiConfig.model}`));
     console.log(chalk.gray(`  API 地址:  ${apiConfig.base_url}`));
-    console.log();
 
     // 模型参数
     console.log(chalk.yellow('模型参数:'));
@@ -1163,13 +1222,11 @@ export class CommandManager {
         `  repetition_penalty: ${modelConfig.repetition_penalty !== undefined ? modelConfig.repetition_penalty : '未设置 (使用默认)'}`
       )
     );
-    console.log();
 
     console.log(chalk.gray('💡 提示:'));
     console.log(chalk.gray('  /models <模型名称>      # 切换模型'));
     console.log(chalk.gray('  /setting set <参数> <值>  # 设置 temperature、top_p 等参数'));
     console.log(chalk.gray('  /setting reset            # 重置为默认值'));
-    console.log();
 
     return { shouldContinue: false };
   }
@@ -1187,7 +1244,6 @@ export class CommandManager {
     if (!validParams.includes(paramName)) {
       console.log(chalk.red(`✗ 无效的参数名: ${paramName}\n`));
       console.log(chalk.gray('有效参数: ' + validParams.join(', ')));
-      console.log();
       return { shouldContinue: false };
     }
 
@@ -1247,7 +1303,6 @@ export class CommandManager {
 
       console.log(chalk.green(`✓ 已设置 ${paramName}:`));
       console.log(chalk.gray(`  值: ${numValue}`));
-      console.log();
     } catch (error) {
       console.log(chalk.red(`✗ 设置失败: ${(error as Error).message}\n`));
       return { shouldContinue: false };
@@ -1335,7 +1390,6 @@ export class CommandManager {
 
     console.log(chalk.green(`你选择了 ${features.length} 个功能:`));
     features.forEach((f) => console.log(chalk.gray(`  - ${f.label}`)));
-    console.log();
 
     return { shouldContinue: false };
   }

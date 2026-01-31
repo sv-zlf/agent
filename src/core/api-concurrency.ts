@@ -5,7 +5,7 @@
 
 import { createLogger } from '../utils';
 
-const logger = createLogger(true);
+const logger = createLogger(false);
 
 /**
  * API 请求队列项
@@ -101,7 +101,19 @@ export class APIConcurrencyController {
           const result = await request.execute();
           request.resolve(result);
           logger.debug(`API请求完成: ${request.id}`);
-        } catch (error) {
+
+          // 检测429错误并在队列不为空时添加延迟
+          if (this.queue.length > 0) {
+            logger.debug(`队列中还有 ${this.queue.length} 个请求，等待1秒以避免并发限制`);
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+          }
+        } catch (error: any) {
+          // 如果是429错误，等待更长时间
+          if (error.message && error.message.includes('429')) {
+            logger.error(`API并发限制，等待3秒后继续: ${error.message}`);
+            await new Promise((resolve) => setTimeout(resolve, 3000));
+          }
+
           logger.error(`API请求失败: ${request.id}, 错误: ${(error as Error).message}`);
           request.reject(error as Error);
         }
