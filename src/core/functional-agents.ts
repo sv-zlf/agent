@@ -5,7 +5,7 @@
 
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { ChatAPIAdapter } from '../api';
+import type { IAPIAdapter } from '../api';
 import type { Message } from '../types';
 
 /**
@@ -40,9 +40,9 @@ export interface FunctionalAgentResult {
  */
 export class FunctionalAgentManager {
   private promptsDir: string;
-  private apiAdapter: ChatAPIAdapter;
+  private apiAdapter: IAPIAdapter;
 
-  constructor(apiAdapter: ChatAPIAdapter, promptsDir?: string) {
+  constructor(apiAdapter: IAPIAdapter, promptsDir?: string) {
     this.apiAdapter = apiAdapter;
     // 默认使用 src/tools/prompts 目录
     this.promptsDir = promptsDir || path.join(process.cwd(), 'src/tools/prompts');
@@ -148,7 +148,7 @@ export class FunctionalAgentManager {
  * 创建功能性 Agent 管理器
  */
 export function createFunctionalAgentManager(
-  apiAdapter: ChatAPIAdapter,
+  apiAdapter: IAPIAdapter,
   promptsDir?: string
 ): FunctionalAgentManager {
   return new FunctionalAgentManager(apiAdapter, promptsDir);

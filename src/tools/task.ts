@@ -9,7 +9,7 @@ import { defineTool, type ToolExecuteResult } from './tool';
 import { getAgentManager } from '../core/agent';
 import { createSessionManager, type Session } from '../core/session-manager';
 import { createContextManager, type ContextManager } from '../core/context-manager';
-import { createAPIAdapter } from '../api';
+import { createAPIAdapterFactory } from '../api';
 import { createToolEngine, ToolEngine } from '../core/tool-engine';
 import { createAgentOrchestrator, type AgentExecutionConfig } from '../core/agent';
 import { getConfig } from '../config';
@@ -202,7 +202,8 @@ export const TaskTool = defineTool('task', {
 
     subagentContextManager.addMessage('user', userPrompt);
 
-    const apiAdapter = createAPIAdapter(apiConfig);
+    const apiFactory = createAPIAdapterFactory(apiConfig);
+    const apiAdapter = apiFactory.create();
     const toolEngine = createToolEngine();
 
     await registerSubagentTools(toolEngine, subagent_type);

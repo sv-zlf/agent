@@ -15,9 +15,14 @@ export interface Message {
 export * from './message';
 
 /**
- * API配置接口
+ * API 模式类型
  */
-export interface APIConfig {
+export type APIMode = 'A4011LM01' | 'OpenApi';
+
+/**
+ * 内网 API 配置接口（A4011LM01 模式）
+ */
+export interface InternalAPIConfig {
   base_url: string;
   access_key_id: string;
   tx_code: string;
@@ -25,6 +30,33 @@ export interface APIConfig {
   model: string;
   timeout?: number;
 }
+
+/**
+ * OpenAPI 配置接口（OpenApi 模式）
+ */
+export interface OpenAPIConfig {
+  base_url: string;
+  api_key: string;
+  model: string;
+  timeout?: number;
+}
+
+/**
+ * API 配置联合类型
+ * 支持两种模式的所有字段
+ */
+export type APIConfig = {
+  mode?: APIMode;
+  base_url: string;
+  model: string;
+  timeout?: number;
+  // 内网 API (A4011LM01) 字段
+  access_key_id?: string;
+  tx_code?: string;
+  sec_node_no?: string;
+  // OpenAPI 字段
+  api_key?: string;
+};
 
 /**
  * 模型配置
@@ -58,6 +90,40 @@ export interface InternalAPIResponse {
   'C-Response-Body': {
     codeid: string;
     'Data_Enqr_Rslt': string;
+  };
+}
+
+/**
+ * OpenAPI 请求体
+ */
+export interface OpenAPIRequest {
+  model: string;
+  messages: Message[];
+  temperature?: number;
+  top_p?: number;
+  stream?: boolean;
+}
+
+/**
+ * OpenAPI 响应体
+ */
+export interface OpenAPIResponse {
+  id: string;
+  object: string;
+  created: number;
+  model: string;
+  choices: Array<{
+    index: number;
+    message: {
+      role: string;
+      content: string;
+    };
+    finish_reason: string;
+  }>;
+  usage: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
   };
 }
 

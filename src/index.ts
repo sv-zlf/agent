@@ -5,8 +5,8 @@ import { agentCommand } from './commands/agent';
 const program = new Command();
 
 program
-  .name('agent')
-  .description('内网代码编辑助手')
+  .name('ggcode')
+  .description('GG CODE - AI-Powered Code Editor CLI Tool')
   .version('1.0.0');
 
 // 添加子命令

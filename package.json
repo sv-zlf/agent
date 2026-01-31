@@ -6,24 +6,27 @@
   "private": true,
   "main": "dist/index.js",
   "bin": {
-    "agent": "./bin/agent.js"
+    "ggcode": "./bin/ggcode.js"
   },
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "agent": "npx ts-node src/index.ts agent",
+    "dev": "npx ts-node src/index.ts",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "test:tools": "node scripts/test-tools-simple.js",
     "test:mock": "node scripts/test-with-mock.js",
     "test:validation": "jest tests/tools-validation.test.ts",
+    "test:api": "node scripts/test-api-mode.js",
     "lint": "eslint src --ext .ts",
     "lint:fix": "eslint src --ext .ts --fix",
     "format": "prettier --write \"src/**/*.ts\"",
     "format:check": "prettier --check \"src/**/*.ts\"",
     "clean": "npm run clean:dist && node scripts/clean.js",
     "clean:dist": "node -e \"const fs=require('fs');fs.existsSync('dist')&&fs.rmSync('dist',{recursive:true,force:true});console.log('✓ dist 已清理')\"",
+    "link": "npm run build && npm link",
+    "unlink": "npm unlink -g ggcode",
     "package": "node scripts/package-simple.js",
     "build:exe": "node scripts/build-exe-simple.js"
   },

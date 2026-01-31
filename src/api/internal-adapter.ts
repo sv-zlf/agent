@@ -1,7 +1,7 @@
 import axios, { AxiosError } from 'axios';
 import type {
   Message,
-  APIConfig,
+  InternalAPIConfig,
   InternalAPIRequest,
   InternalAPIResponse,
   ParsedResult,
@@ -22,12 +22,13 @@ export class APIError extends Error {
 }
 
 /**
- * 内网聊天API适配器
+ * 内网聊天API适配器（A4011LM01 模式）
+ * 适用场景：内网环境、双 JSON 序列化格式
  */
-export class ChatAPIAdapter {
-  private config: APIConfig;
+export class InternalAPIAdapter {
+  private config: InternalAPIConfig;
 
-  constructor(config: APIConfig) {
+  constructor(config: InternalAPIConfig) {
     this.config = config;
   }
 
@@ -161,8 +162,8 @@ export class ChatAPIAdapter {
 }
 
 /**
- * 创建API适配器实例
+ * 创建内网API适配器实例
  */
-export function createAPIAdapter(config: APIConfig): ChatAPIAdapter {
-  return new ChatAPIAdapter(config);
+export function createInternalAPIAdapter(config: InternalAPIConfig): InternalAPIAdapter {
+  return new InternalAPIAdapter(config);
 }

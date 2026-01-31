@@ -5,7 +5,10 @@
  */
 
 import type { Message, APIConfig } from '../types';
-import { ChatAPIAdapter, APIError } from './adapter';
+import { APIError } from './internal-adapter';
+import { InternalAPIAdapter } from './internal-adapter';
+import { OpenAPIAdapter } from './openapi-adapter';
+import type { IAPIAdapter } from './index';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
@@ -38,21 +41,20 @@ export interface RecordingSession {
   interactions: RecordedInteraction[];
 }
 
-export class RecordingAPIAdapter extends ChatAPIAdapter {
+export class RecordingAPIAdapter implements IAPIAdapter {
   private recordingMode: 'live' | 'record' | 'playback';
   private currentSession: RecordingSession | null;
   private recordingDir: string;
   private playbackIndex: number;
 
   constructor(
-    config: APIConfig,
+    private config: APIConfig,
     options: {
       mode?: 'live' | 'record' | 'playback';
       recordingDir?: string;
       sessionName?: string;
     } = {}
   ) {
-    super(config);
     this.recordingMode = options.mode || 'live';
     this.recordingDir = options.recordingDir || path.join(process.cwd(), 'recordings');
     this.currentSession = null;
@@ -60,6 +62,15 @@ export class RecordingAPIAdapter extends ChatAPIAdapter {
 
     if (options.sessionName) {
       this.loadSession(options.sessionName);
+    }
+  }
+
+  private createLiveAdapter(): IAPIAdapter {
+    const apiMode = this.config.mode || 'A4011LM01';
+    if (apiMode === 'OpenApi') {
+      return new OpenAPIAdapter(this.config as any);
+    } else {
+      return new InternalAPIAdapter(this.config as any);
     }
   }
 
@@ -154,7 +165,7 @@ export class RecordingAPIAdapter extends ChatAPIAdapter {
       return this.chatWithPlayback(messages, options);
     } else {
       // live 模式直接调用原始方法
-      return super.chat(messages, options);
+      return this.createLiveAdapter().chat(messages, options);
     }
   }
 
@@ -165,7 +176,7 @@ export class RecordingAPIAdapter extends ChatAPIAdapter {
     const startTime = Date.now();
 
     try {
-      const output = await super.chat(messages, options);
+      const output = await this.createLiveAdapter().chat(messages, options);
       const duration = Date.now() - startTime;
 
       // 记录成功的交互

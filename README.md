@@ -42,44 +42,97 @@
 - Node.js >= 16.0.0
 - npm (或内网npm仓库)
 
-### 安装依赖
+### 快速安装
 
 ```bash
+# 1. 克隆项目
+git clone <repository-url>
+cd agent
+
+# 2. 安装依赖
 npm install
+
+# 3. 编译项目
+npm run build
+
+# 4. 全局链接命令
+npm link
 ```
 
-### 编译项目
+安装完成后，可以在任意目录使用 `ggcode` 命令：
 
 ```bash
-npm run build
+ggcode --version        # 查看版本
+ggcode                 # 启动 AI 编程助手
 ```
+
+**详细安装说明请查看**: [INSTALL.md](INSTALL.md)
 
 ## 🚀 快速开始
 
-### 启动 GG CODE
+### 使用 ggcode 命令
 
 ```bash
-npm run agent
+# 启动 AI 编程助手
+ggcode
+
+# 自动批准所有工具调用
+ggcode -y
+
+# 使用 explore agent (只读模式)
+ggcode -a explore
+
+# 使用 build agent (构建专家)
+ggcode -a build
+
+# 不保存对话历史
+ggcode --no-history
 ```
 
-**启动选项：**
+### 使用 npm scripts（开发模式）
+
 ```bash
-npm run agent                    # 启动 AI 编程助手
-npm run agent -- -y              # 自动批准所有工具调用
-npm run agent -- -a explore       # 使用 explore agent (只读模式)
-npm run agent -- -a build         # 使用 build agent (构建专家)
+npm run dev                    # 开发模式（ts-node）
+npm run agent                  # 启动 AI 编程助手
+npm run agent -- -y            # 自动批准所有工具调用
+npm run agent -- -a explore    # 使用 explore agent
 ```
 
 ### 配置说明
 
 配置文件位于 `~/.ggcode/config.json`，首次运行会自动创建默认配置。
 
+**支持两种 API 模式：**
+
+1. **A4011LM01** - 内网 API（默认）
+   - 双 JSON 序列化格式
+   - 适用于内网环境
+
+2. **OpenApi** - 标准 OpenAPI 格式
+   - 兼容 OpenAI API 格式
+   - 适用于外网环境，支持智谱 GLM、OpenAI、通义千问等
+
+**配置示例：**
+
+```json
+{
+  "api": {
+    "mode": "A4011LM01",  // 或 "OpenApi"
+    "base_url": "http://10.252.167.50:8021",
+    "model": "DeepSeek-V3-671B_20250725"
+  }
+}
+```
+
+**详细配置说明请查看**: [CONFIG.md](CONFIG.md)
+
 **主要配置项：**
+- `api.mode` - API 模式：A4011LM01（内网）或 OpenApi（外网）
 - `api.base_url` - API 基础 URL
 - `api.model` - 使用的模型名称
 - `agent.max_context_tokens` - 最大上下文 tokens (默认 8000)
 - `agent.max_history` - 最大历史轮数 (默认 20)
-- `agent.max_iterations` - 最大迭代次数 (默认 10)
+- `agent.max_iterations` - 最大迭代次数 (默认 20)
 - `agent.auto_approve` - 自动批准工具调用 (默认 false)
 
 ## 💡 使用技巧

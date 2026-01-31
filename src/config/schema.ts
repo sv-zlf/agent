@@ -17,11 +17,15 @@ function getUserConfigPath(): string {
  */
 const DEFAULT_CONFIG: AgentConfig = {
   api: {
+    mode: (process.env.API_MODE as 'A4011LM01' | 'OpenApi') || 'A4011LM01',
+    // 内网 API 配置 (A4011LM01 模式)
     base_url: process.env.INTERNAL_API_BASE || 'http://10.252.167.50:8021',
     access_key_id: process.env.ACCESS_KEY_ID || '1305842310935769088',
     tx_code: process.env.TX_CODE || 'A4011LM01',
     sec_node_no: process.env.SEC_NODE_NO || '400136',
     model: process.env.MODEL_ID || 'DeepSeek-V3-671B_20250725',
+    // OpenAPI 配置 (OpenApi 模式)
+    api_key: process.env.OPENAPI_KEY || '',
     timeout: 30000,
   },
   agent: {
@@ -163,22 +167,36 @@ export class ConfigManager {
    */
   validate(): { valid: boolean; errors: string[] } {
     const errors: string[] = [];
+    const apiMode = this.config.api.mode || 'A4011LM01';
 
-    // 验证API配置
-    if (!this.config.api.base_url) {
-      errors.push('API base_url 不能为空');
-    }
-    if (!this.config.api.access_key_id) {
-      errors.push('API access_key_id 不能为空');
-    }
-    if (!this.config.api.tx_code) {
-      errors.push('API tx_code 不能为空');
-    }
-    if (!this.config.api.sec_node_no) {
-      errors.push('API sec_node_no 不能为空');
-    }
-    if (!this.config.api.model) {
-      errors.push('API model 不能为空');
+    if (apiMode === 'OpenApi') {
+      // OpenAPI 模式验证
+      if (!this.config.api.base_url) {
+        errors.push('API base_url 不能为空');
+      }
+      if (!this.config.api.api_key) {
+        errors.push('OpenAPI 模式需要 api_key（请配置 api_key 或设置 OPENAPI_KEY 环境变量）');
+      }
+      if (!this.config.api.model) {
+        errors.push('API model 不能为空');
+      }
+    } else {
+      // A4011LM01 (内网模式) 验证
+      if (!this.config.api.base_url) {
+        errors.push('API base_url 不能为空');
+      }
+      if (!this.config.api.access_key_id) {
+        errors.push('API access_key_id 不能为空');
+      }
+      if (!this.config.api.tx_code) {
+        errors.push('API tx_code 不能为空');
+      }
+      if (!this.config.api.sec_node_no) {
+        errors.push('API sec_node_no 不能为空');
+      }
+      if (!this.config.api.model) {
+        errors.push('API model 不能为空');
+      }
     }
 
     return {

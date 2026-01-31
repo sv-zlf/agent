@@ -1,6 +1,6 @@
 import type { ToolCall, ToolResult, AgentRuntimeConfig, AgentContext, AgentStatus } from '../types';
 import { ToolEngine } from './tool-engine';
-import { ChatAPIAdapter } from '../api';
+import type { IAPIAdapter } from '../api';
 import { ContextManager } from './context-manager';
 import { SessionStateManager, SessionState } from './session-state';
 import { PermissionManager, PermissionAction, type PermissionRequest } from './permissions';
@@ -30,7 +30,7 @@ interface AgentResult {
  * Agent代理编排器
  */
 export class AgentOrchestrator {
-  private apiAdapter: ChatAPIAdapter;
+  private apiAdapter: IAPIAdapter;
   private toolEngine: ToolEngine;
   private contextManager: ContextManager;
   private config: AgentExecutionConfig;
@@ -41,7 +41,7 @@ export class AgentOrchestrator {
   private functionalAgentManager?: FunctionalAgentManager; // 功能性 Agent 管理器
 
   constructor(
-    apiAdapter: ChatAPIAdapter,
+    apiAdapter: IAPIAdapter,
     toolEngine: ToolEngine,
     contextManager: ContextManager,
     config: AgentExecutionConfig,
@@ -567,7 +567,7 @@ ${toolsDescription}
  * 创建Agent编排器实例
  */
 export function createAgentOrchestrator(
-  apiAdapter: ChatAPIAdapter,
+  apiAdapter: IAPIAdapter,
   toolEngine: ToolEngine,
   contextManager: ContextManager,
   config: AgentExecutionConfig,

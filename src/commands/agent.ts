@@ -3,7 +3,7 @@ import * as path from 'path';
 import chalk from 'chalk';
 import ora = require('ora');
 import { getConfig } from '../config';
-import { createAPIAdapter } from '../api';
+import { createAPIAdapterFactory } from '../api';
 import {
   createToolEngine,
   createContextManager,
@@ -118,7 +118,8 @@ export const agentCommand = new Command('agent')
     }
 
     // 创建核心组件
-    const apiAdapter = createAPIAdapter(config.getAPIConfig());
+    const apiFactory = createAPIAdapterFactory(config.getAPIConfig());
+    const apiAdapter = apiFactory.create();
     const toolEngine = createToolEngine();
     const functionalAgentManager = createFunctionalAgentManager(apiAdapter);
     const permissionManager = new PermissionManager();

@@ -4,7 +4,7 @@
  */
 
 import type { Message, APIConfig } from '../types';
-import { APIError } from './adapter';
+import { APIError } from './internal-adapter';
 
 export interface MockResponse {
   input?: {
