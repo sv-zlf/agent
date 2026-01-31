@@ -216,7 +216,7 @@ export class CommandManager {
 
     try {
       // 1. 读取提示词模板
-      const templatePath = path.join(__dirname, '../../prompts/init.txt');
+      const templatePath = path.join(__dirname, '../prompts/init.txt');
       let promptTemplate = await fs.readFile(templatePath, 'utf-8').catch(() => {
         console.log(chalk.yellow('⚠️  未找到 prompts/init.txt，使用默认模板\n'));
         return this.getDefaultInitTemplate();

@@ -218,9 +218,10 @@ Message parts can be: text, file, tool_call, tool_result, reasoning, system
 - `src/core/` - All core business logic components
 - `src/commands/` - CLI command implementations (agent.ts is main entry)
 - `src/tools/` - Built-in and enhanced tool definitions
+- `src/tools/prompts/` - Agent system prompt templates
 - `src/types/message.ts` - Enhanced message system with parts
 - `src/utils/prompt.ts` - Interactive TUI prompts
-- `prompts/` - Agent system prompt templates
+- `src/prompts/` - Project-level prompt templates
 - `.agent-sessions/` - Session data (gitignored)
 
 ### Important Implementation Details

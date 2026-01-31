@@ -4,7 +4,14 @@ import chalk from 'chalk';
 import ora = require('ora');
 import { getConfig } from '../config';
 import { createAPIAdapter } from '../api';
-import { createToolEngine, createContextManager, createSessionManager, createFunctionalAgentManager, getInterruptManager, getAgentManager } from '../core';
+import {
+  createToolEngine,
+  createContextManager,
+  createSessionManager,
+  createFunctionalAgentManager,
+  getInterruptManager,
+  getAgentManager,
+} from '../core';
 import { getBuiltinTools } from '../tools';
 import { PermissionManager, PermissionAction } from '../core/permissions';
 import { createLogger } from '../utils';
@@ -18,17 +25,21 @@ const logger = createLogger();
  * 权限级别显示标签
  */
 const PERMISSION_LABELS: Record<string, string> = {
-  'safe': '安全操作',
+  safe: '安全操作',
   'local-modify': '文件修改',
-  'network': '网络操作',
-  'dangerous': '危险操作',
+  network: '网络操作',
+  dangerous: '危险操作',
 };
 
 /**
  * 格式化消息显示 - 参考 OpenCode 紧凑格式
  */
 function formatTimestamp(): string {
-  return new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  return new Date().toLocaleTimeString('zh-CN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
 }
 
 function printSeparator(color: chalk.Chalk = chalk.gray): void {
@@ -55,7 +66,10 @@ function printCompactToolCall(tool: string, params: Record<string, unknown>): vo
   console.log(chalk.yellow('● ') + chalk.cyan(tool) + (paramsStr ? `(${paramsStr})` : ''));
 }
 
-function printToolCompactResult(success: boolean, result: { output?: string; error?: string }): void {
+function printToolCompactResult(
+  success: boolean,
+  result: { output?: string; error?: string }
+): void {
   if (success && result.output) {
     const lines = result.output.split('\n');
     const brief = lines.slice(0, 2).join(' | ');
@@ -115,7 +129,7 @@ export const agentCommand = new Command('agent')
     toolEngine.registerTools(tools);
 
     // 初始化权限规则：根据工具的 permission 属性设置默认规则
-    tools.forEach(tool => {
+    tools.forEach((tool) => {
       let action: PermissionAction;
       switch (tool.permission) {
         case 'safe':
@@ -134,7 +148,7 @@ export const agentCommand = new Command('agent')
       permissionManager.addRule({
         tool: tool.name,
         pattern: '*',
-        action
+        action,
       });
     });
 
@@ -237,7 +251,10 @@ export const agentCommand = new Command('agent')
 
         // P 键或 p 键中断操作
         if (key === 'p' || key === 'P') {
-          if (interruptManager.currentState.isAIThinking || interruptManager.currentState.isExecutingTool) {
+          if (
+            interruptManager.currentState.isAIThinking ||
+            interruptManager.currentState.isExecutingTool
+          ) {
             interruptManager.requestInterrupt();
 
             // 清空输入缓冲区 - 延迟执行，避免在监听器内部操作
@@ -287,24 +304,27 @@ export const agentCommand = new Command('agent')
       }
 
       if (options.history) {
-        contextManager.saveHistory().then(() => {
-          try {
-            rl.close();
-          } catch (e) {
-            // readline 可能已经关闭
-          }
-          logger.info('再见！');
-          process.exit(0);
-        }).catch(() => {
-          // history 保存失败也继续退出
-          try {
-            rl.close();
-          } catch (e) {
-            // readline 可能已经关闭
-          }
-          logger.info('再见！');
-          process.exit(0);
-        });
+        contextManager
+          .saveHistory()
+          .then(() => {
+            try {
+              rl.close();
+            } catch (e) {
+              // readline 可能已经关闭
+            }
+            logger.info('再见！');
+            process.exit(0);
+          })
+          .catch(() => {
+            // history 保存失败也继续退出
+            try {
+              rl.close();
+            } catch (e) {
+              // readline 可能已经关闭
+            }
+            logger.info('再见！');
+            process.exit(0);
+          });
       } else {
         try {
           rl.close();
@@ -421,15 +441,15 @@ export const agentCommand = new Command('agent')
             process.stdin.removeListener('data', interruptKeyListener);
           }
 
-            try {
-              const selected = await select({
-                message: '选择命令:',
-                options: commands.map((cmd: any) => ({
-                  label: `/${cmd.name}`,
-                  value: `/${cmd.name}`,
-                  description: cmd.description,
-                })),
-              });
+          try {
+            const selected = await select({
+              message: '选择命令:',
+              options: commands.map((cmd: any) => ({
+                label: `/${cmd.name}`,
+                value: `/${cmd.name}`,
+                description: cmd.description,
+              })),
+            });
 
             input = selected.value;
           } finally {
@@ -483,7 +503,9 @@ export const agentCommand = new Command('agent')
           });
 
           // 根据命令结果决定是否继续
-          const cmdResult = result as CommandResult & { sessionSwitched?: { sessionId: string; historyFile: string } };
+          const cmdResult = result as CommandResult & {
+            sessionSwitched?: { sessionId: string; historyFile: string };
+          };
           if (!cmdResult.shouldContinue) {
             // 处理会话切换
             if (cmdResult.sessionSwitched) {
@@ -548,7 +570,8 @@ export const agentCommand = new Command('agent')
           if (userMessages.length === 1 && options.history) {
             // 异步生成标题
             try {
-              functionalAgentManager.generateTitle(messageHistory)
+              functionalAgentManager
+                .generateTitle(messageHistory)
                 .then((result) => {
                   if (result.success && result.output) {
                     // 更新会话标题（暂时使用 agent 字段存储）
@@ -565,7 +588,8 @@ export const agentCommand = new Command('agent')
 
             // 异步生成摘要
             try {
-              functionalAgentManager.summarize(messageHistory)
+              functionalAgentManager
+                .summarize(messageHistory)
                 .then((result) => {
                   if (result.success && result.output) {
                     // 可以将摘要保存到会话元数据
@@ -611,7 +635,11 @@ export const agentCommand = new Command('agent')
 
               // 如果上下文超过最大 tokens 的 80%，触发压缩
               if (estimatedTokens > maxTokens * 0.8) {
-                console.log(chalk.yellow(`\n⚠️  上下文过大 (${estimatedTokens}/${maxTokens} tokens)，触发压缩...\n`));
+                console.log(
+                  chalk.yellow(
+                    `\n⚠️  上下文过大 (${estimatedTokens}/${maxTokens} tokens)，触发压缩...\n`
+                  )
+                );
 
                 try {
                   const compactResult = await functionalAgentManager.compact(messages);
@@ -630,7 +658,9 @@ export const agentCommand = new Command('agent')
                     messages = contextManager.getContext();
                   }
                 } catch (compactError) {
-                  console.log(chalk.yellow(`压缩失败，继续使用原上下文: ${(compactError as Error).message}\n`));
+                  console.log(
+                    chalk.yellow(`压缩失败，继续使用原上下文: ${(compactError as Error).message}\n`)
+                  );
                 }
               }
 
@@ -662,7 +692,10 @@ export const agentCommand = new Command('agent')
                   wasInterrupted = true;
 
                   // 添加中断消息到上下文
-                  contextManager.addMessage('user', '\n\n用户中断了AI思考。请重新开始或询问其他问题。');
+                  contextManager.addMessage(
+                    'user',
+                    '\n\n用户中断了AI思考。请重新开始或询问其他问题。'
+                  );
                 } else {
                   // 其他错误继续抛出
                   throw apiError;
@@ -784,7 +817,9 @@ export const agentCommand = new Command('agent')
                   }
 
                   // 显示工具调用（同一行）
-                  process.stdout.write(`\n${chalk.yellow('○')} ${chalk.cyan(call.tool)}(${paramsStr})`);
+                  process.stdout.write(
+                    `\n${chalk.yellow('○')} ${chalk.cyan(call.tool)}(${paramsStr})`
+                  );
 
                   // 记录开始时间
                   const startTime = Date.now();
@@ -807,12 +842,16 @@ export const agentCommand = new Command('agent')
                   const timeStr = `${duration}ms`;
                   if (result.success) {
                     // 成功：绿色实心圆 + 工具名 + 时间
-                    process.stdout.write(`\r${chalk.green('●')} ${chalk.cyan(call.tool)}(${paramsStr}) ${chalk.gray(`(${timeStr})`)}   \n`);
+                    process.stdout.write(
+                      `\r${chalk.green('●')} ${chalk.cyan(call.tool)}(${paramsStr}) ${chalk.gray(`(${timeStr})`)}   \n`
+                    );
                     // 在下行显示简要结果
                     printToolCompactResult(true, result);
                   } else {
                     // 失败：红色叉号 + 工具名 + 时间
-                    process.stdout.write(`\r${chalk.red('✗')} ${chalk.cyan(call.tool)}(${paramsStr}) ${chalk.gray(`(${timeStr})`)}   \n`);
+                    process.stdout.write(
+                      `\r${chalk.red('✗')} ${chalk.cyan(call.tool)}(${paramsStr}) ${chalk.gray(`(${timeStr})`)}   \n`
+                    );
                     // 在下行显示错误信息
                     printToolCompactResult(false, result);
                   }
@@ -864,14 +903,16 @@ export const agentCommand = new Command('agent')
               // 工具执行完成，显示分隔线
               printSeparator(chalk.gray);
               console.log();
-
             } catch (roundError) {
               // 单轮工具调用出错，记录错误并继续
               console.log(chalk.red(`\n❌ 工具调用轮次错误: ${(roundError as Error).message}`));
               console.log();
 
               // 将错误信息添加到上下文，让AI知道发生了什么
-              contextManager.addMessage('user', `\n\n执行过程中发生错误: ${(roundError as Error).message}`);
+              contextManager.addMessage(
+                'user',
+                `\n\n执行过程中发生错误: ${(roundError as Error).message}`
+              );
               break; // 出错后退出工具调用循环
             }
           }
@@ -898,11 +939,6 @@ export const agentCommand = new Command('agent')
             } catch (error) {
               console.log(chalk.red(`生成总结失败: ${(error as Error).message}\n`));
             }
-          }
-
-          // 显示本轮对话的统计
-          if (currentRound > 0) {
-            console.log(chalk.gray(`📊 本轮执行了 ${currentRound} 轮工具调用\n`));
           }
         } catch (error) {
           console.log(chalk.red(`\n❌ 错误: ${(error as Error).message}`));

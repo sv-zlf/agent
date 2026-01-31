@@ -26,7 +26,7 @@ npm run test:tools
 
 这个脚本会：
 - ✓ 测试工具注册（13个工具）
-- ✓ 测试提示词加载（从 `prompts/tools/*.txt`）
+- ✓ 测试提示词加载（从 `src/tools/prompts/tools/*.txt`）
 - ✓ 测试工具执行（Glob、Read 等）
 - ✓ 测试工具引擎功能
 - ✓ 测试错误处理和参数验证
@@ -117,7 +117,7 @@ git commit -m "feat: update tool"
 
 ### 2. 添加新工具时
 1. 在 `src/tools/` 创建工具文件
-2. 在 `prompts/tools/` 创建对应的 `.txt` 提示词文件
+2. 在 `src/tools/prompts/tools/` 创建对应的 `.txt` 提示词文件
 3. 在 `src/tools/index.ts` 导出新工具
 4. 运行测试验证：
    ```bash
@@ -126,7 +126,7 @@ git commit -m "feat: update tool"
    ```
 
 ### 3. 修改提示词后
-1. 编辑 `prompts/tools/*.txt` 文件
+1. 编辑 `src/tools/prompts/tools/*.txt` 文件
 2. 运行测试验证加载：
    ```bash
    npm run build
@@ -179,7 +179,7 @@ git commit -m "feat: update tool"
 **解决**: 确保新工具已添加到 `tools` 对象和导出列表
 
 ### 测试失败：提示词文件不存在
-**原因**: `prompts/tools/*.txt` 文件缺失
+**原因**: `src/tools/prompts/tools/*.txt` 文件缺失
 
 **解决**: 创建对应的提示词文件
 

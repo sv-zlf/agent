@@ -1,6 +1,6 @@
 /**
  * GG CODE - 工具提示词加载器
- * 从 prompts/tools/ 目录加载工具的详细使用说明
+ * 从 src/tools/prompts/tools/ 目录加载工具的详细使用说明
  */
 
 import * as fs from 'fs/promises';
@@ -12,10 +12,10 @@ import * as path from 'path';
 const promptCache = new Map<string, string>();
 
 /**
- * 获取工具提示词文件路径
+ * 获取工具提示词文件路径（相对于 __dirname）
  */
 function getToolPromptPath(toolId: string): string {
-  return path.join(process.cwd(), 'prompts/tools', `${toolId}.txt`);
+  return path.join(__dirname, '../tools/prompts/tools', `${toolId}.txt`);
 }
 
 /**

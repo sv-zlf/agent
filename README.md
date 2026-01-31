@@ -145,15 +145,15 @@ npm run clean:dist           # 只清理 dist
 │   │   ├── context-manager.ts # 上下文管理
 │   │   └── session-manager.ts # 会话管理
 │   ├── tools/                # 工具定义
+│   │   └── prompts/          # Agent 系统提示词
+│   │       ├── default.txt   # 默认 agent
+│   │       ├── explore.txt   # explore agent
+│   │       ├── tools/        # 工具使用说明
+│   │       └── ...
 │   ├── types/                # 类型定义
 │   └── utils/                # 工具函数
-├── prompts/                  # 提示词模板
-│   ├── init.txt              # 初始化模板
-│   └── tools/                # 工具使用说明
-├── src/tools/prompts/        # Agent 系统提示词
-│   ├── default.txt           # 默认 agent
-│   ├── explore.txt           # explore agent
-│   └── ...
+├── src/prompts/              # 项目提示词模板
+│   └── init.txt              # 初始化模板
 ├── tests/                   # 测试文件
 ├── scripts/                 # 构建脚本
 ├── bin/                     # 可执行文件
