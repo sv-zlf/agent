@@ -2,6 +2,7 @@ import * as fs from 'fs-extra';
 import * as path from 'path';
 import * as fg from 'fast-glob';
 import type { FileAnalysis, SearchOptions } from '../types';
+import { FileOperationError, ErrorCode } from '../errors';
 
 /**
  * 代码操作器
@@ -22,12 +23,23 @@ export class CodeOperator {
       const stats = await fs.stat(filePath);
 
       if (stats.size > this.maxFileSize) {
-        throw new Error(`文件过大 (${(stats.size / 1024 / 1024).toFixed(2)}MB)，超过限制 (${this.maxFileSize / 1024 / 1024}MB)`);
+        throw new FileOperationError(
+          `文件过大 (${(stats.size / 1024 / 1024).toFixed(2)}MB)，超过限制 (${this.maxFileSize / 1024 / 1024}MB)`,
+          ErrorCode.FILE_TOO_LARGE,
+          { filePath, fileSize: stats.size, maxSize: this.maxFileSize }
+        );
       }
 
       return await fs.readFile(filePath, 'utf-8');
     } catch (error) {
-      throw new Error(`读取文件失败 [${filePath}]: ${(error as Error).message}`);
+      if (error instanceof FileOperationError) {
+        throw error;
+      }
+      throw new FileOperationError(
+        `读取文件失败 [${filePath}]: ${(error as Error).message}`,
+        ErrorCode.FILE_READ_ERROR,
+        { filePath }
+      );
     }
   }
 
@@ -41,7 +53,11 @@ export class CodeOperator {
 
       await fs.writeFile(filePath, content, 'utf-8');
     } catch (error) {
-      throw new Error(`写入文件失败 [${filePath}]: ${(error as Error).message}`);
+      throw new FileOperationError(
+        `写入文件失败 [${filePath}]: ${(error as Error).message}`,
+        ErrorCode.FILE_WRITE_ERROR,
+        { filePath }
+      );
     }
   }
 
@@ -52,7 +68,11 @@ export class CodeOperator {
     const content = await this.readFile(filePath);
 
     if (!content.includes(oldContent)) {
-      throw new Error('未找到要替换的代码内容');
+      throw new FileOperationError(
+        '未找到要替换的代码内容',
+        ErrorCode.FILE_WRITE_ERROR,
+        { filePath, oldContentLength: oldContent.length }
+      );
     }
 
     const newFileContent = content.replace(oldContent, newContent);
@@ -95,7 +115,14 @@ export class CodeOperator {
 
       return results;
     } catch (error) {
-      throw new Error(`搜索代码失败: ${(error as Error).message}`);
+      if (error instanceof FileOperationError) {
+        throw error;
+      }
+      throw new FileOperationError(
+        `搜索代码失败: ${(error as Error).message}`,
+        ErrorCode.FILE_READ_ERROR,
+        { pattern, options }
+      );
     }
   }
 
@@ -124,7 +151,14 @@ export class CodeOperator {
 
       return analysis;
     } catch (error) {
-      throw new Error(`分析文件失败: ${(error as Error).message}`);
+      if (error instanceof FileOperationError) {
+        throw error;
+      }
+      throw new FileOperationError(
+        `分析文件失败: ${(error as Error).message}`,
+        ErrorCode.FILE_READ_ERROR,
+        { filePath }
+      );
     }
   }
 
@@ -205,7 +239,11 @@ export class CodeOperator {
     try {
       return await fg.glob(pattern, { onlyFiles: true });
     } catch (error) {
-      throw new Error(`查找文件失败: ${(error as Error).message}`);
+      throw new FileOperationError(
+        `查找文件失败: ${(error as Error).message}`,
+        ErrorCode.FILE_READ_ERROR,
+        { pattern }
+      );
     }
   }
 }

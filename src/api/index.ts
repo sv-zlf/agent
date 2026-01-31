@@ -13,7 +13,8 @@ import { MockAPIAdapter } from './mock-api-adapter';
 import { RecordingAPIAdapter } from './recording-api-adapter';
 
 // 导出所有适配器
-export { InternalAPIAdapter, APIError, createInternalAPIAdapter } from './internal-adapter';
+export { InternalAPIAdapter, createInternalAPIAdapter } from './internal-adapter';
+export { APIError } from '../errors';
 export { OpenAPIAdapter, createOpenAPIAdapter } from './openapi-adapter';
 export { MockAPIAdapter, createMockAPIAdapter } from './mock-api-adapter';
 export { RecordingAPIAdapter, createRecordingAPIAdapter } from './recording-api-adapter';

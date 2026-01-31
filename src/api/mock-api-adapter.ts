@@ -4,7 +4,7 @@
  */
 
 import type { Message, APIConfig } from '../types';
-import { APIError } from './internal-adapter';
+import { APIError, ErrorCode } from '../errors';
 
 export interface MockResponse {
   input?: {
@@ -109,7 +109,7 @@ export class MockAPIAdapter {
   ): Promise<string> {
     // 检查是否已中断
     if (options?.abortSignal?.aborted) {
-      throw new APIError('请求已被用户中断', 'ABORTED');
+      throw new APIError('请求已被用户中断', ErrorCode.API_ABORTED);
     }
 
     if (!this.currentScenario) {
@@ -146,7 +146,7 @@ export class MockAPIAdapter {
 
     // 检查是否需要返回错误
     if (response.error) {
-      throw new APIError(response.error.message, response.error.code);
+      throw new APIError(response.error.message, response.error.code as ErrorCode);
     }
 
     // 可以在这里添加输入验证

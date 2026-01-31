@@ -6,6 +6,7 @@ import { SessionStateManager, SessionState } from './session-state';
 import { PermissionManager, PermissionAction, type PermissionRequest } from './permissions';
 import { FunctionalAgentManager } from './functional-agents';
 import { generateToolsDescription } from '../tools';
+import { APIError, AgentExecutionError, ErrorCode } from '../errors';
 
 /**
  * Agent执行配置
@@ -128,7 +129,10 @@ export class AgentOrchestrator {
 
         // 验证响应非空
         if (!response || response.trim().length === 0) {
-          throw new Error('AI 模型返回了空响应，请检查 API 配置或重试');
+          throw new APIError(
+            'AI 模型返回了空响应，请检查 API 配置或重试',
+            ErrorCode.API_EMPTY_RESPONSE
+          );
         }
 
         // 解析工具调用
@@ -690,7 +694,11 @@ export class AgentManager {
   async loadAgentPrompt(agentName: string): Promise<string> {
     const agent = this.getAgent(agentName);
     if (!agent) {
-      throw new Error(`Agent not found: ${agentName}`);
+      throw new AgentExecutionError(
+        `Agent not found: ${agentName}`,
+        ErrorCode.AGENT_EXECUTION_FAILED,
+        { agentName }
+      );
     }
 
     // 如果 agent 有自定义的 systemPrompt，使用它

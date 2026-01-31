@@ -5,7 +5,7 @@
  */
 
 import type { Message, APIConfig } from '../types';
-import { APIError } from './internal-adapter';
+import { APIError, ErrorCode } from '../errors';
 import { InternalAPIAdapter } from './internal-adapter';
 import { OpenAPIAdapter } from './openapi-adapter';
 import type { IAPIAdapter } from './index';
@@ -201,7 +201,7 @@ export class RecordingAPIAdapter implements IAPIAdapter {
       }
 
       return output;
-    } catch (error) {
+    } catch (error: unknown) {
       // 记录失败的交互
       if (this.currentSession && error instanceof APIError) {
         this.currentSession.interactions.push({
@@ -243,7 +243,7 @@ export class RecordingAPIAdapter implements IAPIAdapter {
 
     // 如果有错误，抛出相同的错误
     if (interaction.error) {
-      throw new APIError(interaction.error.message, interaction.error.code);
+      throw new APIError(interaction.error.message, interaction.error.code as ErrorCode);
     }
 
     // 可以在这里验证输入是否匹配（可选）

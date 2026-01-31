@@ -6,7 +6,7 @@
 
 import axios, { AxiosError } from 'axios';
 import type { Message, OpenAPIConfig, OpenAPIRequest, OpenAPIResponse } from '../types';
-import { APIError } from './internal-adapter';
+import { APIError, ErrorCode } from '../errors';
 
 /**
  * OpenAPI 聊天适配器
@@ -34,7 +34,7 @@ export class OpenAPIAdapter {
   ): Promise<string> {
     // 检查是否已中断
     if (options?.abortSignal?.aborted) {
-      throw new APIError('请求已被用户中断', 'ABORTED');
+      throw new APIError('请求已被用户中断', ErrorCode.API_ABORTED);
     }
 
     try {
@@ -79,7 +79,7 @@ export class OpenAPIAdapter {
           (axiosError.message && axiosError.message.includes('cancel')) ||
           options?.abortSignal?.aborted
         ) {
-          throw new APIError('请求已被用户中断', 'ABORTED');
+          throw new APIError('请求已被用户中断', ErrorCode.API_ABORTED);
         }
 
         if (axiosError.response) {
@@ -89,7 +89,7 @@ export class OpenAPIAdapter {
 
           throw new APIError(
             `API 错误: ${status} ${data.error?.message || axiosError.response.statusText}`,
-            data.error?.code,
+            data.error?.code as ErrorCode,
             status
           );
         } else if (axiosError.request) {

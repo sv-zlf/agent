@@ -6,20 +6,7 @@ import type {
   InternalAPIResponse,
   ParsedResult,
 } from '../types';
-
-/**
- * API错误类
- */
-export class APIError extends Error {
-  constructor(
-    message: string,
-    public code?: string,
-    public statusCode?: number
-  ) {
-    super(message);
-    this.name = 'APIError';
-  }
-}
+import { APIError, ErrorCode } from '../errors';
 
 /**
  * 内网聊天API适配器（A4011LM01 模式）
@@ -74,7 +61,7 @@ export class InternalAPIAdapter {
 
     // 检查是否已中断
     if (options?.abortSignal?.aborted) {
-      throw new APIError('请求已被用户中断', 'ABORTED');
+      throw new APIError('请求已被用户中断', ErrorCode.API_ABORTED);
     }
 
     try {
@@ -98,21 +85,40 @@ export class InternalAPIAdapter {
       if (response.data['C-API-Status'] !== '00') {
         throw new APIError(
           `API错误: ${response.data['C-Response-Desc']}`,
-          response.data['C-Response-Code']
+          ErrorCode.API_AUTH_FAILED,
+          undefined,
+          { apiStatus: response.data['C-API-Status'] }
         );
       }
 
       // 检查业务状态
       const responseBody = response.data['C-Response-Body'];
       if (responseBody.codeid !== '20000') {
-        throw new APIError(`业务错误: codeid=${responseBody.codeid}`, responseBody.codeid);
+        throw new APIError(
+          `业务错误: codeid=${responseBody.codeid}`,
+          ErrorCode.API_AUTH_FAILED,
+          undefined,
+          { codeid: responseBody.codeid }
+        );
       }
 
       // 解嵌套的JSON字符串
       const result: ParsedResult = JSON.parse(responseBody['Data_Enqr_Rslt']);
 
+      // 防御性检查：验证响应结构
+      if (!result?.choices?.[0]?.messages?.content) {
+        throw new APIError('API 返回了空的响应内容', ErrorCode.API_EMPTY_RESPONSE);
+      }
+
+      const content = result.choices[0].messages.content;
+
+      // 检查内容是否为空
+      if (!content || content.trim().length === 0) {
+        throw new APIError('AI 模型返回了空白内容', ErrorCode.API_BLANK_CONTENT);
+      }
+
       // 返回AI回复内容
-      return result.choices[0].messages.content;
+      return content;
     } catch (error) {
       if (axios.isAxiosError(error)) {
         const axiosError = error as AxiosError<InternalAPIResponse>;
@@ -125,23 +131,34 @@ export class InternalAPIAdapter {
           (axiosError.message && axiosError.message.includes('cancel')) ||
           options?.abortSignal?.aborted
         ) {
-          throw new APIError('请求已被用户中断', 'ABORTED');
+          throw new APIError('请求已被用户中断', ErrorCode.API_ABORTED);
         }
 
         if (axiosError.response) {
           // 服务器返回了错误响应
           throw new APIError(
             `API调用失败: ${axiosError.response.status} ${axiosError.response.statusText}`,
-            undefined,
+            ErrorCode.API_NETWORK_ERROR,
             axiosError.response.status
           );
         } else if (axiosError.request) {
           // 请求已发出但没有收到响应
-          throw new APIError(`网络错误: 无法连接到API服务器 (${this.config.base_url})`);
+          throw new APIError(
+            `网络错误: 无法连接到API服务器 (${this.config.base_url})`,
+            ErrorCode.API_NETWORK_ERROR
+          );
         }
       }
+
       // 其他错误
-      throw error;
+      if (error instanceof APIError) {
+        throw error;
+      }
+
+      throw new APIError(
+        `API调用异常: ${error instanceof Error ? error.message : String(error)}`,
+        ErrorCode.UNKNOWN_ERROR
+      );
     }
   }
 

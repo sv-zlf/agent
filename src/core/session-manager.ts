@@ -8,6 +8,7 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import type { SessionManagementConfig } from '../types';
 import { createLogger, getSessionsDir, getCurrentSessionFile } from '../utils';
+import { SessionError, ErrorCode } from '../errors';
 
 const logger = createLogger(false);
 
@@ -160,7 +161,11 @@ export class SessionManager {
   async switchSession(sessionId: string): Promise<Session> {
     const session = this.sessions.get(sessionId);
     if (!session) {
-      throw new Error(`会话不存在: ${sessionId}`);
+      throw new SessionError(
+  `会话不存在: ${sessionId}`,
+  ErrorCode.SESSION_NOT_FOUND,
+  { sessionId }
+);
     }
 
     // 更新会话的最后活跃时间
@@ -179,7 +184,11 @@ export class SessionManager {
   async deleteSession(sessionId: string): Promise<void> {
     const session = this.sessions.get(sessionId);
     if (!session) {
-      throw new Error(`会话不存在: ${sessionId}`);
+      throw new SessionError(
+  `会话不存在: ${sessionId}`,
+  ErrorCode.SESSION_NOT_FOUND,
+  { sessionId }
+);
     }
 
     // 删除会话文件
@@ -518,7 +527,10 @@ export class SessionManager {
   async forkSession(messageIndex?: number): Promise<Session> {
     const currentSession = this.getCurrentSession();
     if (!currentSession) {
-      throw new Error('没有当前会话');
+      throw new SessionError(
+        '没有当前会话',
+        ErrorCode.SESSION_NOT_FOUND
+      );
     }
 
     // 生成 fork 后的标题
@@ -570,7 +582,11 @@ export class SessionManager {
   async renameSession(sessionId: string, newName: string): Promise<Session> {
     const session = this.sessions.get(sessionId);
     if (!session) {
-      throw new Error(`会话不存在: ${sessionId}`);
+      throw new SessionError(
+  `会话不存在: ${sessionId}`,
+  ErrorCode.SESSION_NOT_FOUND,
+  { sessionId }
+);
     }
 
     session.name = newName;
@@ -588,7 +604,11 @@ export class SessionManager {
   async exportSession(sessionId: string): Promise<string> {
     const session = this.sessions.get(sessionId);
     if (!session) {
-      throw new Error(`会话不存在: ${sessionId}`);
+      throw new SessionError(
+  `会话不存在: ${sessionId}`,
+  ErrorCode.SESSION_NOT_FOUND,
+  { sessionId }
+);
     }
 
     const exportData = {

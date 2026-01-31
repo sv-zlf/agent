@@ -4,6 +4,7 @@ import * as os from 'os';
 import * as fsSync from 'fs';
 import dotenv from 'dotenv';
 import type { AgentConfig } from '../types';
+import { ConfigurationError, ErrorCode } from '../errors';
 
 /**
  * 获取用户配置文件路径 (~/.ggcode/config.json)
@@ -101,7 +102,11 @@ export class ConfigManager {
         console.log(`已创建默认配置文件: ${userConfigPath}`);
       }
     } catch (error) {
-      throw new Error(`配置文件加载失败: ${(error as Error).message}`);
+      throw new ConfigurationError(
+        `配置文件加载失败: ${(error as Error).message}`,
+        ErrorCode.CONFIG_INVALID,
+        { error }
+      );
     }
   }
 
@@ -125,7 +130,11 @@ export class ConfigManager {
       // 更新当前配置
       this.config = toSave;
     } catch (error) {
-      throw new Error(`配置文件保存失败: ${(error as Error).message}`);
+      throw new ConfigurationError(
+        `配置文件保存失败: ${(error as Error).message}`,
+        ErrorCode.CONFIG_SCHEMA_ERROR,
+        { config: toSave }
+      );
     }
   }
 

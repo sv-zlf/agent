@@ -8,6 +8,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
 import { defineTool } from './tool';
+import { FileOperationError, ErrorCode } from '../errors';
 
 /**
  * Todo 任务项接口
@@ -59,7 +60,11 @@ async function saveTodos(todos: TodoItem[]): Promise<void> {
 
     await fs.writeFile(filePath, JSON.stringify(data, null, 2), 'utf-8');
   } catch (error) {
-    throw new Error(`Failed to save todos: ${(error as Error).message}`);
+    throw new FileOperationError(
+      `Failed to save todos: ${(error as Error).message}`,
+      ErrorCode.FILE_WRITE_ERROR,
+      { filePath: getTodoFilePath(), error }
+    );
   }
 }
 

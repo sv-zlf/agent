@@ -6,6 +6,7 @@
 import * as z from 'zod';
 import { defineTool } from './tool';
 import * as tools from './index';
+import { ToolExecutionError, ErrorCode } from '../errors';
 
 /**
  * 禁止在 Batch 中使用的工具
@@ -23,7 +24,11 @@ async function executeToolCall(
   try {
     // 检查是否是禁止的工具
     if (DISALLOWED_TOOLS.has(toolName)) {
-      throw new Error(`工具 '${toolName}' 不允许在 batch 中使用`);
+      throw new ToolExecutionError(
+        `工具 '${toolName}' 不允许在 batch 中使用`,
+        ErrorCode.TOOL_PERMISSION_DENIED,
+        { toolName, disallowedTool: toolName }
+      );
     }
 
     // 获取工具
@@ -36,9 +41,17 @@ async function executeToolCall(
         (key) => key.toLowerCase() === toolName.toLowerCase()
       );
       if (normalizedKey) {
-        throw new Error(`工具名称应为 '${normalizedKey}'，请使用标准工具名称`);
+        throw new ToolExecutionError(
+          `工具名称应为 '${normalizedKey}'，请使用标准工具名称`,
+          ErrorCode.TOOL_VALIDATION_FAILED,
+          { requestedName: toolName, correctName: normalizedKey }
+        );
       }
-      throw new Error(`未找到工具: '${toolName}'`);
+      throw new ToolExecutionError(
+        `未找到工具: '${toolName}'`,
+        ErrorCode.TOOL_NOT_FOUND,
+        { toolName }
+      );
     }
 
     // 初始化工具
@@ -52,7 +65,11 @@ async function executeToolCall(
         const errorMsg = error.issues
           .map((issue) => `  - ${issue.path.join('.')}: ${issue.message}`)
           .join('\n');
-        throw new Error(`参数验证失败:\n${errorMsg}`);
+        throw new ToolExecutionError(
+          `参数验证失败:\n${errorMsg}`,
+          ErrorCode.TOOL_VALIDATION_FAILED,
+          { toolName, parameters, validationErrors: error.issues }
+        );
       }
       throw error;
     }
