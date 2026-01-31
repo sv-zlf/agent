@@ -7,6 +7,7 @@ import type {
   ParsedResult,
 } from '../types';
 import { APIError, ErrorCode } from '../errors';
+import { withRetry, RETRY_CONFIG } from '../utils/retry';
 
 /**
  * 内网聊天API适配器（A4011LM01 模式）
@@ -20,7 +21,7 @@ export class InternalAPIAdapter {
   }
 
   /**
-   * 发送聊天请求
+   * 发送聊天请求（带自动重试）
    * @param messages 消息数组
    * @param options 额外选项
    * @returns AI回复内容
@@ -39,7 +40,6 @@ export class InternalAPIAdapter {
     const traceId = this.generateTraceId();
     const serialNo = this.generateSerialNo();
 
-    // 构建内层请求体
     const innerRequest: InternalAPIRequest = {
       user_id: options?.userId,
       messages,
@@ -53,18 +53,16 @@ export class InternalAPIAdapter {
       },
     };
 
-    // 构建外层请求体（Data_cntnt需要JSON字符串化）
     const requestBody = {
       Data_cntnt: JSON.stringify(innerRequest),
       Fst_Attr_Rmrk: this.config.access_key_id,
     };
 
-    // 检查是否已中断
     if (options?.abortSignal?.aborted) {
       throw new APIError('请求已被用户中断', ErrorCode.API_ABORTED);
     }
 
-    try {
+    const chatFn = async (): Promise<string> => {
       const response = await axios.post<InternalAPIResponse>(
         `${this.config.base_url}/ai-service/ainlpllm/chat`,
         requestBody,
@@ -81,7 +79,6 @@ export class InternalAPIAdapter {
         }
       );
 
-      // 检查API状态
       if (response.data['C-API-Status'] !== '00') {
         throw new APIError(
           `API错误: ${response.data['C-Response-Desc']}`,
@@ -91,7 +88,6 @@ export class InternalAPIAdapter {
         );
       }
 
-      // 检查业务状态
       const responseBody = response.data['C-Response-Body'];
       if (responseBody.codeid !== '20000') {
         throw new APIError(
@@ -102,59 +98,62 @@ export class InternalAPIAdapter {
         );
       }
 
-      // 解嵌套的JSON字符串
       const result: ParsedResult = JSON.parse(responseBody['Data_Enqr_Rslt']);
 
-      // 防御性检查：验证响应结构
       if (!result?.choices?.[0]?.messages?.content) {
         throw new APIError('API 返回了空的响应内容', ErrorCode.API_EMPTY_RESPONSE);
       }
 
       const content = result.choices[0].messages.content;
 
-      // 检查内容是否为空
       if (!content || content.trim().length === 0) {
         throw new APIError('AI 模型返回了空白内容', ErrorCode.API_BLANK_CONTENT);
       }
 
-      // 返回AI回复内容
       return content;
-    } catch (error) {
-      if (axios.isAxiosError(error)) {
-        const axiosError = error as AxiosError<InternalAPIResponse>;
+    };
 
-        // 检查是否是中断错误
-        if (
-          axiosError.code === 'ECONNABORTED' ||
-          axiosError.code === 'ERR_CANCELED' ||
-          (axiosError.name && axiosError.name.includes('cancel')) ||
-          (axiosError.message && axiosError.message.includes('cancel')) ||
-          options?.abortSignal?.aborted
-        ) {
+    try {
+      const result = await withRetry(chatFn, {
+        ...RETRY_CONFIG.API,
+        retryOn: (error) => {
+          if (error instanceof APIError) {
+            const code = error.code;
+            return (
+              code === ErrorCode.API_NETWORK_ERROR ||
+              code === ErrorCode.API_RATE_LIMIT ||
+              code === ErrorCode.API_TIMEOUT
+            );
+          }
+          if (error instanceof AxiosError) {
+            return !error.response || error.response.status >= 500 || error.response.status === 429;
+          }
+          return true;
+        },
+      });
+      return result.data;
+    } catch (error) {
+      if (error instanceof APIError) {
+        throw error;
+      }
+      if (error instanceof AxiosError) {
+        if (error.code === 'ECONNABORTED' || error.code === 'ERR_CANCELED') {
           throw new APIError('请求已被用户中断', ErrorCode.API_ABORTED);
         }
-
-        if (axiosError.response) {
-          // 服务器返回了错误响应
+        if (error.response) {
           throw new APIError(
-            `API调用失败: ${axiosError.response.status} ${axiosError.response.statusText}`,
+            `API调用失败: ${error.response.status} ${error.response.statusText}`,
             ErrorCode.API_NETWORK_ERROR,
-            axiosError.response.status
+            error.response.status
           );
-        } else if (axiosError.request) {
-          // 请求已发出但没有收到响应
+        }
+        if (error.request) {
           throw new APIError(
             `网络错误: 无法连接到API服务器 (${this.config.base_url})`,
             ErrorCode.API_NETWORK_ERROR
           );
         }
       }
-
-      // 其他错误
-      if (error instanceof APIError) {
-        throw error;
-      }
-
       throw new APIError(
         `API调用异常: ${error instanceof Error ? error.message : String(error)}`,
         ErrorCode.UNKNOWN_ERROR

@@ -16,6 +16,15 @@ export {
   hasMarkdown,
   smartRender,
 } from './markdown';
+export {
+  withRetry,
+  createRetryableAPI,
+  isRetryError,
+  RETRY_CONFIG,
+  type RetryOptions,
+  type RetryResult,
+  type RetryError,
+} from './retry';
 // MarkdownOptions 类型已在使用时内联定义，不单独导出
 
 /**
