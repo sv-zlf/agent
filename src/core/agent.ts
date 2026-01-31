@@ -126,6 +126,11 @@ export class AgentOrchestrator {
         this.stateManager.setState(SessionState.THINKING, 'AI 思考中...');
         const response = await this.apiAdapter.chat(messages);
 
+        // 验证响应非空
+        if (!response || response.trim().length === 0) {
+          throw new Error('AI 模型返回了空响应，请检查 API 配置或重试');
+        }
+
         // 解析工具调用
         const toolCalls = this.toolEngine.parseToolCallsFromResponse(response);
 
@@ -207,7 +212,12 @@ export class AgentOrchestrator {
         // 进行最后一次 API 调用，让 AI 生成总结
         const response = await this.apiAdapter.chat(messagesWithWarning);
 
-        this.contextManager.addMessage('assistant', response);
+        // 验证响应
+        if (!response || response.trim().length === 0) {
+          this.contextManager.addMessage('assistant', '达到最大迭代次数，已完成所有工具调用。');
+        } else {
+          this.contextManager.addMessage('assistant', response);
+        }
 
         return {
           success: true,
@@ -390,7 +400,14 @@ export class AgentOrchestrator {
     // 清理多余的空行
     cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
 
-    return cleaned.trim();
+    cleaned = cleaned.trim();
+
+    // 如果清理后为空（只有工具调用的情况），返回默认文本
+    if (!cleaned || cleaned === '[工具调用]' || cleaned.length === 0) {
+      return '已执行工具调用';
+    }
+
+    return cleaned;
   }
 
   /**
