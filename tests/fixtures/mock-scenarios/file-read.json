@@ -1,0 +1,33 @@
+{
+  "name": "file-read",
+  "description": "测试文件读取工具调用场景",
+  "responses": [
+    {
+      "input": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "读取 package.json 文件"
+          }
+        ]
+      },
+      "output": "我会使用 Read 工具来读取 package.json 文件。",
+      "delay": 100
+    },
+    {
+      "output": "<tool_call>\n{\"name\": \"Read\", \"parameters\": {\"filePath\": \"H:\\\\Project\\\\agent\\\\package.json\"}}\n</tool_call>",
+      "delay": 50
+    },
+    {
+      "input": {
+        "messages": [
+          {
+            "role": "assistant",
+            "content": "<tool_result>\n{\"name\": \"Read\", \"output\": \"{\\n  \\\"name\\\": \\\"gg-code\\\",\\n  \\\"version\\\": \\\"1.0.0\\\"\\n}\"}\n</tool_result>"
+          }
+        ]
+      },
+      "output": "我已经读取了 package.json 文件。这是一个名为 gg-code 的项目，版本是 1.0.0。"
+    }
+  ]
+}

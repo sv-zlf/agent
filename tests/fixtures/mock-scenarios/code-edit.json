@@ -1,0 +1,25 @@
+{
+  "name": "code-edit",
+  "description": "测试代码编辑工作流：读取、编辑、写入",
+  "responses": [
+    {
+      "output": "我会先读取文件内容，然后进行修改。",
+      "delay": 100
+    },
+    {
+      "output": "<tool_call>\n{\"name\": \"Read\", \"parameters\": {\"filePath\": \"src/test.ts\"}}\n \n",
+      "delay": 50
+    },
+    {
+      "output": "现在我会使用 Edit 工具来修改代码。",
+      "delay": 100
+    },
+    {
+      "output": "<tool_call>\n{\"name\": \"Edit\", \"parameters\": {\"filePath\": \"src/test.ts\", \"oldString\": \"const oldName = 'test'\", \"newString\": \"const newName = 'updated'\"}}\n \n",
+      "delay": 50
+    },
+    {
+      "output": "已完成代码修改。我将变量名从 oldName 改为了 newName。"
+    }
+  ]
+}

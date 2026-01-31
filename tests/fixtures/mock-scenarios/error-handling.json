@@ -1,0 +1,25 @@
+{
+  "name": "error-handling",
+  "description": "测试错误处理场景",
+  "responses": [
+    {
+      "output": "我会尝试读取不存在的文件来测试错误处理。",
+      "delay": 100
+    },
+    {
+      "output": "<tool_call>\n{\"name\": \"Read\", \"parameters\": {\"filePath\": \"nonexistent.txt\"}}\n \n",
+      "delay": 50
+    },
+    {
+      "output": "读取文件时出现了错误：文件不存在。让我尝试创建这个文件。",
+      "delay": 100
+    },
+    {
+      "output": "<tool_call>\n{\"name\": \"Write\", \"parameters\": {\"filePath\": \"nonexistent.txt\", \"content\": \"New file content\"}}\n \n",
+      "delay": 50
+    },
+    {
+      "output": "已成功创建文件。"
+    }
+  ]
+}

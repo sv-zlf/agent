@@ -16,6 +16,7 @@ temp/*
 
 # 测试临时文件
 tests/temp/
+recordings/  # API 录制会话
 
 # Jest
 .nyc_output

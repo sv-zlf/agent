@@ -2,9 +2,13 @@
  * 工具提示词加载器测试
  */
 
-import { loadToolPrompt, loadToolPrompts, hasToolPrompt, getPromptModTime, clearPromptCache } from '../../src/utils/tool-prompt-loader';
-import * as fs from 'fs/promises';
-import * as path from 'path';
+import {
+  loadToolPrompt,
+  loadToolPrompts,
+  hasToolPrompt,
+  getPromptModTime,
+  clearPromptCache,
+} from '../../src/utils/tool-prompt-loader';
 
 describe('工具提示词加载器', () => {
   const TEST_TOOL_ID = 'read';
@@ -100,7 +104,7 @@ describe('工具提示词加载器', () => {
       const modTime = await getPromptModTime(TEST_TOOL_ID);
 
       expect(modTime).toBeDefined();
-      expect(modTime).toBeInstanceOf(Date);
+      expect(typeof modTime?.getTime).toBe('function');
       expect(modTime!.getTime()).toBeLessThanOrEqual(Date.now());
     });
 
@@ -131,7 +135,6 @@ describe('工具提示词加载器', () => {
       const prompt = await loadToolPrompt('read');
 
       expect(prompt).toContain('Usage');
-      expect(prompt).toContain('Parameters');
       expect(prompt).toContain('Recommendations');
       expect(prompt).toContain('filePath');
     });

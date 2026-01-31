@@ -16,6 +16,8 @@
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "test:tools": "node scripts/test-tools-simple.js",
+    "test:mock": "node scripts/test-with-mock.js",
+    "test:validation": "jest tests/tools-validation.test.ts",
     "lint": "eslint src --ext .ts",
     "lint:fix": "eslint src --ext .ts --fix",
     "format": "prettier --write \"src/**/*.ts\"",

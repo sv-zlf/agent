@@ -45,6 +45,8 @@ export const ReadTool = defineTool('read', {
 
           if (suggestions.length > 0) {
             return {
+              success: false,
+              error: `File not found: ${filePath}`,
               title: `File not found: ${filePath}`,
               output: `File not found: ${filePath}\n\nDid you mean one of these?\n${suggestions.join('\n')}`,
               metadata: { error: true, suggestions },
@@ -55,6 +57,8 @@ export const ReadTool = defineTool('read', {
         }
 
         return {
+          success: false,
+          error: `File not found: ${filePath}`,
           title: `File not found: ${filePath}`,
           output: `File not found: ${filePath}`,
           metadata: { error: true },
@@ -63,6 +67,8 @@ export const ReadTool = defineTool('read', {
 
       if (stat.isDirectory()) {
         return {
+          success: false,
+          error: `Path is a directory: ${filePath}`,
           title: `Path is a directory: ${filePath}`,
           output: `Path is a directory, not a file: ${filePath}`,
           metadata: { error: true },
@@ -131,6 +137,8 @@ export const ReadTool = defineTool('read', {
       };
     } catch (error: any) {
       return {
+        success: false,
+        error: `Error reading file: ${error.message}`,
         title: 'Read Error',
         output: `Error reading file: ${error.message}`,
         metadata: { error: true },
