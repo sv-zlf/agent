@@ -68,6 +68,13 @@ function printAssistantMessage(message: string): void {
 
 function printCompactAssistant(response: string): void {
   const cleaned = cleanResponse(response);
+
+  // 如果清理后为空（只有工具调用），显示默认提示
+  if (!cleaned || cleaned.trim().length === 0) {
+    console.log(chalk.magenta('● 准备执行操作...'));
+    return;
+  }
+
   const brief = cleaned.split('\n')[0].substring(0, 80) + (cleaned.length > 80 ? '...' : '');
   console.log(chalk.magenta('● ') + brief);
 }
@@ -90,11 +97,14 @@ function printToolCompactResult(
   success: boolean,
   result: { output?: string; error?: string }
 ): void {
-  if (success && result.output) {
+  if (result.output) {
     const lines = result.output.split('\n');
     const brief = lines.slice(0, 2).join(' | ');
     const truncated = lines.length > 2 || result.output.length > 150;
-    console.log(chalk.gray(`  ⎿  ${brief}${truncated ? '... (ctrl+o expand)' : ''}`));
+    const display = success
+      ? chalk.gray(`  ⎿  ${brief}${truncated ? '... (ctrl+o expand)' : ''}`)
+      : chalk.red(`  ⎿  ✗ ${brief}${truncated ? '... (ctrl+o expand)' : ''}`);
+    console.log(display);
   } else if (!success && result.error) {
     console.log(chalk.red(`  ⎿  ✗ ${result.error.substring(0, 100)}`));
   } else {
@@ -341,20 +351,15 @@ export const agentCommand = new Command('agent')
 
         // 只有在有足够的对话内容时才生成标题和摘要
         if (userMessages.length >= 1) {
-          console.log(chalk.gray('\n⏳ 正在生成会话标题和摘要...\n'));
-
           try {
             // 获取第一个用户消息作为标题生成的上下文
-            const firstUserMessage = userMessages.find((m: any) => m.role === 'user')?.content || '';
+            const firstUserMessage = userMessages[0]?.content || '';
 
             // 1. 生成标题（只使用第一个用户消息）
             const titleResult = await functionalAgentManager.generateTitle(firstUserMessage);
             if (titleResult.success && titleResult.output) {
               const title = titleResult.output.trim();
               await sessionManager.setCurrentSessionTitle(title);
-              console.log(chalk.gray(`  ✓ 标题: ${title}`));
-            } else {
-              console.error(chalk.gray(`  ✗ 标题生成失败: ${titleResult.error}`));
             }
 
             // 2. 生成摘要（使用完整对话历史）
@@ -369,18 +374,12 @@ export const agentCommand = new Command('agent')
                   title: summaryTitle,
                   content: summaryContent,
                 });
-
-                console.log(chalk.gray(`  ✓ 摘要: ${summaryTitle}`));
               } catch (saveError) {
-                console.error(chalk.gray(`  ✗ 摘要保存失败: ${(saveError as Error).message}`));
+                // 静默失败
               }
-            } else {
-              console.error(chalk.gray(`  ✗ 摘要生成失败: ${summaryResult.error}`));
             }
-
-            console.log(chalk.gray('\n✓ 会话保存完成\n'));
           } catch (error) {
-            console.error(chalk.gray(`⚠️  会话保存失败: ${(error as Error).message}\n`));
+            // 静默失败
           }
         }
 

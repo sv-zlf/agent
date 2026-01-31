@@ -519,26 +519,35 @@ ${toolsDescription}
 
   /**
    * 格式化工具执行结果给AI
-   * 简洁格式，避免展示技术细节
+   * 包含工具名称标识，让 AI 能理解每个输出对应的工具
    */
   private formatToolResultsForAI(calls: ToolCall[], results: ToolResult[]): string {
-    const lines: string[] = [];
+    const lines: string[] = ['工具执行结果：\n'];
 
     for (let i = 0; i < calls.length; i++) {
+      const call = calls[i];
       const result = results[i];
 
+      // 添加工具名称标识
+      lines.push(`**${call.tool}**`);
+
       if (result.success) {
-        // 成功：只包含输出内容，不显示元数据
+        // 成功：包含输出内容
         if (result.output) {
           lines.push(result.output);
+        } else {
+          lines.push('(成功，无输出)');
         }
       } else {
         // 失败：包含错误信息
-        lines.push(`错误：${result.error || '工具执行失败'}`);
+        lines.push(`✗ ${result.error || '工具执行失败'}`);
       }
+
+      // 添加空行分隔
+      lines.push('');
     }
 
-    return lines.join('\n\n');
+    return lines.join('\n');
   }
 
   /**
