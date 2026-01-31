@@ -687,8 +687,6 @@ export const agentCommand = new Command('agent')
                 // 检查是否是用户中断
                 if (apiError.code === 'ABORTED' || interruptManager.isAborted()) {
                   console.log();
-                  console.log(chalk.yellow('🛑 AI思考已被用户中断'));
-                  console.log();
                   wasInterrupted = true;
 
                   // 添加中断消息到上下文
