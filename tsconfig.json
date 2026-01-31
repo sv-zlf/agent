@@ -22,5 +22,9 @@
     "noFallthroughCasesInSwitch": true
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "tests", "**/*.spec.ts", "**/*.test.ts"]
+  "exclude": ["node_modules", "dist", "tests", "**/*.spec.ts", "**/*.test.ts"],
+  "ts-node": {
+    "esm": false,
+    "experimentalSpecifierResolution": true
+  }
 }

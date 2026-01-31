@@ -100,9 +100,14 @@ export const BashTool = defineTool('bash', {
         direction: 'head',
       });
 
+      let finalOutput = truncateResult.content;
+      if (truncateResult.truncated) {
+        finalOutput += '\n\n(Output truncated. Full output was larger than display limit.)';
+      }
+
       return {
         title: `Command: ${command.substring(0, 50)}${command.length > 50 ? '...' : ''}`,
-        output: truncateResult.content,
+        output: finalOutput,
         metadata: {
           command,
           truncated: truncateResult.truncated,

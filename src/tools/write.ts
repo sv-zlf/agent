@@ -26,14 +26,15 @@ export const WriteTool = defineTool('write', {
       await fs.writeFile(filePath, content, 'utf-8');
 
       const lines = content.split('\n').length;
+      const bytes = Buffer.byteLength(content, 'utf-8');
 
       return {
         title: `File written: ${path.basename(filePath)}`,
-        output: `File created successfully: ${filePath}\n${lines} lines written`,
+        output: `Successfully wrote ${lines} lines (${(bytes / 1024).toFixed(1)} KB)`,
         metadata: {
           filePath,
           lineCount: lines,
-          bytes: Buffer.byteLength(content, 'utf-8'),
+          bytes,
         },
       };
     } catch (error: any) {

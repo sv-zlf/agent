@@ -103,18 +103,11 @@ export const ReadTool = defineTool('read', {
         })
         .join('\n');
 
-      let output = `<file>\n${contentWithLineNumbers}`;
+      let output = `<file>\n${contentWithLineNumbers}\n</file>`;
 
       const totalLines = lines.length;
       const lastReadLine = offset + raw.length;
       const hasMoreLines = totalLines > lastReadLine;
-
-      if (hasMoreLines) {
-        output += `\n\n(File has more lines. Use 'offset' parameter to read beyond line ${lastReadLine})`;
-      } else {
-        output += `\n\n(End of file - total ${totalLines} lines)`;
-      }
-      output += '\n</file>';
 
       // 使用智能截断
       const truncateResult = await truncateOutput(output, {
@@ -123,9 +116,37 @@ export const ReadTool = defineTool('read', {
         direction: 'head',
       });
 
+      // 截断后添加状态信息（确保始终可见）
+      let finalOutput = truncateResult.content;
+
+      // 移除旧的 </file> 标记（如果在截断点之后）
+      if (!finalOutput.endsWith('</file>')) {
+        finalOutput = finalOutput.replace(/\n?\<\/file\>$/, '') + '\n</file>';
+      }
+
+      // 在 </file> 前添加状态信息
+      if (hasMoreLines) {
+        finalOutput = finalOutput.replace(
+          /\<\/file\>$/,
+          `\n\n(File has more lines. Use 'offset' parameter to read beyond line ${lastReadLine})\n</file>`
+        );
+      } else if (truncateResult.truncated) {
+        // 文件已读完，但输出被截断
+        finalOutput = finalOutput.replace(
+          /\<\/file\>$/,
+          `\n\n(Output truncated. Full file has ${totalLines} lines total, showing first ${raw.length} lines from line ${offset + 1})\n</file>`
+        );
+      } else {
+        // 完整读取
+        finalOutput = finalOutput.replace(
+          /\<\/file\>$/,
+          `\n\n(End of file - total ${totalLines} lines)\n</file>`
+        );
+      }
+
       return {
         title: path.basename(filePath),
-        output: truncateResult.content,
+        output: finalOutput,
         metadata: {
           filePath,
           lineCount: totalLines,

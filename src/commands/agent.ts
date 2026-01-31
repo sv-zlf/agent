@@ -20,7 +20,6 @@ import { displayBanner } from '../utils/logo';
 import { createCommandManager, type CommandResult } from './slash-commands';
 import { readFileSync } from 'fs';
 import { renderMarkdown } from '../utils/markdown';
-import type { ToolDefinition } from '../types';
 
 const logger = createLogger();
 
@@ -74,39 +73,6 @@ function printCompactAssistant(response: string): void {
 }
 
 /**
- * Get tool definition by name
- */
-function getToolInfo(toolName: string, toolEngine: any): ToolDefinition | undefined {
-  return toolEngine.getTool(toolName);
-}
-
-/**
- * Get permission level description
- */
-function getPermissionDescription(permission: string): string {
-  const descriptions: Record<string, string> = {
-    safe: '只读操作，无副作用',
-    'local-modify': '会修改本地文件',
-    network: '会进行网络请求',
-    dangerous: '执行系统命令，可能有危险',
-  };
-  return descriptions[permission] || permission;
-}
-
-/**
- * Get permission level color
- */
-function getPermissionColor(permission: string): chalk.Chalk {
-  const colors: Record<string, chalk.Chalk> = {
-    safe: chalk.green,
-    'local-modify': chalk.yellow,
-    network: chalk.blue,
-    dangerous: chalk.red,
-  };
-  return colors[permission] || chalk.gray;
-}
-
-/**
  * Print enhanced tool call with detailed information
  */
 function printCompactToolCall(
@@ -118,66 +84,6 @@ function printCompactToolCall(
     .map(([k, v]) => `${k}=${JSON.stringify(v)}`)
     .join(', ');
   console.log(chalk.yellow('● ') + chalk.cyan(tool) + (paramsStr ? `(${paramsStr})` : ''));
-}
-
-/**
- * Print detailed tool information for permission prompt
- */
-function printDetailedToolInfo(
-  tool: string,
-  params: Record<string, unknown>,
-  toolEngine: any
-): void {
-  const toolInfo = getToolInfo(tool, toolEngine);
-  if (!toolInfo) {
-    printCompactToolCall(tool, params, toolEngine);
-    return;
-  }
-
-  // Header
-  console.log(chalk.bold.cyan(`\n┌─ ${tool} ──────────────────────────────────────────────`));
-  console.log(chalk.bold.cyan('│'));
-
-  // Description
-  console.log(
-    chalk.bold.cyan('│ ') + chalk.white.bold('📝 描述: ') + chalk.white(toolInfo.description)
-  );
-
-  // Permission level
-  const permColor = getPermissionColor(toolInfo.permission);
-  console.log(
-    chalk.bold.cyan('│ ') +
-      chalk.white.bold('🔒 权限: ') +
-      permColor(`● ${toolInfo.permission}`) +
-      chalk.gray(` (${getPermissionDescription(toolInfo.permission)})`)
-  );
-
-  // Category
-  console.log(
-    chalk.bold.cyan('│ ') + chalk.white.bold('📂 类别: ') + chalk.white(toolInfo.category)
-  );
-
-  // Parameters
-  if (Object.keys(params).length > 0) {
-    console.log(chalk.bold.cyan('│ ') + chalk.white.bold('⚙️  参数:'));
-    for (const [key, value] of Object.entries(params)) {
-      const paramDef = toolInfo.parameters[key];
-      const valueStr = JSON.stringify(value);
-      const valuePreview = valueStr.length > 50 ? valueStr.substring(0, 50) + '...' : valueStr;
-
-      console.log(
-        chalk.bold.cyan('│   ') +
-          chalk.yellow(`${key}: `) +
-          chalk.gray(paramDef?.description || '') +
-          (paramDef?.required ? chalk.red(' *') : chalk.gray(' (可选)'))
-      );
-      console.log(chalk.bold.cyan('│     ') + chalk.dim(`= ${valuePreview}`));
-    }
-  }
-
-  // Footer
-  console.log(chalk.bold.cyan('│'));
-  console.log(chalk.bold.cyan('└──────────────────────────────────────────────────────────'));
 }
 
 function printToolCompactResult(
@@ -210,14 +116,13 @@ function extractPathFromParams(_tool: string, params: Record<string, unknown>): 
 
   return undefined;
 }
-
 /**
  * agent命令 - GG CODE AI编程助手
  */
 export const agentCommand = new Command('agent')
   .description('GG CODE - AI-Powered Code Editor (类似Claude Code)')
   .option('-y, --yes', '自动批准所有工具调用', false)
-  .option('-i, --iterations <number>', '最大迭代次数', '10')
+  .option('-i, --iterations <number>', '最大迭代次数')
   .option('-a, --agent <name>', '使用的 Agent (default, explore, build, plan)', 'default')
   .option('--no-history', '不保存对话历史')
   .action(async (options) => {
@@ -361,7 +266,12 @@ export const agentCommand = new Command('agent')
       }
 
       // 开启 raw mode 以监听单个按键
-      rl.input.setRawMode(true);
+      try {
+        rl.input.setRawMode(true);
+      } catch (e) {
+        // 某些 Node.js 版本可能不支持 setRawMode
+        console.debug('setRawMode not supported, using alternative');
+      }
       rl.input.resume();
 
       // 创建新的中断监听器
@@ -399,7 +309,7 @@ export const agentCommand = new Command('agent')
     });
 
     // 清理并退出
-    const cleanupAndExit = () => {
+    const cleanupAndExit = async () => {
       // 防止重复调用
       if ((rl as any)._closed) {
         process.exit(0);
@@ -422,28 +332,68 @@ export const agentCommand = new Command('agent')
       }
 
       if (options.history) {
-        contextManager
-          .saveHistory()
-          .then(() => {
-            try {
-              rl.close();
-            } catch (e) {
-              // readline 可能已经关闭
+        // 先保存对话历史
+        await contextManager.saveHistory();
+
+        // 在对话结束后生成标题和摘要
+        const messageHistory = contextManager.getContext();
+        const userMessages = messageHistory.filter((m: any) => m.role === 'user');
+
+        // 只有在有足够的对话内容时才生成标题和摘要
+        if (userMessages.length >= 1) {
+          console.log(chalk.gray('\n⏳ 正在生成会话标题和摘要...\n'));
+
+          try {
+            // 获取第一个用户消息作为标题生成的上下文
+            const firstUserMessage = userMessages.find((m: any) => m.role === 'user')?.content || '';
+
+            // 1. 生成标题（只使用第一个用户消息）
+            const titleResult = await functionalAgentManager.generateTitle(firstUserMessage);
+            if (titleResult.success && titleResult.output) {
+              const title = titleResult.output.trim();
+              await sessionManager.setCurrentSessionTitle(title);
+              console.log(chalk.gray(`  ✓ 标题: ${title}`));
+            } else {
+              console.error(chalk.gray(`  ✗ 标题生成失败: ${titleResult.error}`));
             }
-            logger.info('再见！');
-            process.exit(0);
-          })
-          .catch(() => {
-            // history 保存失败也继续退出
-            try {
-              rl.close();
-            } catch (e) {
-              // readline 可能已经关闭
+
+            // 2. 生成摘要（使用完整对话历史）
+            const summaryResult = await functionalAgentManager.summarize(messageHistory);
+            if (summaryResult.success && summaryResult.output) {
+              try {
+                const lines = summaryResult.output.trim().split('\n');
+                const summaryTitle = lines[0]?.trim() || '会话摘要';
+                const summaryContent = lines.slice(1).join('\n').trim() || '';
+
+                await sessionManager.updateSessionSummary(currentSession.id, {
+                  title: summaryTitle,
+                  content: summaryContent,
+                });
+
+                console.log(chalk.gray(`  ✓ 摘要: ${summaryTitle}`));
+              } catch (saveError) {
+                console.error(chalk.gray(`  ✗ 摘要保存失败: ${(saveError as Error).message}`));
+              }
+            } else {
+              console.error(chalk.gray(`  ✗ 摘要生成失败: ${summaryResult.error}`));
             }
-            logger.info('再见！');
-            process.exit(0);
-          });
+
+            console.log(chalk.gray('\n✓ 会话保存完成\n'));
+          } catch (error) {
+            console.error(chalk.gray(`⚠️  会话保存失败: ${(error as Error).message}\n`));
+          }
+        }
+
+        // 退出程序
+        try {
+          rl.close();
+        } catch (e) {
+          // readline 可能已经关闭
+        }
+        logger.info('再见！');
+        process.exit(0);
       } else {
+        // 不保存历史，直接退出
         try {
           rl.close();
         } catch (e) {
@@ -679,14 +629,6 @@ export const agentCommand = new Command('agent')
           // 添加用户消息到上下文
           contextManager.addMessage('user', input);
 
-          // 检查是否是第一次对话（用于后续生成标题和摘要）
-          const messageHistory = contextManager.getContext();
-          const userMessages = messageHistory.filter((m: any) => m.role === 'user');
-          const isFirstMessage = userMessages.length === 1 && options.history;
-
-          // 保存用户的原始输入，用于标题生成（避免携带工具执行结果）
-          const userInput = input;
-
           // 每次新的用户输入时，重置所有状态
           autoApproveAll = options.yes || agentConfig.auto_approve || false;
 
@@ -694,7 +636,12 @@ export const agentCommand = new Command('agent')
           interruptManager.fullReset();
 
           // 持续对话循环：AI响应 -> 检查工具调用 -> 执行工具 -> 继续对话
-          let maxToolRounds = parseInt(options.iterations, 10) || agentConfig.max_iterations || 10;
+          let maxToolRounds;
+          if (options.iterations) {
+            maxToolRounds = parseInt(options.iterations, 10);
+          } else {
+            maxToolRounds = agentConfig.max_iterations || 10;
+          }
           let currentRound = 0;
 
           while (currentRound < maxToolRounds) {
@@ -873,14 +820,6 @@ export const agentCommand = new Command('agent')
 
                   // 如果需要确认但未自动批准
                   if (needsApproval && !approved) {
-                    // 显示详细工具信息
-                    printDetailedToolInfo(call.tool, call.parameters, toolEngine);
-
-                    // 如果有权限原因，显示原因
-                    if (permissionResult.reason) {
-                      console.log(chalk.yellow(`⚠️  ${permissionResult.reason}`));
-                    }
-
                     const choice = await askForApproval();
 
                     if (choice === 'no') {
@@ -1033,52 +972,6 @@ export const agentCommand = new Command('agent')
               console.log(chalk.red(`生成总结失败: ${(error as Error).message}\n`));
             }
           }
-
-          // 参考 opencode：在对话完成后才生成标题和摘要，避免并发过高导致 429 错误
-          if (isFirstMessage) {
-            console.log(chalk.gray('\n⏳ 正在生成会话标题和摘要...\n'));
-
-            try {
-              // 优化：使用用户原始输入生成标题，避免携带工具执行结果
-              // 串行执行：先生成标题，再生成摘要，避免 API 并发冲突
-              // 1. 生成标题（只使用用户原始输入）
-              const titleResult = await functionalAgentManager.generateTitle(userInput);
-              if (titleResult.success && titleResult.output) {
-                const title = titleResult.output.trim();
-                // 使用正确的方法设置会话标题
-                await sessionManager.setCurrentSessionTitle(title);
-                console.log(chalk.gray(`  ✓ 标题: ${title}`));
-              } else {
-                console.error(chalk.gray(`  ✗ 标题生成失败: ${titleResult.error}`));
-              }
-
-              // 2. 生成摘要（等待标题完成后再执行）
-              // 摘要生成会自动过滤工具执行结果
-              const summaryResult = await functionalAgentManager.summarize(messageHistory);
-              if (summaryResult.success && summaryResult.output) {
-                try {
-                  const lines = summaryResult.output.trim().split('\n');
-                  const summaryTitle = lines[0]?.trim() || '会话摘要';
-                  const summaryContent = lines.slice(1).join('\n').trim() || '';
-
-                  await sessionManager.updateSessionSummary(currentSession.id, {
-                    title: summaryTitle,
-                    content: summaryContent,
-                  });
-
-                  console.log(chalk.gray(`  ✓ 摘要: ${summaryTitle}`));
-                } catch (saveError) {
-                  console.error(chalk.gray(`  ✗ 摘要保存失败: ${(saveError as Error).message}`));
-                }
-              } else {
-                console.error(chalk.gray(`  ✗ 摘要生成失败: ${summaryResult.error}`));
-              }
-
-              console.log(chalk.gray('\n✓ 会话初始化完成\n'));
-            } catch (error) {
-              console.error(chalk.gray(`⚠️  会话初始化失败: ${(error as Error).message}\n`));
-            }
-          }
         } catch (error) {
           console.log(chalk.red(`\n❌ 错误: ${(error as Error).message}`));
           console.log(chalk.gray(`\nStack: ${(error as Error).stack}`));
@@ -1095,16 +988,10 @@ export const agentCommand = new Command('agent')
     // 辅助函数：询问是否批准（使用按键监听）
     const askForApproval = (): Promise<'yes-once' | 'yes-all' | 'no'> => {
       return new Promise((resolve) => {
-        console.log(chalk.gray('\n═ 按键选择 ════════════════════════════════════════════\n'));
-        console.log(chalk.green('  [1] ') + chalk.white('仅同意当前操作') + chalk.gray(' (yes)\n'));
-        console.log(
-          chalk.yellow('  [2] ') + chalk.white('同意当前及后续所有操作') + chalk.gray(' (all)\n')
-        );
-        console.log(
-          chalk.red('  [3] ') + chalk.white('拒绝，停止当前操作') + chalk.gray(' (no)\n')
-        );
-        console.log(chalk.cyan('═════════════════════════════════════════════════════════\n'));
-        console.log(chalk.dim('  按 1/2/3 键快速选择...\n'));
+        console.log(chalk.green('1. 同意当前操作'));
+        console.log(chalk.yellow('2. 同意所有后续操作'));
+        console.log(chalk.red('3. 拒绝操作'));
+        console.log(chalk.dim('\n按 1/2/3 键选择...\n'));
 
         // 设置按键监听
         setupKeyListener(resolve);
@@ -1121,10 +1008,8 @@ export const agentCommand = new Command('agent')
 
         lines.push(`**${call.tool}**`);
         if (result.success) {
-          let output = result.output || '';
-          if (output.length > 2000) {
-            output = output.substring(0, 2000) + '\n... (内容过长，已截断)';
-          }
+          // 不再二次截断 - 工具已经处理了截断
+          const output = result.output || '';
           lines.push(`✓ 成功`);
           if (output) {
             lines.push(`\n${output}`);

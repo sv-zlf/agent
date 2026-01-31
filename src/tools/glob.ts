@@ -70,9 +70,15 @@ export const GlobTool = defineTool('glob', {
         direction: 'head',
       });
 
+      let finalOutput = truncateResult.content;
+      if (truncateResult.truncated) {
+        const shownCount = finalOutput.split('\n').filter(line => line.trim()).length;
+        finalOutput += `\n\n(Showing ${shownCount} of ${files.length} files. Output truncated.)`;
+      }
+
       return {
         title: `Found ${files.length} file(s)`,
-        output: truncateResult.content,
+        output: finalOutput,
         metadata: {
           pattern,
           path: searchPath,

@@ -52,17 +52,12 @@ export const EditTool = defineTool('edit', {
       // 写回文件
       await fs.writeFile(filePath, newContent, 'utf-8');
 
-      const replacementLines = newString.split('\n').length;
-      const replacedLines = oldString.split('\n').length;
-
       return {
         title: `File edited: ${path.basename(filePath)}`,
-        output: `Edit successful\n${replaceAll ? `Replaced ${count} occurrence(s)` : 'Replaced 1 occurrence'}`,
+        output: replaceAll ? `Replaced ${count} occurrence(s)` : `Successfully replaced 1 occurrence`,
         metadata: {
           filePath,
           replacements: count,
-          replacementLines,
-          replacedLines,
         },
       };
     } catch (error: any) {
