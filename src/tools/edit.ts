@@ -20,6 +20,17 @@ export const EditTool = defineTool('edit', {
   async execute(args, _ctx) {
     const { filePath, oldString, newString, replaceAll = false } = args;
 
+    // 验证 oldString 不能为空
+    if (!oldString) {
+      return {
+        success: false,
+        error: 'oldString cannot be empty',
+        title: 'Edit Failed',
+        output: 'Edit failed: oldString cannot be empty',
+        metadata: { error: true, invalidParams: true },
+      };
+    }
+
     try {
       // 读取文件内容
       const content = await fs.readFile(filePath, 'utf-8');
@@ -27,6 +38,8 @@ export const EditTool = defineTool('edit', {
       // 检查是否包含要替换的字符串
       if (!content.includes(oldString)) {
         return {
+          success: false,
+          error: 'old_string not found in file',
           title: 'Edit Failed',
           output: `Edit failed: old_string not found in file\n\nThe specified string was not found. You must use the Read tool first to see the exact content.`,
           metadata: { error: true, notFound: true },
@@ -38,6 +51,8 @@ export const EditTool = defineTool('edit', {
 
       if (count > 1 && !replaceAll) {
         return {
+          success: false,
+          error: 'old_string appears multiple times',
           title: 'Edit Failed',
           output: `Edit failed: old_string appears ${count} times in the file\n\nPlease set replace_all=true to replace all occurrences, or provide a more unique old_string.`,
           metadata: { error: true, multipleMatches: true, count },
@@ -54,7 +69,9 @@ export const EditTool = defineTool('edit', {
 
       return {
         title: `File edited: ${path.basename(filePath)}`,
-        output: replaceAll ? `Replaced ${count} occurrence(s)` : `Successfully replaced 1 occurrence`,
+        output: replaceAll
+          ? `Replaced ${count} occurrence(s)`
+          : `Successfully replaced 1 occurrence`,
         metadata: {
           filePath,
           replacements: count,

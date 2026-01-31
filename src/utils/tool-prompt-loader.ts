@@ -80,6 +80,13 @@ export async function loadToolPrompts(toolIds: string[]): Promise<Record<string,
  * 检查工具提示词文件是否存在
  */
 export async function hasToolPrompt(toolId: string): Promise<boolean> {
+  // 优先检查打包的提示词
+  const { hasPackedPrompts, getToolPrompt } = await import('./packed-prompts');
+  if (hasPackedPrompts() && getToolPrompt(toolId)) {
+    return true;
+  }
+
+  // 开发环境检查文件
   try {
     const promptPath = getToolPromptPath(toolId);
     await fs.access(promptPath);
@@ -94,6 +101,13 @@ export async function hasToolPrompt(toolId: string): Promise<boolean> {
  * 用于判断缓存是否过期
  */
 export async function getPromptModTime(toolId: string): Promise<Date | null> {
+  // 优先检查打包的提示词
+  const { hasPackedPrompts, getToolPrompt } = await import('./packed-prompts');
+  if (hasPackedPrompts() && getToolPrompt(toolId)) {
+    return new Date();
+  }
+
+  // 开发环境检查文件
   try {
     const promptPath = getToolPromptPath(toolId);
     const stats = await fs.stat(promptPath);
