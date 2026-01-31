@@ -47,15 +47,19 @@ function cleanResponse(response: string): string {
   // 移除开头和结尾的空白
   cleaned = cleaned.trim();
 
-  // 如果清理后为空，返回提示
+  // 如果清理后为空，返回空字符串
+  // 避免在历史记录中添加无意义的占位符文本
   if (!cleaned) {
-    return '（正在执行工具调用...）';
+    return '';
   }
 
   return cleaned;
 }
 
 function printAssistantMessage(message: string): void {
+  if (!message || !message.trim()) {
+    return; // 不打印空消息
+  }
   console.log(chalk.magenta('● ') + chalk.white(message));
 }
 
@@ -1016,6 +1020,15 @@ export const agentCommand = new Command('agent')
           }
         } else {
           lines.push(`✗ 失败: ${result.error}`);
+
+          // Add helpful hints for common errors
+          if (result.error?.includes('Unknown tool')) {
+            lines.push(`\nHint: Tool names are case-sensitive. Available tools: ${Array.from(toolEngine.getAllTools().map(t => t.name)).join(', ')}`);
+          } else if (result.error?.includes('Missing required parameter')) {
+            lines.push(`\nHint: Check that all required parameters are provided in snake_case format (e.g., file_path not filePath)`);
+          } else if (result.error?.includes('tool call format') || result.error?.includes('parse')) {
+            lines.push(`\nHint: Tool calls must be valid JSON in code blocks. Use format: {"tool": "ToolName", "parameters": {...}}`);
+          }
         }
         lines.push(''); // 空行分隔
       }

@@ -36,6 +36,19 @@ export const tools = {
 };
 
 /**
+ * 获取参数的别名（snake_case → camelCase）
+ */
+function getParameterAliases(paramName: string): string[] {
+  const aliases: Record<string, string[]> = {
+    filePath: ['file_path'],
+    oldString: ['old_string'],
+    newString: ['new_string'],
+    replaceAll: ['replace_all'],
+  };
+  return aliases[paramName] || [];
+}
+
+/**
  * 转换工具为 ToolDefinition 格式（兼容性）
  */
 async function toolToDefinition(tool: any): Promise<ToolDefinition> {
@@ -51,9 +64,16 @@ async function toolToDefinition(tool: any): Promise<ToolDefinition> {
       const typeName = getZodTypeName(unwrapped);
       const description = (unwrapped as any).description || '';
 
+      // 添加别名到描述中，让 AI 知道可以使用 snake_case
+      let finalDescription = description;
+      const aliases = getParameterAliases(key);
+      if (aliases.length > 0) {
+        finalDescription = `${description} (also accepts: ${aliases.join(', ')})`;
+      }
+
       parameters[key] = {
         type: typeName,
-        description,
+        description: finalDescription,
         required: !(value instanceof z.ZodOptional),
       };
     }

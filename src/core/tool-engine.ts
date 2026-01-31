@@ -132,12 +132,30 @@ export class ToolEngine {
     abortSignal?: AbortSignal,
     timeout?: number
   ): Promise<ToolResult> {
-    const tool = this.tools.get(call.tool);
+    // Try to get tool by exact name first
+    let tool = this.tools.get(call.tool);
+    let actualToolName = call.tool;
+
+    // If not found, try case-insensitive matching (repair tool name)
+    if (!tool) {
+      const lowerToolName = call.tool.toLowerCase();
+      for (const [registeredName, toolDef] of this.tools.entries()) {
+        if (registeredName.toLowerCase() === lowerToolName) {
+          tool = toolDef;
+          actualToolName = registeredName;
+          break;
+        }
+      }
+      // If tool was found via case-insensitive match, log it
+      if (tool) {
+        logger.debug(`Repaired tool name from "${call.tool}" to "${actualToolName}"`);
+      }
+    }
 
     if (!tool) {
       return {
         success: false,
-        error: `Unknown tool: ${call.tool}`,
+        error: `Unknown tool: ${call.tool}. Available tools: ${Array.from(this.tools.keys()).join(', ')}`,
       };
     }
 
@@ -152,12 +170,31 @@ export class ToolEngine {
     try {
       // logger.info(`Executing tool: ${call.tool}`); // 已移除：由上层显示状态
 
-      // 验证必需参数
+      // 适配参数名（支持 snake_case → camelCase 和大小写不敏感匹配）
+      const adaptedParams = this.adaptToolParameters(call.tool, call.parameters);
+
+      // 验证必需参数（大小写不敏感检查）
       for (const [paramName, param] of Object.entries(tool.parameters)) {
-        if (param.required && call.parameters[paramName] === undefined) {
+        if (param.required) {
+          // 检查精确匹配
+          if (adaptedParams[paramName] !== undefined) {
+            continue;
+          }
+          // 检查大小写不敏感匹配
+          const lowerParamName = paramName.toLowerCase();
+          const foundKey = Object.keys(adaptedParams).find(
+            k => k.toLowerCase() === lowerParamName
+          );
+          if (foundKey) {
+            // 找到了，重命名键为正确的格式
+            adaptedParams[paramName] = adaptedParams[foundKey];
+            delete adaptedParams[foundKey];
+            continue;
+          }
+          // 没找到，返回错误
           return {
             success: false,
-            error: `Missing required parameter: ${paramName}`,
+            error: `Missing required parameter: ${paramName}. Available parameters in tool definition: ${Object.keys(tool.parameters).join(', ')}. Received: ${Object.keys(adaptedParams).join(', ')}`,
           };
         }
       }
@@ -190,7 +227,7 @@ export class ToolEngine {
 
         // 执行工具，传入组合 abort 信号
         const execParams = {
-          ...call.parameters,
+          ...adaptedParams,  // 使用适配后的参数
           __abortSignal__: combinedSignal,
           __timeout__: toolTimeout,
         };
@@ -372,6 +409,16 @@ export class ToolEngine {
    */
   parseToolCallsFromResponse(response: string): ToolCall[] {
     const calls: ToolCall[] = [];
+    const seen = new Set<string>(); // Deduplicate calls
+
+    // Helper to add call if not duplicate
+    const addCall = (call: ToolCall) => {
+      const signature = `${call.tool}:${JSON.stringify(call.parameters)}`;
+      if (!seen.has(signature)) {
+        seen.add(signature);
+        calls.push(call);
+      }
+    };
 
     // 首先尝试解析代码块中的工具调用（优先级更高）
     const codeBlockRegex = /```(?:json|tool)?\s*\n?([\s\S]*?)```/g;
@@ -381,10 +428,10 @@ export class ToolEngine {
         const content = match[1].trim();
         const parsed = JSON.parse(content);
         if (parsed.tool && parsed.parameters) {
-          calls.push({
+          addCall({
             tool: parsed.tool,
             parameters: parsed.parameters,
-            id: parsed.id,
+            id: parsed.id || this.generateToolCallId(),
           });
         }
       } catch {
@@ -421,7 +468,7 @@ export class ToolEngine {
           }
         }
 
-        calls.push({
+        addCall({
           tool: toolName,
           parameters,
           id: this.generateToolCallId(),
@@ -439,19 +486,11 @@ export class ToolEngine {
       try {
         const parsed = JSON.parse(match[0]);
         if (parsed.tool && parsed.parameters) {
-          // 检查是否已经在代码块中解析过
-          const alreadyParsed = calls.some(
-            (c) =>
-              c.tool === parsed.tool &&
-              JSON.stringify(c.parameters) === JSON.stringify(parsed.parameters)
-          );
-          if (!alreadyParsed) {
-            calls.push({
-              tool: parsed.tool,
-              parameters: parsed.parameters,
-              id: parsed.id,
-            });
-          }
+          addCall({
+            tool: parsed.tool,
+            parameters: parsed.parameters,
+            id: parsed.id || this.generateToolCallId(),
+          });
         }
       } catch {
         // 忽略解析失败的JSON
@@ -482,6 +521,71 @@ export class ToolEngine {
    */
   size(): number {
     return this.tools.size;
+  }
+
+  /**
+   * 适配工具参数（支持 snake_case → camelCase 和大小写不敏感匹配）
+   */
+  private adaptToolParameters(toolName: string, params: Record<string, unknown>): Record<string, unknown> {
+    const adapted = { ...params };
+
+    // 定义参数映射（snake_case → camelCase）
+    const paramMappings: Record<string, Record<string, string>> = {
+      Read: {
+        file_path: 'filePath',
+      },
+      Write: {
+        file_path: 'filePath',
+        content: 'content',
+      },
+      Edit: {
+        file_path: 'filePath',
+        old_string: 'oldString',
+        new_string: 'newString',
+        replace_all: 'replaceAll',
+      },
+      MultiEdit: {
+        file_path: 'filePath',
+        old_string: 'oldString',
+        new_string: 'newString',
+        replace_all: 'replaceAll',
+      },
+      Grep: {
+        pattern: 'pattern',
+      },
+      Glob: {
+        pattern: 'pattern',
+      },
+    };
+
+    // 应用映射（支持大小写不敏感）
+    const mappings = paramMappings[toolName];
+    if (mappings) {
+      for (const [snakeKey, camelKey] of Object.entries(mappings)) {
+        // 跳过无意义的映射（源和目标相同）
+        if (snakeKey === camelKey) {
+          continue;
+        }
+
+        // 首先检查精确匹配
+        if (snakeKey in adapted && adapted[snakeKey] !== undefined) {
+          adapted[camelKey] = adapted[snakeKey];
+          delete adapted[snakeKey];
+          continue;
+        }
+        // 检查大小写不敏感匹配
+        const lowerSnakeKey = snakeKey.toLowerCase();
+        const matchedKey = Object.keys(adapted).find(
+          k => k.toLowerCase() === lowerSnakeKey && adapted[k] !== undefined
+        );
+        if (matchedKey) {
+          adapted[camelKey] = adapted[matchedKey];
+          delete adapted[matchedKey];
+        }
+      }
+    }
+
+    return adapted;
   }
 
   /**

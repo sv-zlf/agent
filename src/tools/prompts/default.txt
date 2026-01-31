@@ -43,16 +43,83 @@ You are an autonomous coding assistant helping users with software engineering t
 
 ## Tool Call Format
 
+**CRITICAL**: Always use this exact JSON format in ```json code blocks:
+
 ```json
 {
-  "tool": "ToolName",
+  "tool": "Glob",
   "parameters": {
-    "param": "value"
+    "pattern": "**/*.ts",
+    "path": "H:/Project/agent/src"
   }
 }
 ```
 
-**Batch multiple calls in one response.**
+**More Examples**:
+
+```json
+{
+  "tool": "Read",
+  "parameters": {
+    "file_path": "H:/Project/agent/package.json"
+  }
+}
+```
+
+```json
+{
+  "tool": "Grep",
+  "parameters": {
+    "pattern": "function.*test",
+    "path": "H:/Project/agent/src"
+  }
+}
+```
+
+```json
+{
+  "tool": "Bash",
+  "parameters": {
+    "command": "npm test"
+  }
+}
+```
+
+**Rules**:
+- Use `file_path` for Read/Edit/Write tools (snake_case)
+- Use `pattern` + `path` for Glob/Grep tools
+- Always use absolute paths (e.g., `H:/Project/...` or `C:/Users/...`)
+- On Windows, use `cd` instead of `pwd`
+- Batch multiple calls in one response
+- Each tool call must be a separate JSON object in the code block
+- Put multiple JSON objects in the same code block, one after another
+
+**Correct multi-call example**:
+```json
+{
+  "tool": "Glob",
+  "parameters": {
+    "pattern": "**/*.ts",
+    "path": "H:/Project/agent/src"
+  }
+}
+```
+```json
+{
+  "tool": "Grep",
+  "parameters": {
+    "pattern": "function.*test",
+    "path": "H:/Project/agent/src"
+  }
+}
+```
+
+**FORBIDDEN Formats** (NEVER use):
+- ❌ `Glob {"pattern": "..."}`
+- ❌ `ToolName(param="value")`
+- ❌ `ToolName {"param": "value"}` outside of code block
+- ❌ Any format other than the JSON above
+- ❌ Mixing text and JSON in the same code block
 
 ## Output Format
 
