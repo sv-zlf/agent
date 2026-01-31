@@ -32,22 +32,30 @@ export const EditTool = defineTool('edit', {
     }
 
     try {
-      // 读取文件内容
       const content = await fs.readFile(filePath, 'utf-8');
 
-      // 检查是否包含要替换的字符串
+      let searchContent = oldString;
+      let useNormalized = false;
+
       if (!content.includes(oldString)) {
-        return {
-          success: false,
-          error: 'old_string not found in file',
-          title: 'Edit Failed',
-          output: `Edit failed: old_string not found in file\n\nThe specified string was not found. You must use the Read tool first to see the exact content.`,
-          metadata: { error: true, notFound: true },
-        };
+        const normalizedOld = oldString.replace(/\r\n/g, '\n');
+        const normalizedContent = content.replace(/\r\n/g, '\n');
+
+        if (normalizedContent.includes(normalizedOld)) {
+          searchContent = normalizedOld;
+          useNormalized = true;
+        } else {
+          return {
+            success: false,
+            error: 'old_string not found in file',
+            title: 'Edit Failed',
+            output: `Edit failed: old_string not found in file\n\nThe specified string was not found. You must use the Read tool first to see the exact content.`,
+            metadata: { error: true, notFound: true },
+          };
+        }
       }
 
-      // 计算匹配数量
-      const count = (content.match(new RegExp(escapeRegExp(oldString), 'g')) || []).length;
+      const count = (content.match(new RegExp(escapeRegExp(searchContent), 'g')) || []).length;
 
       if (count > 1 && !replaceAll) {
         return {
@@ -59,12 +67,18 @@ export const EditTool = defineTool('edit', {
         };
       }
 
-      // 执行替换
-      const newContent = replaceAll
-        ? content.split(oldString).join(newString)
-        : content.replace(oldString, newString);
+      let newContent: string;
+      if (useNormalized) {
+        const normalizedContent = content.replace(/\r\n/g, '\n');
+        const normalizedNew = newString.replace(/\r\n/g, '\n');
+        newContent = normalizedContent.split(searchContent).join(normalizedNew);
+        newContent = newContent.replace(/\n/g, '\r\n');
+      } else {
+        newContent = replaceAll
+          ? content.split(searchContent).join(newString)
+          : content.replace(searchContent, newString);
+      }
 
-      // 写回文件
       await fs.writeFile(filePath, newContent, 'utf-8');
 
       return {
