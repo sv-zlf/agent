@@ -234,7 +234,11 @@ export class CommandManager {
 
     try {
       // 1. 读取提示词模板
-      const templatePath = path.join(__dirname, '../prompts/init.txt');
+      // 检测运行环境：开发环境还是生产环境
+      const isDev = fsSync.existsSync(path.join(process.cwd(), 'src'));
+      const promptsBasePath = path.join(process.cwd(), isDev ? 'src/prompts' : 'dist/prompts');
+      const templatePath = path.join(promptsBasePath, 'init.txt');
+
       let promptTemplate = await fs.readFile(templatePath, 'utf-8').catch(() => {
         console.log(chalk.yellow('⚠️  未找到 prompts/init.txt，使用默认模板\n'));
         return this.getDefaultInitTemplate();

@@ -49,3 +49,4 @@ nul
 #   ~/.ggcode/current-session - 当前会话标识
 #   ~/.ggcode/history/      - 对话历史
 #   ~/.ggcode/config.json   - 系统级配置
+/dist-exe/

@@ -9,7 +9,7 @@
     "ggcode": "./bin/ggcode.js"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && robocopy src/tools/prompts dist/tools/prompts /E /NFL /NDL /NJH /NJS && robocopy src/prompts dist/prompts /E /NFL /NDL /NJH /NJS || echo 'Prompts directories copied'",
     "typecheck": "tsc --noEmit",
     "dev": "npx ts-node src/index.ts",
     "test": "jest",
