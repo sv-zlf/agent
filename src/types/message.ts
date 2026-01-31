@@ -2,6 +2,8 @@
  * 增强的消息系统 - 参考 opencode 的 MessageV2 设计
  */
 
+import type { Message } from './index';
+
 /**
  * Part 类型枚举
  */
@@ -23,7 +25,7 @@ export interface MessagePart {
   content: string;
   metadata?: Record<string, any>;
   synthetic?: boolean; // 系统自动生成的部分
-  ignored?: boolean;   // 不在上下文中使用
+  ignored?: boolean; // 不在上下文中使用
 }
 
 /**
@@ -95,9 +97,7 @@ export function createMessage(
   contentOrParts: string | MessagePart[],
   agent?: string
 ): EnhancedMessage {
-  const parts = Array.isArray(contentOrParts)
-    ? contentOrParts
-    : [createTextPart(contentOrParts)];
+  const parts = Array.isArray(contentOrParts) ? contentOrParts : [createTextPart(contentOrParts)];
 
   return {
     id: generateId(),
@@ -111,10 +111,7 @@ export function createMessage(
 /**
  * 创建文本部分
  */
-export function createTextPart(
-  content: string,
-  synthetic?: boolean
-): MessagePart {
+export function createTextPart(content: string, synthetic?: boolean): MessagePart {
   return {
     type: PartType.TEXT,
     id: generateId(),
@@ -126,10 +123,7 @@ export function createTextPart(
 /**
  * 创建工具调用部分
  */
-export function createToolCallPart(
-  tool: string,
-  parameters: Record<string, any>
-): ToolCallPart {
+export function createToolCallPart(tool: string, parameters: Record<string, any>): ToolCallPart {
   return {
     type: PartType.TOOL_CALL,
     id: generateId(),
@@ -167,10 +161,7 @@ export function createToolResultPart(
 /**
  * 创建系统部分
  */
-export function createSystemPart(
-  content: string,
-  synthetic?: boolean
-): MessagePart {
+export function createSystemPart(content: string, synthetic?: boolean): MessagePart {
   return {
     type: PartType.SYSTEM,
     id: generateId(),
@@ -182,9 +173,7 @@ export function createSystemPart(
 /**
  * 创建推理部分
  */
-export function createReasoningPart(
-  content: string
-): ReasoningPart {
+export function createReasoningPart(content: string): ReasoningPart {
   return {
     type: PartType.REASONING,
     id: generateId(),
@@ -203,27 +192,30 @@ function generateId(): string {
 /**
  * 将消息转换为纯文本（用于兼容旧的 API）
  */
-export function messageToText(message: EnhancedMessage): string {
-  return message.parts
-    .filter(part => !part.ignored) // 过滤掉被忽略的部分
-    .filter(part => part.type !== PartType.SYSTEM) // 过滤掉系统部分
-    .map(part => {
-      switch (part.type) {
-        case PartType.TOOL_CALL:
-          return `[调用工具: ${part.metadata?.tool}]`;
-        case PartType.TOOL_RESULT:
-          return part.metadata?.success
-            ? `[工具执行成功]`
-            : `[工具执行失败: ${part.metadata?.error}]`;
-        case PartType.FILE:
-          return `[文件: ${part.metadata?.path}]`;
-        case PartType.REASONING:
-          return `[推理过程]\n${part.content}`;
-        default:
-          return part.content;
-      }
-    })
-    .join('\n');
+export function messageToText(message: Message | EnhancedMessage): string {
+  if ('parts' in message) {
+    return message.parts
+      .filter((part) => !part.ignored)
+      .filter((part) => part.type !== PartType.SYSTEM)
+      .map((part) => {
+        switch (part.type) {
+          case PartType.TOOL_CALL:
+            return `[调用工具: ${part.metadata?.tool}]`;
+          case PartType.TOOL_RESULT:
+            return part.metadata?.success
+              ? `[工具执行成功]`
+              : `[工具执行失败: ${part.metadata?.error}]`;
+          case PartType.FILE:
+            return `[文件: ${part.metadata?.path}]`;
+          case PartType.REASONING:
+            return `[推理过程]\n${part.content}`;
+          default:
+            return part.content;
+        }
+      })
+      .join('\n');
+  }
+  return message.content;
 }
 
 /**
@@ -238,7 +230,7 @@ export function filterMessageParts(
 ): MessagePart[] {
   const { includeSynthetic = false, includeIgnored = false } = options || {};
 
-  return message.parts.filter(part => {
+  return message.parts.filter((part) => {
     if (part.ignored && !includeIgnored) {
       return false;
     }
@@ -253,16 +245,12 @@ export function filterMessageParts(
  * 获取消息中的所有工具调用
  */
 export function getToolCalls(message: EnhancedMessage): ToolCallPart[] {
-  return message.parts.filter(
-    (part): part is ToolCallPart => part.type === PartType.TOOL_CALL
-  );
+  return message.parts.filter((part): part is ToolCallPart => part.type === PartType.TOOL_CALL);
 }
 
 /**
  * 获取消息中的所有工具结果
  */
 export function getToolResults(message: EnhancedMessage): ToolResultPart[] {
-  return message.parts.filter(
-    (part): part is ToolResultPart => part.type === PartType.TOOL_RESULT
-  );
+  return message.parts.filter((part): part is ToolResultPart => part.type === PartType.TOOL_RESULT);
 }

@@ -1,6 +1,7 @@
 import type { Message, EnhancedMessage, MessagePart, ToolCall, ToolResult } from '../types';
 import { createMessage, messageToText, filterMessageParts, PartType } from '../types/message';
 import { ContextCompactor, createContextCompactor, LLMChatFunction } from './context-compactor';
+import { SemanticCompactor, createSemanticCompactor } from './semantic-compactor';
 import { TokenEstimator } from './token-estimator';
 import * as fs from 'fs-extra';
 import * as path from 'path';
@@ -17,15 +18,13 @@ export class ContextManager {
   private historyFile: string;
   private useEnhancedMessages: boolean = false;
   private compactor: ContextCompactor;
+  private semanticCompactor: SemanticCompactor;
   private autoCompress: boolean = false;
+  private useSemanticCompression: boolean = false;
   private systemPromptSet: boolean = false;
   private llmChat: LLMChatFunction | null = null;
 
-  constructor(
-    maxHistory: number = 10,
-    maxTokens: number = 8000,
-    historyFile?: string
-  ) {
+  constructor(maxHistory: number = 10, maxTokens: number = 8000, historyFile?: string) {
     this.maxHistory = maxHistory;
     this.maxTokens = maxTokens;
     this.historyFile = historyFile || path.join(getHistoryBasePath(), 'agent-history.json');
@@ -33,6 +32,17 @@ export class ContextManager {
       enabled: false,
       maxTokens: maxTokens,
       reserveTokens: Math.max(1000, maxTokens * 0.2),
+    });
+    this.semanticCompactor = createSemanticCompactor({
+      enabled: true,
+      maxTokens: maxTokens,
+      reserveTokens: Math.max(1000, maxTokens * 0.2),
+      minImportanceScore: 0.3,
+      maxSimilarityThreshold: 0.85,
+      enableSemanticDeduplication: true,
+      enableSmartSummarization: true,
+      summarizeOlderThan: 3,
+      summaryMaxTokens: 500,
     });
   }
 
@@ -49,15 +59,18 @@ export class ContextManager {
     }
 
     // 自动压缩（如果启用）
-    if (this.autoCompress && this.compactor.needsCompaction(this.messages)) {
-      // 异步压缩，不阻塞
-      this.compact().then((result) => {
+    if (this.autoCompress) {
+      if (this.useSemanticCompression) {
+        const result = this.semanticCompactor.quickCompact(this.messages);
         if (result.compressed) {
-          console.log(`上下文已压缩: 节省 ${result.savedTokens} tokens`);
+          this.messages = result.messages;
+          console.log(
+            `上下文已压缩: 节省 ${result.savedTokens} tokens, 移除 ${result.removedCount} 条消息`
+          );
         }
-      }).catch(() => {
-        // 忽略压缩错误
-      });
+      } else if (this.compactor.needsCompaction(this.messages)) {
+        this.compact().catch(() => {});
+      }
     }
   }
 
@@ -101,7 +114,7 @@ export class ContextManager {
       return;
     }
 
-    const parts = calls.map(call => ({
+    const parts = calls.map((call) => ({
       type: PartType.TOOL_CALL,
       id: call.id || `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       content: JSON.stringify({ tool: call.tool, parameters: call.parameters }),
@@ -153,12 +166,12 @@ export class ContextManager {
     let currentTokens = 0;
 
     // 首先确保system消息在结果中（如果存在）
-    const systemMessages = this.messages.filter(m => m.role === 'system');
+    const systemMessages = this.messages.filter((m) => m.role === 'system');
 
     if (systemMessages.length > 0) {
       const systemMsgs = systemMessages
-        .map(msg => this.convertToLegacyMessage(msg))
-        .filter(msg => msg.content && msg.content.trim().length > 0);
+        .map((msg) => this.convertToLegacyMessage(msg))
+        .filter((msg) => msg.content && msg.content.trim().length > 0);
 
       result.push(...systemMsgs);
       currentTokens = systemMsgs.reduce((sum, msg) => sum + this.estimateMessageTokens(msg), 0);
@@ -215,6 +228,37 @@ export class ContextManager {
   }
 
   /**
+   * 启用语义压缩（基于重要性评分和语义相似度）
+   */
+  enableSemanticCompression(): void {
+    this.useSemanticCompression = true;
+    this.autoCompress = true;
+  }
+
+  /**
+   * 禁用语义压缩
+   */
+  disableSemanticCompression(): void {
+    this.useSemanticCompression = false;
+  }
+
+  /**
+   * 评估消息重要性
+   */
+  assessMessageImportance(msgIndex: number): { score: number; factors: any } {
+    const msg = this.messages[msgIndex];
+    if (!msg) return { score: 0, factors: {} };
+    return this.semanticCompactor.assessImportance(msg, msgIndex, this.messages.length);
+  }
+
+  /**
+   * 检测重复消息
+   */
+  detectDuplicateMessages(): number[] {
+    return this.semanticCompactor.detectDuplicates(this.messages);
+  }
+
+  /**
    * 手动压缩上下文
    */
   async compact(): Promise<{
@@ -224,8 +268,41 @@ export class ContextManager {
     compressedTokens: number;
     savedTokens: number;
     prunedParts: number;
+    removedCount?: number;
+    summarizedCount?: number;
+    deduplicatedCount?: number;
   }> {
+    if (this.useSemanticCompression) {
+      const result = await this.semanticCompactor.compact(this.messages);
+      if (result.compressed) {
+        this.messages = result.messages;
+      }
+      return {
+        ...result,
+        prunedParts: result.removedCount + result.summarizedCount,
+      };
+    }
+
     const result = await this.compactor.compact(this.messages);
+    if (result.compressed) {
+      this.messages = result.messages;
+    }
+    return result;
+  }
+
+  /**
+   * 快速压缩（不调用 LLM，适合实时使用）
+   */
+  quickCompact(): {
+    compressed: boolean;
+    messages: (Message | EnhancedMessage)[];
+    originalTokens: number;
+    compressedTokens: number;
+    savedTokens: number;
+    removedCount: number;
+    deduplicatedCount: number;
+  } {
+    const result = this.semanticCompactor.quickCompact(this.messages);
     if (result.compressed) {
       this.messages = result.messages;
     }
@@ -364,7 +441,7 @@ export class ContextManager {
    * 获取历史消息（转换为旧格式）
    */
   getHistory(): Message[] {
-    return this.messages.map(msg => this.convertToLegacyMessage(msg));
+    return this.messages.map((msg) => this.convertToLegacyMessage(msg));
   }
 
   /**
@@ -389,7 +466,7 @@ export class ContextManager {
    */
   async saveHistory(): Promise<void> {
     try {
-      const legacyMessages = this.messages.map(msg => this.convertToLegacyMessage(msg));
+      const legacyMessages = this.messages.map((msg) => this.convertToLegacyMessage(msg));
       await fs.ensureDir(path.dirname(this.historyFile));
       await fs.writeFile(this.historyFile, JSON.stringify(legacyMessages, null, 2), 'utf-8');
     } catch (error) {

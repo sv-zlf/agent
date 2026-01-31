@@ -17,6 +17,13 @@ export {
   resetGlobalPermissionManager,
 } from './permissions';
 export { ContextCompactor, createContextCompactor } from './context-compactor';
+export {
+  SemanticCompactor,
+  createSemanticCompactor,
+  type SemanticCompactionConfig,
+  type MessageImportance,
+  type SemanticCompactionResult,
+} from './semantic-compactor';
 export { TokenEstimator } from './token-estimator';
 export { SessionManager, createSessionManager } from './session-manager';
 export {
