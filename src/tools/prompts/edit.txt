@@ -1,20 +1,38 @@
-Performs precise string replacement within a file. You MUST read the file content before using this tool.
+Performs precise string replacement in a file.
 
-Usage:
-- The filePath parameter must be an absolute path
-- The oldString parameter must match the file content exactly, including indentation and newlines
-- The newString parameter contains the replacement content
-- If oldString appears multiple times and replaceAll is false, the edit will fail
-- The replaceAll parameter replaces all occurrences when set to true
+**Usage:**
+- Requires reading the file first with `read` tool
+- Exact string matching - case-sensitive, including all whitespace
+- Must match the exact content including indentation and newlines
 
-Important Notes:
-- This tool performs exact string matching - case-sensitive, including all whitespace
-- If the edit fails with "oldString not found in content", the oldString may not match exactly
-- For multi-line replacements, ensure the oldString includes proper line endings
-- Always use the Read tool first to see the exact content before editing
+**Format:**
+```json
+{
+  "tool": "edit",
+  "parameters": {
+    "file_path": "H:/Project/agent/src/utils.ts",
+    "oldString": "const VERSION = '1.0.0';",
+    "newString": "const VERSION = '2.0.0';"
+  }
+}
+```
 
-Recommendations:
-- Use Edit tool for small, targeted changes
-- For large file rewrites, use Write tool instead
-- Test your oldString by searching for unique identifiers in the file
-- If oldString contains special characters, consider escaping them
+**Multi-line edit:**
+```json
+{
+  "tool": "edit",
+  "parameters": {
+    "file_path": "H:/Project/agent/src/utils.ts",
+    "oldString": "function hello() {\n  console.log('Hello');\n}",
+    "newString": "function hello() {\n  console.log('Hello, World!');\n}"
+  }
+}
+```
+
+**Recommendations:**
+- Make oldString as unique as possible to avoid wrong matches
+- For large changes, use write tool instead
+- If edit fails, re-read the file - content may have changed
+- Use replaceAll parameter to replace all occurrences
+
+**exact string matching** is required - the oldString must match file content exactly

@@ -1,6 +1,22 @@
-Executes shell commands and returns the output. Use this tool ONLY when specialized tools are insufficient.
+Executes shell commands and returns the output.
 
-Allowed Use Cases:
+**Usage:**
+- Use ONLY when specialized tools are insufficient
+- The command parameter is the shell command to execute
+- Commands are executed in the current working directory
+- Returns stdout and stderr
+
+**Format:**
+```json
+{
+  "tool": "bash",
+  "parameters": {
+    "command": "npm test"
+  }
+}
+```
+
+**Allowed Use Cases:**
 - Running tests (npm test, pytest, etc.)
 - Building projects (npm run build, make, etc.)
 - Git operations (git status, git commit, git push, etc.)
@@ -8,21 +24,15 @@ Allowed Use Cases:
 - Executing project-specific scripts
 - Operations that cannot be completed with other tools
 
-NOT Recommended For:
-- Searching for files - Use Glob tool instead
+**NOT Recommended For:**
+- Searching files - Use Glob tool instead
 - Searching file contents - Use Grep tool instead
 - Reading files - Use Read tool instead
-- Listing directory contents - Use Glob tool instead
 
-Usage:
-- The command parameter is the shell command to execute
-- Commands are executed in the current working directory
-- Command output (stdout and stderr) is returned
-- Command execution is limited to 30 seconds by default
+**Recommendations:**
+- Prefer specialized tools over bash when possible
+- Test commands locally before using the tool
+- Be aware commands are platform-dependent (Windows vs Linux/macOS)
+- For complex operations, break into multiple simpler commands
 
-Recommendations:
-- Use this tool sparingly and only when absolutely necessary
-- Prefer specialized tools (Glob, Grep, Read) for file operations
-- Test your commands locally before using them in the tool
-- Be aware that commands are platform-dependent (Windows vs Linux/macOS)
-- For complex operations, consider breaking them into multiple simpler commands
+**command** parameter is required - the shell command to execute

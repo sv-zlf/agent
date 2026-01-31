@@ -1,11 +1,22 @@
-Searches for files using glob patterns. This is the fastest way to find files by name or pattern.
+Searches for files using glob patterns - the fastest way to find files by name.
 
-Usage:
-- The path parameter specifies the root directory for the search (defaults to current working directory if not specified)
-- The pattern parameter uses glob syntax (e.g., "**/*.ts" for all TypeScript files)
+**Usage:**
+- The path parameter specifies the root directory (defaults to current directory)
+- The pattern parameter uses glob syntax
 - Returns matching file paths with absolute paths
 
-Glob Pattern Examples:
+**Format:**
+```json
+{
+  "tool": "glob",
+  "parameters": {
+    "pattern": "**/*.ts",
+    "path": "H:/Project/agent/src"
+  }
+}
+```
+
+**Glob Pattern Examples:**
 - `*.ts` - TypeScript files in current directory
 - `**/*.ts` - TypeScript files in all subdirectories
 - `src/**/*.test.ts` - Test files under src directory
@@ -13,8 +24,10 @@ Glob Pattern Examples:
 - `**/*.{ts,tsx}` - Both TypeScript and TSX files
 - `**/package.json` - All package.json files
 
-Recommendations:
+**Recommendations:**
 - Use Glob for broad file pattern matching
-- Prefer Glob over Bash's find command for better performance and cross-platform compatibility
+- Prefer Glob over Bash's find command for better performance
 - Start with Glob when exploring a codebase
 - Use specific patterns to narrow down search results
+
+**pattern** parameter is required - the glob pattern to match

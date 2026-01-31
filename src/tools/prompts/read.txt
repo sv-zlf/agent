@@ -1,16 +1,41 @@
-Reads a file from the local filesystem. You can access any file directly by using this tool.
-Assume this tool is able to read all files on the machine. If the User provides a path to a file assume that path is valid. It is okay to read a file that does not exist; an error will be returned.
+Reads a file from the filesystem.
 
-Usage:
-- The filePath parameter must be an absolute path, not a relative path
-- By default, it reads up to 2000 lines starting from the beginning of the file
-- You can optionally specify a line offset and limit, which is especially handy for long files
-- Any lines longer than 2000 characters will be truncated
-- Results are returned with line numbers starting at 1
-- You can read image files using this tool (PNG, JPG, GIF, SVG, etc.)
-- You have the capability to call multiple tools in a single response - it is always better to speculatively read multiple files as a batch
+**Usage:**
+- Read file content with absolute paths
+- Returns content with line numbers starting from 1
+- Can specify offset and limit for large files
 
-Recommendations:
-- Read multiple relevant files in one tool call whenever possible
-- For exploring unknown codebases, start with package.json, README.md, or entry point files
-- If you need to read a specific part of a large file, use offset and limit parameters
+**Format:**
+```json
+{
+  "tool": "read",
+  "parameters": {
+    "file_path": "H:/Project/agent/package.json"
+  }
+}
+```
+
+**Options:**
+- `offset`: Start line (0-based, default: 0)
+- `limit`: Max lines to read (default: 2000)
+
+**Examples:**
+```json
+{
+  "tool": "read",
+  "parameters": {
+    "file_path": "H:/Project/agent/src/app.ts",
+    "offset": 100,
+    "limit": 50
+  }
+}
+```
+
+**Recommendations:**
+- Always use absolute paths
+- Can read any file type including images
+- Returns content with line numbers
+- Always read before editing or writing to existing files
+- Read multiple files in parallel when exploring
+
+**filePath** parameter is required, must be absolute path
