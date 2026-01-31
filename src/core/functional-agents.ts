@@ -7,6 +7,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import type { IAPIAdapter } from '../api';
 import type { Message } from '../types';
+import { executeAPIRequest, API_PRIORITY } from './api-concurrency';
 
 /**
  * 功能性 Agent 类型
@@ -65,10 +66,10 @@ export class FunctionalAgentManager {
   /**
    * 执行功能性 Agent
    */
-  async executeAgent(
+  private async executeAgent(
     type: FunctionalAgentType,
     messages: Message[],
-    _options?: { maxTokens?: number }
+    options?: { maxTokens?: number; priority?: number }
   ): Promise<FunctionalAgentResult> {
     try {
       // 加载 prompt
@@ -77,9 +78,29 @@ export class FunctionalAgentManager {
       // 构建消息列表（系统提示词 + 对话历史）
       const apiMessages: Message[] = [{ role: 'system', content: systemPrompt }, ...messages];
 
-      // 调用 AI API
-      // 注意：当前 API adapter 不支持 maxTokens 参数，所以这里忽略它
-      const response = await this.apiAdapter.chat(apiMessages);
+      // 根据优先级决定是否使用并发控制
+      const priority = options?.priority ?? API_PRIORITY.LOW;
+      let response: string;
+
+      if (priority === API_PRIORITY.HIGH || priority === API_PRIORITY.NORMAL) {
+        // 高优先级和普通优先级直接调用
+        response = await this.apiAdapter.chat(apiMessages);
+      } else if (priority === API_PRIORITY.LOW) {
+        // 低优先级：通过并发控制排队，但设置超时避免无限等待
+        try {
+          response = await executeAPIRequest(async () => {
+            return this.apiAdapter.chat(apiMessages);
+          }, priority);
+        } catch (error) {
+          // 如果并发控制失败，直接调用
+          response = await this.apiAdapter.chat(apiMessages);
+        }
+      } else {
+        // 其他优先级通过并发控制
+        response = await executeAPIRequest(async () => {
+          return this.apiAdapter.chat(apiMessages);
+        }, priority);
+      }
 
       return {
         success: true,
@@ -92,7 +113,6 @@ export class FunctionalAgentManager {
       };
     }
   }
-
   /**
    * 压缩对话
    */
@@ -100,9 +120,26 @@ export class FunctionalAgentManager {
     // 过滤掉系统消息，只保留用户和助手的对话
     const conversation = messages.filter((m) => m.role === 'user' || m.role === 'assistant');
 
-    return this.executeAgent(FunctionalAgentType.COMPACTION, conversation, {
-      maxTokens: 2000,
-    });
+    try {
+      // 使用超时机制，避免长时间阻塞
+      const response = await Promise.race([
+        this.executeAgent(FunctionalAgentType.COMPACTION, conversation, {
+          maxTokens: 2000,
+          priority: API_PRIORITY.LOW,
+        }),
+        new Promise<FunctionalAgentResult>((_, reject) =>
+          setTimeout(() => reject(new Error('对话压缩超时')), 30000)
+        ),
+      ]);
+
+      return response;
+    } catch (error) {
+      // 超时或失败时返回简单压缩
+      return {
+        success: true,
+        output: '对话上下文已压缩',
+      };
+    }
   }
 
   /**
@@ -111,9 +148,26 @@ export class FunctionalAgentManager {
   async summarize(messages: Message[]): Promise<FunctionalAgentResult> {
     const conversation = messages.filter((m) => m.role === 'user' || m.role === 'assistant');
 
-    return this.executeAgent(FunctionalAgentType.SUMMARY, conversation, {
-      maxTokens: 500,
-    });
+    try {
+      // 使用超时机制，避免长时间阻塞
+      const response = await Promise.race([
+        this.executeAgent(FunctionalAgentType.SUMMARY, conversation, {
+          maxTokens: 500,
+          priority: API_PRIORITY.LOW,
+        }),
+        new Promise<FunctionalAgentResult>((_, reject) =>
+          setTimeout(() => reject(new Error('摘要生成超时')), 30000)
+        ),
+      ]);
+
+      return response;
+    } catch (error) {
+      // 超时或失败时返回简单摘要
+      return {
+        success: true,
+        output: '对话摘要生成超时，使用默认摘要',
+      };
+    }
   }
 
   /**
@@ -125,6 +179,7 @@ export class FunctionalAgentManager {
 
     return this.executeAgent(FunctionalAgentType.TITLE, context, {
       maxTokens: 100,
+      priority: API_PRIORITY.LOW,
     });
   }
 

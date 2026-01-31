@@ -46,6 +46,39 @@ function printSeparator(color: chalk.Chalk = chalk.gray): void {
   console.log(color('─'.repeat(60)));
 }
 
+/**
+ * 清理 AI 响应文本，移除工具调用的 JSON 代码块
+ * 只保留有意义的对话内容
+ */
+function cleanResponse(response: string): string {
+  let cleaned = response;
+
+  // 移除 ```json 工具调用代码块
+  cleaned = cleaned.replace(/```json\s*\n?\s*\{[\s\S]*?\}\s*\n?```/g, '');
+
+  // 移除 ``` 工具调用代码块（没有 json 标记）
+  cleaned = cleaned.replace(/```\s*\n?\s*\{[\s\S]*?\}\s*\n?```/g, '');
+
+  // 移除单独的 JSON 工具调用（不在代码块中的）
+  cleaned = cleaned.replace(
+    /\{[\s]*"tool"[\s]*:[\s]*"[\w]+"[\s]*,[\s]*"parameters"[\s]*:[\s]*\{[\s\S]*?\}\s*\}/g,
+    ''
+  );
+
+  // 清理多余的空行
+  cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
+
+  // 移除开头和结尾的空白
+  cleaned = cleaned.trim();
+
+  // 如果清理后为空，返回提示
+  if (!cleaned) {
+    return '（正在执行工具调用...）';
+  }
+
+  return cleaned;
+}
+
 function printAssistantMessage(message: string): void {
   printSeparator(chalk.magenta);
   console.log(chalk.magenta('🤖 AI 助手') + chalk.gray(`  ${formatTimestamp()}`));
@@ -55,7 +88,8 @@ function printAssistantMessage(message: string): void {
 }
 
 function printCompactAssistant(response: string): void {
-  const brief = response.split('\n')[0].substring(0, 80) + (response.length > 80 ? '...' : '');
+  const cleaned = cleanResponse(response);
+  const brief = cleaned.split('\n')[0].substring(0, 80) + (cleaned.length > 80 ? '...' : '');
   console.log(chalk.magenta('● ') + brief);
 }
 
@@ -587,14 +621,28 @@ export const agentCommand = new Command('agent')
               // 忽略标题生成错误
             }
 
-            // 异步生成摘要
+            // 异步生成摘要并保存到会话
             try {
               functionalAgentManager
                 .summarize(messageHistory)
-                .then((result) => {
+                .then(async (result) => {
                   if (result.success && result.output) {
-                    // 可以将摘要保存到会话元数据
-                    console.log(chalk.gray(`📝 已生成对话摘要\n`));
+                    try {
+                      // 解析摘要输出
+                      const lines = result.output.trim().split('\n');
+                      const title = lines[0]?.trim() || '会话摘要';
+                      const content = lines.slice(1).join('\n').trim() || '';
+
+                      // 保存到当前会话
+                      await sessionManager.updateSessionSummary(currentSession.id, {
+                        title,
+                        content,
+                      });
+
+                      console.log(chalk.gray(`📝 已生成对话摘要: ${title}\n`));
+                    } catch (saveError) {
+                      console.error(chalk.gray(`摘要保存失败: ${(saveError as Error).message}`));
+                    }
                   }
                 })
                 .catch((error) => {
@@ -643,14 +691,28 @@ export const agentCommand = new Command('agent')
                 );
 
                 try {
-                  const compactResult = await functionalAgentManager.compact(messages);
-                  if (compactResult.success && compactResult.output) {
-                    // 清空上下文并添加压缩后的摘要
+                  let summaryContent = '';
+
+                  // 优先使用已保存的会话摘要
+                  const existingSummary = sessionManager.getSessionSummary(currentSession.id);
+                  if (existingSummary) {
+                    summaryContent = `${existingSummary.title}\n\n${existingSummary.content}`;
+                    console.log(chalk.blue(`📋 使用已保存的会话摘要: ${existingSummary.title}\n`));
+                  } else {
+                    // 没有已保存摘要，则生成新的压缩摘要
+                    const compactResult = await functionalAgentManager.compact(messages);
+                    if (compactResult.success && compactResult.output) {
+                      summaryContent = compactResult.output;
+                    }
+                  }
+
+                  if (summaryContent) {
+                    // 清空上下文并添加摘要
                     contextManager.clearContext();
 
-                    // 将压缩摘要添加到系统提示词
+                    // 将摘要添加到系统提示词
                     const currentSystemPrompt = systemPrompt || '你是一个 AI 编程助手。';
-                    const newSystemPrompt = `${currentSystemPrompt}\n\n## 对话摘要\n${compactResult.output}`;
+                    const newSystemPrompt = `${currentSystemPrompt}\n\n## 对话摘要\n${summaryContent}`;
                     contextManager.setSystemPrompt(newSystemPrompt);
 
                     console.log(chalk.green(`✓ 上下文已压缩\n`));
@@ -713,8 +775,9 @@ export const agentCommand = new Command('agent')
 
               if (toolCalls.length === 0) {
                 // 没有工具调用，这是最终答案
-                contextManager.addMessage('assistant', response);
-                printAssistantMessage(response);
+                const cleanedResponse = cleanResponse(response);
+                contextManager.addMessage('assistant', cleanedResponse);
+                printAssistantMessage(cleanedResponse);
                 break; // 退出工具调用循环，等待用户输入
               }
 
@@ -883,8 +946,9 @@ export const agentCommand = new Command('agent')
                 }
               }
 
-              // 将AI的原始响应添加到上下文
-              contextManager.addMessage('assistant', response);
+              // 将AI的响应添加到上下文（清理后的版本）
+              const cleanedResponse = cleanResponse(response);
+              contextManager.addMessage('assistant', cleanedResponse);
 
               // 将工具执行结果作为用户反馈添加到上下文
               const toolResultMessage = formatToolResults(toolCalls, toolResults);
@@ -933,8 +997,9 @@ export const agentCommand = new Command('agent')
               const finalMessages = contextManager.getContext();
               const finalResponse = await apiAdapter.chat(finalMessages);
 
-              contextManager.addMessage('assistant', finalResponse);
-              printAssistantMessage(finalResponse);
+              const cleanedFinalResponse = cleanResponse(finalResponse);
+              contextManager.addMessage('assistant', cleanedFinalResponse);
+              printAssistantMessage(cleanedFinalResponse);
             } catch (error) {
               console.log(chalk.red(`生成总结失败: ${(error as Error).message}\n`));
             }

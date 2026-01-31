@@ -16,15 +16,9 @@ export {
   getGlobalPermissionManager,
   resetGlobalPermissionManager,
 } from './permissions';
-export {
-  ContextCompactor,
-  createContextCompactor,
-} from './context-compactor';
+export { ContextCompactor, createContextCompactor } from './context-compactor';
 export { TokenEstimator } from './token-estimator';
-export {
-  SessionManager,
-  createSessionManager,
-} from './session-manager';
+export { SessionManager, createSessionManager } from './session-manager';
 export {
   FunctionalAgentManager,
   createFunctionalAgentManager,
@@ -32,3 +26,4 @@ export {
 } from './functional-agents';
 export { AgentManager, getAgentManager } from './agent';
 export { InterruptManager, getInterruptManager } from './interrupt';
+export { APIConcurrencyController, executeAPIRequest, API_PRIORITY } from './api-concurrency';

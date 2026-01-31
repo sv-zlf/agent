@@ -84,14 +84,13 @@ export class InternalAPIAdapter {
         {
           headers: {
             'Content-Type': 'application/json',
-            'Access_Key_Id': this.config.access_key_id,
+            Access_key_Id: this.config.access_key_id,
             'Tx-Code': this.config.tx_code,
             'Sec-Node-No': this.config.sec_node_no,
             'Trace-Id': traceId,
-            'Tx-Serial-No': serialNo,
+            'Serial-No': serialNo,
           },
-          timeout: this.config.timeout ?? 30000,
-          signal: options?.abortSignal, // 支持中断请求
+          timeout: this.config.timeout || 30000,
         }
       );
 

@@ -139,12 +139,12 @@ export async function generateToolsDescription(): Promise<string> {
 
     if (hasExternalPrompt) {
       // 外部文件已经包含完整说明
-      lines.push(`## ${info.id}\n`);
+      lines.push(`## ${formatToolName(info.id)}\n`);
       lines.push(info.description);
       lines.push('');
     } else {
       // 回退到简短描述 + 参数列表
-      lines.push(`## ${info.id}`);
+      lines.push(`## ${formatToolName(info.id)}`);
       lines.push(`${info.description}\n`);
       lines.push('**Parameters**:');
 
@@ -274,7 +274,10 @@ function getPermission(toolId: string): ToolDefinition['permission'] {
  * 允许外部覆盖工具权限配置
  * 用于从配置文件或 PermissionManager 动态设置权限
  */
-export function overrideToolPermission(toolId: string, permission: ToolDefinition['permission']): void {
+export function overrideToolPermission(
+  toolId: string,
+  permission: ToolDefinition['permission']
+): void {
   const permissions: Record<string, ToolDefinition['permission']> = {
     read: 'safe',
     glob: 'safe',
@@ -296,7 +299,9 @@ export function overrideToolPermission(toolId: string, permission: ToolDefinitio
 /**
  * 批量覆盖工具权限
  */
-export function overrideToolPermissions(permissions: Record<string, ToolDefinition['permission']>): void {
+export function overrideToolPermissions(
+  permissions: Record<string, ToolDefinition['permission']>
+): void {
   Object.entries(permissions).forEach(([toolId, permission]) => {
     overrideToolPermission(toolId, permission);
   });

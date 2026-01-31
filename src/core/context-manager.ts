@@ -156,8 +156,12 @@ export class ContextManager {
     const systemMessages = this.messages.filter(m => m.role === 'system');
 
     if (systemMessages.length > 0) {
-      result.push(...systemMessages.map(msg => this.convertToLegacyMessage(msg)));
-      currentTokens = systemMessages.reduce((sum, msg) => sum + this.estimateMessageTokens(msg), 0);
+      const systemMsgs = systemMessages
+        .map(msg => this.convertToLegacyMessage(msg))
+        .filter(msg => msg.content && msg.content.trim().length > 0);
+
+      result.push(...systemMsgs);
+      currentTokens = systemMsgs.reduce((sum, msg) => sum + this.estimateMessageTokens(msg), 0);
     }
 
     // 从最新的消息开始倒序添加（排除system消息）
@@ -175,8 +179,13 @@ export class ContextManager {
         break;
       }
 
-      result.unshift(this.convertToLegacyMessage(msg));
-      currentTokens += tokens;
+      const legacyMsg = this.convertToLegacyMessage(msg);
+
+      // 过滤掉空消息
+      if (legacyMsg.content && legacyMsg.content.trim().length > 0) {
+        result.unshift(legacyMsg);
+        currentTokens += tokens;
+      }
     }
 
     return result;

@@ -8,7 +8,7 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import { createLogger, getSessionsDir, getCurrentSessionFile } from '../utils';
 
-const logger = createLogger(true);
+const logger = createLogger(false);
 
 /**
  * 会话信息
@@ -26,6 +26,7 @@ export interface Session {
   parentID?: string; // 父会话ID（用于 fork）
   messageCount?: number; // 消息数量
   stats?: SessionStats; // 会话统计信息
+  summary?: SessionSummary; // 会话摘要信息
 }
 
 /**
@@ -38,6 +39,18 @@ export interface SessionStats {
   toolCalls: number;
   tokensUsed: number;
   modifiedFiles: string[]; // 修改过的文件列表
+  summariesGenerated?: number; // 生成的摘要数量
+  lastSummaryAt?: number; // 最后一次摘要生成时间
+}
+
+/**
+ * 会话摘要信息
+ */
+export interface SessionSummary {
+  title: string; // 摘要标题
+  content: string; // 摘要内容
+  generatedAt: number; // 生成时间
+  messageCount: number; // 生成时的消息数量
 }
 
 /**
@@ -73,13 +86,19 @@ export class SessionManager {
     // 加载当前会话
     await this.loadCurrentSession();
 
-    logger.debug(`SessionManager 初始化完成: ${this.sessions.size} 个会话, 当前: ${this.currentSessionId || '无'}`);
+    logger.debug(
+      `SessionManager 初始化完成: ${this.sessions.size} 个会话, 当前: ${this.currentSessionId || '无'}`
+    );
   }
 
   /**
    * 创建新会话
    */
-  async createSession(name: string, agentType: string = 'default', parentID?: string): Promise<Session> {
+  async createSession(
+    name: string,
+    agentType: string = 'default',
+    parentID?: string
+  ): Promise<Session> {
     const sessionId = this.generateId();
 
     const sessionFile = path.join(this.config.sessionsDir, `${sessionId}.json`);
@@ -234,14 +253,19 @@ export class SessionManager {
   private async loadSessions(): Promise<void> {
     try {
       const files = await fs.readdir(this.config.sessionsDir);
-      const sessionFiles = files.filter(f => f.endsWith('.json') && !f.endsWith('-history.json'));
+      const sessionFiles = files.filter((f) => f.endsWith('.json') && !f.endsWith('-history.json'));
 
       for (const file of sessionFiles) {
         try {
           const sessionFile = path.join(this.config.sessionsDir, file);
           const sessionData = await fs.readJSON(sessionFile);
           // 验证会话数据是否有效（检查是否是 Session 对象而不是消息数组）
-          if (sessionData && sessionData.id && sessionData.name && sessionData.agentType !== undefined) {
+          if (
+            sessionData &&
+            sessionData.id &&
+            sessionData.name &&
+            sessionData.agentType !== undefined
+          ) {
             // 确保 title 字段存在
             if (!sessionData.title) {
               sessionData.title = sessionData.name;
@@ -322,6 +346,51 @@ export class SessionManager {
   }
 
   /**
+   * 更新会话摘要
+   */
+  async updateSessionSummary(
+    sessionId: string,
+    summary: { title: string; content: string }
+  ): Promise<void> {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      logger.debug(`尝试更新不存在会话的摘要: ${sessionId}`);
+      return;
+    }
+
+    // 更新摘要信息
+    session.summary = {
+      title: summary.title,
+      content: summary.content,
+      generatedAt: Date.now(),
+      messageCount: session.messageCount || 0,
+    };
+
+    // 更新统计信息
+    if (session.stats) {
+      session.stats.summariesGenerated = (session.stats.summariesGenerated || 0) + 1;
+      session.stats.lastSummaryAt = Date.now();
+    }
+
+    // 更新会话的修改时间
+    session.updatedAt = Date.now();
+
+    // 保存会话信息
+    await this.saveSession(session);
+
+    logger.debug(`已更新会话摘要: ${session.name} - ${summary.title}`);
+  }
+
+  /**
+   * 获取会话摘要
+   */
+  getSessionSummary(sessionId?: string): SessionSummary | null {
+    const session = sessionId ? this.sessions.get(sessionId) : this.getCurrentSession();
+
+    return session?.summary || null;
+  }
+
+  /**
    * Fork 会话 - 从当前会话创建分支
    * @param messageIndex - 可选，从指定消息索引处 fork（不包括该消息之后的消息）
    */
@@ -335,21 +404,30 @@ export class SessionManager {
     const forkedTitle = this.getForkedTitle(currentSession.title);
 
     // 创建新会话
-    const newSession = await this.createSession(forkedTitle, currentSession.agentType, currentSession.id);
+    const newSession = await this.createSession(
+      forkedTitle,
+      currentSession.agentType,
+      currentSession.id
+    );
 
     // 复制历史消息（如果指定了 messageIndex，只复制到该索引）
     if (await fs.pathExists(currentSession.historyFile)) {
       try {
         const history = await fs.readJSON(currentSession.historyFile);
-        const messagesToCopy = messageIndex !== undefined
-          ? history.messages?.slice(0, messageIndex) || []
-          : history.messages || [];
+        const messagesToCopy =
+          messageIndex !== undefined
+            ? history.messages?.slice(0, messageIndex) || []
+            : history.messages || [];
 
         // 保存到新会话
-        await fs.writeJSON(newSession.historyFile, {
-          ...history,
-          messages: messagesToCopy,
-        }, { spaces: 2 });
+        await fs.writeJSON(
+          newSession.historyFile,
+          {
+            ...history,
+            messages: messagesToCopy,
+          },
+          { spaces: 2 }
+        );
 
         // 更新消息计数
         newSession.messageCount = messagesToCopy.length;
@@ -434,7 +512,8 @@ export class SessionManager {
     const session: Session = {
       id: sessionId,
       name: data.info?.name || `导入会话 ${sessionId.substring(0, 8)}`,
-      title: data.info?.title || data.info?.name || `导入会话 ${new Date().toLocaleString('zh-CN')}`,
+      title:
+        data.info?.title || data.info?.name || `导入会话 ${new Date().toLocaleString('zh-CN')}`,
       createdAt: data.info?.createdAt || Date.now(),
       updatedAt: Date.now(),
       lastActiveAt: Date.now(),
@@ -448,11 +527,15 @@ export class SessionManager {
 
     // 保存消息历史
     if (data.messages && Array.isArray(data.messages)) {
-      await fs.writeJSON(sessionFile, {
-        version: 1,
-        messages: data.messages,
-        lastUpdated: Date.now(),
-      }, { spaces: 2 });
+      await fs.writeJSON(
+        sessionFile,
+        {
+          version: 1,
+          messages: data.messages,
+          lastUpdated: Date.now(),
+        },
+        { spaces: 2 }
+      );
     }
 
     // 保存会话信息
@@ -468,7 +551,7 @@ export class SessionManager {
    */
   getChildSessions(sessionId: string): Session[] {
     return Array.from(this.sessions.values())
-      .filter(s => s.parentID === sessionId)
+      .filter((s) => s.parentID === sessionId)
       .sort((a, b) => b.createdAt - a.createdAt);
   }
 

@@ -706,12 +706,31 @@ export class CommandManager {
         console.log(chalk.gray(`  Agent 类型: ${agent}`));
         console.log(chalk.gray(`  会话 ID: ${currentSession?.id || 'default'}`));
 
+        // 显示摘要信息
+        if (currentSession?.summary) {
+          console.log(chalk.blue(`\n📝 会话摘要:`));
+          console.log(chalk.blue(`  标题: ${currentSession.summary.title}`));
+          const summaryContent =
+            currentSession.summary.content.length > 100
+              ? currentSession.summary.content.substring(0, 100) + '...'
+              : currentSession.summary.content;
+          console.log(chalk.gray(`  内容: ${summaryContent}`));
+          console.log(
+            chalk.gray(
+              `  生成时间: ${new Date(currentSession.summary.generatedAt).toLocaleString('zh-CN')}`
+            )
+          );
+        }
+
         if (currentSession?.stats) {
           console.log(chalk.gray(`\n📊 统计信息:`));
           console.log(chalk.gray(`  消息数: ${currentSession.stats.totalMessages}`));
           console.log(chalk.gray(`  工具调用: ${currentSession.stats.toolCalls}`));
           if (currentSession.stats.modifiedFiles.length > 0) {
             console.log(chalk.gray(`  修改文件: ${currentSession.stats.modifiedFiles.length}`));
+          }
+          if (currentSession.stats.summariesGenerated) {
+            console.log(chalk.gray(`  摘要生成: ${currentSession.stats.summariesGenerated} 次`));
           }
         }
 
@@ -744,6 +763,16 @@ export class CommandManager {
           console.log(marker + ' ' + (index + 1) + '. ' + title);
           console.log(chalk.gray(`   ID: ${session.id.substring(0, 12)}...`));
           console.log(chalk.gray(`   活跃: ${date}`));
+
+          // 显示摘要信息
+          if (session.summary) {
+            console.log(chalk.blue(`   📝 ${session.summary.title}`));
+            const summaryPreview =
+              session.summary.content.length > 50
+                ? session.summary.content.substring(0, 50) + '...'
+                : session.summary.content;
+            console.log(chalk.gray(`      ${summaryPreview}`));
+          }
 
           if (session.parentID) {
             console.log(chalk.gray(`   父会话: ${session.parentID.substring(0, 8)}...`));

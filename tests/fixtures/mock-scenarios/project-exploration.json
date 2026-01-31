@@ -1,0 +1,20 @@
+{
+  "name": "project-exploration",
+  "description": "测试 AI 是否正确使用专用工具而不是 bash",
+  "responses": [
+    {
+      "input": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "帮我看一下这个项目是做什么的"
+          }
+        ]
+      },
+      "output": "我会使用专用工具来探索项目结构和功能。\n\n<tool_call>\n{\"tool\": \"Glob\", \"parameters\": {\"pattern\": \"*.json\", \"path\": \".\"}}\n\n⮐\n{\"tool\": \"Glob\", \"parameters\": {\"pattern\": \"src/**/*.ts\", \"path\": \".\"}}\n\n⮐\n{\"tool\": \"Read\", \"parameters\": {\"filePath\": \"./package.json\"}}\n"
+    },
+    {
+      "output": "根据项目结构和关键文件，我为你总结这个项目的功能和用途..."
+    }
+  ]
+}

@@ -317,21 +317,18 @@ ${messagesText}`;
    * 移除旧消息
    */
   private removeOldMessages(messages: (Message | EnhancedMessage)[]): void {
+    // 首先分离出 system 消息和其他消息
+    const systemMessages = messages.filter(m => m.role === 'system');
+    const otherMessages = messages.filter(m => m.role !== 'system');
+
     const targetTokens = this.config.maxTokens - this.config.reserveTokens;
     let currentTokens = 0;
-    let keepFromIndex = messages.length;
+    let keepFromIndex = otherMessages.length;
 
     // 从后向前保留消息，直到达到目标 token 数量
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const msg = messages[i];
+    for (let i = otherMessages.length - 1; i >= 0; i--) {
+      const msg = otherMessages[i];
       const msgTokens = this.estimateMessages([msg]);
-
-      // 总是保留 system 消息
-      if (msg.role === 'system') {
-        keepFromIndex = Math.min(keepFromIndex, i);
-        currentTokens += msgTokens;
-        continue;
-      }
 
       if (currentTokens + msgTokens <= targetTokens) {
         keepFromIndex = i;
@@ -341,10 +338,14 @@ ${messagesText}`;
       }
     }
 
-    // 移除前面的消息
-    if (keepFromIndex > 0) {
-      messages.splice(0, keepFromIndex);
-    }
+    // 清空原数组
+    messages.length = 0;
+
+    // 首先添加 system 消息（确保在开头）
+    messages.push(...systemMessages);
+
+    // 然后添加保留的非 system 消息
+    messages.push(...otherMessages.slice(keepFromIndex));
   }
 
   /**

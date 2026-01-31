@@ -164,10 +164,7 @@ export class ToolEngine {
 
       // 创建工具级别的 AbortController（用于超时）
       const toolTimeoutController = new AbortController();
-      const toolTimeout = Math.min(
-        timeout ?? this.defaultToolTimeout,
-        MAX_TOOL_TIMEOUT
-      );
+      const toolTimeout = Math.min(timeout ?? this.defaultToolTimeout, MAX_TOOL_TIMEOUT);
       const timeoutId = setTimeout(() => {
         toolTimeoutController.abort();
       }, toolTimeout);
@@ -177,10 +174,7 @@ export class ToolEngine {
         // 组合全局 abort 信号和工具超时信号
         // 注意：AbortSignal.any 是实验性 API，需要做兼容处理
         try {
-          combinedSignal = (AbortSignal as any).any([
-            toolTimeoutController.signal,
-            abortSignal,
-          ]);
+          combinedSignal = (AbortSignal as any).any([toolTimeoutController.signal, abortSignal]);
         } catch (e) {
           // 如果 AbortSignal.any 不可用，使用全局 abort 信号
           combinedSignal = abortSignal;
@@ -399,6 +393,45 @@ export class ToolEngine {
       match = codeBlockRegex.exec(response);
     }
 
+    // 尝试解析函数调用格式: ToolName{...parameters...}
+    const functionCallRegex = /(\w+)\{([\s\S]*?)\}/g;
+    match = functionCallRegex.exec(response);
+    while (match !== null) {
+      try {
+        const toolName = match[1];
+        const paramsStr = match[2];
+
+        // 尝试解析参数
+        let parameters: any;
+        try {
+          // 直接尝试解析参数字符串为JSON（适用于 {"pattern": "..."} 格式）
+          parameters = JSON.parse(`{${paramsStr}}`);
+        } catch {
+          try {
+            // 如果失败，尝试将整个参数字符串作为JSON解析（适用于 "pattern": "..." 格式）
+            parameters = JSON.parse(paramsStr);
+          } catch {
+            // 最后尝试简化格式：将 key=value 格式转换为JSON
+            parameters = {};
+            const paramPairs = paramsStr.match(/(\w+)\s*=\s*"([^"]*)"/g) || [];
+            paramPairs.forEach((pair) => {
+              const [key, value] = pair.split('=');
+              parameters[key.trim()] = value.trim().replace(/"/g, '');
+            });
+          }
+        }
+
+        calls.push({
+          tool: toolName,
+          parameters,
+          id: this.generateToolCallId(),
+        });
+      } catch {
+        // 忽略解析失败的函数调用
+      }
+      match = functionCallRegex.exec(response);
+    }
+
     // 尝试解析纯JSON格式的工具调用（不在代码块中）
     const jsonRegex = /\{\s*"tool"\s*:\s*"(\w+)"\s*,\s*"parameters"\s*:\s*\{[\s\S]*?\}\s*\}/g;
     match = jsonRegex.exec(response);
@@ -408,7 +441,9 @@ export class ToolEngine {
         if (parsed.tool && parsed.parameters) {
           // 检查是否已经在代码块中解析过
           const alreadyParsed = calls.some(
-            c => c.tool === parsed.tool && JSON.stringify(c.parameters) === JSON.stringify(parsed.parameters)
+            (c) =>
+              c.tool === parsed.tool &&
+              JSON.stringify(c.parameters) === JSON.stringify(parsed.parameters)
           );
           if (!alreadyParsed) {
             calls.push({
@@ -447,6 +482,13 @@ export class ToolEngine {
    */
   size(): number {
     return this.tools.size;
+  }
+
+  /**
+   * 生成工具调用ID
+   */
+  private generateToolCallId(): string {
+    return `call_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   }
 }
 
