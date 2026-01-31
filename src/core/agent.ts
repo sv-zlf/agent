@@ -7,6 +7,7 @@ import { PermissionManager, PermissionAction, type PermissionRequest } from './p
 import { FunctionalAgentManager } from './functional-agents';
 import { generateToolsDescription } from '../tools';
 import { APIError, AgentExecutionError, ErrorCode } from '../errors';
+import { ToolParameterHelper } from '../utils/tool-params';
 
 /**
  * Agent执行配置
@@ -262,7 +263,7 @@ export class AgentOrchestrator {
       // 1. 检查权限
       const permissionRequest: PermissionRequest = {
         tool: call.tool,
-        path: this.extractPathFromParams(call.tool, call.parameters),
+        path: ToolParameterHelper.extractPath(call.parameters),
         params: call.parameters,
       };
 
@@ -320,25 +321,6 @@ export class AgentOrchestrator {
     }
 
     return results;
-  }
-
-  /**
-   * 从工具参数中提取路径（用于权限检查）
-   */
-  private extractPathFromParams(
-    _tool: string,
-    params: Record<string, unknown>
-  ): string | undefined {
-    // 常见的路径参数名
-    const pathKeys = ['file_path', 'path', 'filePath', 'pattern', 'glob'];
-
-    for (const key of pathKeys) {
-      if (params[key]) {
-        return String(params[key]);
-      }
-    }
-
-    return undefined;
   }
 
   /**

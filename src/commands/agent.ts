@@ -20,6 +20,7 @@ import { displayBanner } from '../utils/logo';
 import { createCommandManager, type CommandResult } from './slash-commands';
 import { readFileSync } from 'fs';
 import { renderMarkdown } from '../utils/markdown';
+import { ToolParameterHelper } from '../utils/tool-params';
 
 const logger = createLogger();
 
@@ -110,21 +111,6 @@ function printToolCompactResult(
   } else {
     console.log(chalk.gray('  ⎿  ✓'));
   }
-}
-
-/**
- * 从工具参数中提取路径（用于权限检查）
- */
-function extractPathFromParams(_tool: string, params: Record<string, unknown>): string | undefined {
-  const pathKeys = ['file_path', 'path', 'filePath', 'pattern', 'glob'];
-
-  for (const key of pathKeys) {
-    if (params[key]) {
-      return String(params[key]);
-    }
-  }
-
-  return undefined;
 }
 /**
  * agent命令 - GG CODE AI编程助手
@@ -801,7 +787,7 @@ export const agentCommand = new Command('agent')
                     .join(' ');
 
                   // 从工具参数中提取路径（用于细粒度权限检查）
-                  const toolPath = extractPathFromParams(call.tool, call.parameters);
+                  const toolPath = ToolParameterHelper.extractPath(call.parameters);
 
                   // 使用 PermissionManager 检查权限
                   const permissionRequest = {

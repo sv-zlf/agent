@@ -1,6 +1,7 @@
 import type { ToolDefinition, ToolCall, ToolResult } from '../types';
 import { createLogger } from '../utils';
 import { truncateOutput, cleanupOldTruncationFiles } from '../utils/truncation';
+import { ToolParameterHelper } from '../utils/tool-params';
 
 const logger = createLogger(true); // 启用debug模式用于工具引擎
 
@@ -171,7 +172,7 @@ export class ToolEngine {
       // logger.info(`Executing tool: ${call.tool}`); // 已移除：由上层显示状态
 
       // 适配参数名（支持 snake_case → camelCase 和大小写不敏感匹配）
-      const adaptedParams = this.adaptToolParameters(call.tool, call.parameters);
+      const adaptedParams = ToolParameterHelper.adaptParameters(call.tool, call.parameters);
 
       // 验证必需参数（大小写不敏感检查）
       for (const [paramName, param] of Object.entries(tool.parameters)) {
@@ -521,74 +522,6 @@ export class ToolEngine {
    */
   size(): number {
     return this.tools.size;
-  }
-
-  /**
-   * 适配工具参数（支持 snake_case → camelCase 和大小写不敏感匹配）
-   */
-  private adaptToolParameters(
-    toolName: string,
-    params: Record<string, unknown>
-  ): Record<string, unknown> {
-    const adapted = { ...params };
-
-    // 定义参数映射（snake_case → camelCase）
-    const paramMappings: Record<string, Record<string, string>> = {
-      Read: {
-        file_path: 'filePath',
-      },
-      Write: {
-        file_path: 'filePath',
-        content: 'content',
-      },
-      Edit: {
-        file_path: 'filePath',
-        old_string: 'oldString',
-        new_string: 'newString',
-        replace_all: 'replaceAll',
-      },
-      MultiEdit: {
-        file_path: 'filePath',
-        old_string: 'oldString',
-        new_string: 'newString',
-        replace_all: 'replaceAll',
-      },
-      Grep: {
-        pattern: 'pattern',
-      },
-      Glob: {
-        pattern: 'pattern',
-      },
-    };
-
-    // 应用映射（支持大小写不敏感）
-    const mappings = paramMappings[toolName];
-    if (mappings) {
-      for (const [snakeKey, camelKey] of Object.entries(mappings)) {
-        // 跳过无意义的映射（源和目标相同）
-        if (snakeKey === camelKey) {
-          continue;
-        }
-
-        // 首先检查精确匹配
-        if (snakeKey in adapted && adapted[snakeKey] !== undefined) {
-          adapted[camelKey] = adapted[snakeKey];
-          delete adapted[snakeKey];
-          continue;
-        }
-        // 检查大小写不敏感匹配
-        const lowerSnakeKey = snakeKey.toLowerCase();
-        const matchedKey = Object.keys(adapted).find(
-          (k) => k.toLowerCase() === lowerSnakeKey && adapted[k] !== undefined
-        );
-        if (matchedKey) {
-          adapted[camelKey] = adapted[matchedKey];
-          delete adapted[matchedKey];
-        }
-      }
-    }
-
-    return adapted;
   }
 
   /**
