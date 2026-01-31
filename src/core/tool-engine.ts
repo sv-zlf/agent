@@ -455,12 +455,18 @@ export class ToolEngine {
     // 预处理：移除代码块内容，避免重复解析
     const textWithoutCodeBlocks = response.replace(codeBlockRegex, '');
 
-    // 尝试解析花括号格式: ToolName{...}（只匹配花括号，忽略圆括号）
+    // 尝试解析花括号格式: ToolName{...}（排除圆括号格式如 Edit(...)）
     const functionCallRegex = /\b([A-Z][a-zA-Z0-9]*)\s*\{([\s\S]*?)\}/g;
     match = functionCallRegex.exec(textWithoutCodeBlocks);
     while (match !== null) {
       const toolName = match[1];
       const paramsStr = match[2];
+
+      // 排除圆括号格式（如 Edit(file_path=...)）
+      if (paramsStr.includes('(') || paramsStr.includes(')')) {
+        match = functionCallRegex.exec(textWithoutCodeBlocks);
+        continue;
+      }
 
       // 只处理已知的工具名称（忽略 AI 计划中的内容如 "TodoWrite(todos=[...])"）
       if (knownTools.has(toolName.toLowerCase()) || knownTools.has(toolName)) {

@@ -21,9 +21,15 @@ export const PARAM_MAPPINGS: Record<string, Record<string, string>> = {
   },
   Edit: {
     file_path: 'filePath',
+    filePath: 'filePath',
     old_string: 'oldString',
+    oldString: 'oldString',
+    old_text: 'oldString',
     new_string: 'newString',
+    newString: 'newString',
+    new_text: 'newString',
     replace_all: 'replaceAll',
+    replaceAll: 'replaceAll',
   },
   Glob: {
     pattern: 'pattern',
