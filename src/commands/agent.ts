@@ -526,6 +526,7 @@ export const agentCommand = new Command('agent')
             sessionManager: sessionManager,
             contextManager: contextManager,
             apiAdapter: apiAdapter, // 传递 API 适配器
+            onExit: cleanupAndExit, // 传递退出回调
             pauseKeyListener: () => {
               // 临时移除主程序的按键监听器
               const currentRl = getReadline();
@@ -585,11 +586,6 @@ export const agentCommand = new Command('agent')
         }
 
         // 处理特殊命令（如果不是斜杠命令）
-        if (input.toLowerCase() === 'exit' || input.toLowerCase() === 'quit') {
-          cleanupAndExit();
-          return;
-        }
-
         if (input.toLowerCase() === 'clear') {
           contextManager.clearContext();
           contextManager.setSystemPrompt(systemPrompt); // 重新设置系统提示词

@@ -48,6 +48,10 @@ export interface CommandContext {
    * 可选的 API 适配器（用于需要调用 AI 的命令）
    */
   apiAdapter?: any; // ChatAPIAdapter 实例（可选）
+  /**
+   * 退出回调（用于 /exit 命令）
+   */
+  onExit?: () => void;
 }
 
 /**
@@ -87,6 +91,12 @@ export class CommandManager {
    * 注册内置命令
    */
   private registerBuiltInCommands(): void {
+    this.registerCommand({
+      name: 'exit',
+      description: '退出程序',
+      handler: this.handleExitCommand.bind(this),
+    });
+
     this.registerCommand({
       name: 'init',
       description: '创建/更新项目文档 (AGENTS.md)',
@@ -1491,6 +1501,20 @@ export class CommandManager {
     console.log(chalk.green(`你选择了 ${features.length} 个功能:`));
     features.forEach((f) => console.log(chalk.gray(`  - ${f.label}`)));
 
+    return { shouldContinue: false };
+  }
+
+  /**
+   * /exit 命令处理器 - 退出程序
+   */
+  private async handleExitCommand(_args: string, context: CommandContext): Promise<CommandResult> {
+    if (context.onExit) {
+      context.onExit();
+    } else {
+      // 如果没有提供退出回调，直接退出
+      process.exit(0);
+    }
+    // 不会返回，但为了类型检查
     return { shouldContinue: false };
   }
 }

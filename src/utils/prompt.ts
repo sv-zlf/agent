@@ -110,7 +110,14 @@ export async function select(config: SelectConfig): Promise<SelectOption> {
       if (!wasRawMode) {
         stdin.setRawMode(false);
       }
-      // 不暂停 stdin，让调用者管理
+
+      // 暂停 stdin 以清空缓冲区，防止按键残留到后续的 readline
+      stdin.pause();
+
+      // 清空 stdin 缓冲区中的剩余数据
+      if (stdin.isTTY) {
+        stdin.read();
+      }
     };
 
     stdin.on('data', onKeyPress);
@@ -313,7 +320,15 @@ export async function multiSelect(config: SelectConfig): Promise<SelectOption[]>
     const cleanup = () => {
       resolved = true;
       stdin.setRawMode(false);
-      // 不暂停 stdin，让调用者管理
+
+      // 暂停 stdin 以清空缓冲区，防止按键残留到后续的 readline
+      stdin.pause();
+
+      // 清空 stdin 缓冲区中的剩余数据
+      if (stdin.isTTY) {
+        stdin.read();
+      }
+
       stdin.removeListener('data', onKeyPress);
     };
 

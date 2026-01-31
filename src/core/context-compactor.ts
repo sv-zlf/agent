@@ -91,6 +91,7 @@ export class ContextCompactor {
 
   /**
    * 估算消息列表的 token 数量
+   * 使用缓存优化性能
    */
   estimateMessages(messages: (Message | EnhancedMessage)[]): number {
     let total = 0;
@@ -100,15 +101,71 @@ export class ContextCompactor {
         // 增强消息：计算所有部件
         for (const part of msg.parts) {
           if (part.ignored) continue; // 跳过被忽略的部件
-          total += TokenEstimator.estimate(part.content || '');
+
+          // 使用缓存避免重复计算
+          if ((part as any).__cachedTokens !== undefined) {
+            total += (part as any).__cachedTokens;
+          } else {
+            const tokens = TokenEstimator.estimate(part.content || '');
+            (part as any).__cachedTokens = tokens;
+            total += tokens;
+          }
         }
       } else {
         // 普通消息
-        total += TokenEstimator.estimateMessage(msg);
+        if ((msg as any).__cachedTokens !== undefined) {
+          total += (msg as any).__cachedTokens;
+        } else {
+          const tokens = TokenEstimator.estimateMessage(msg);
+          (msg as any).__cachedTokens = tokens;
+          total += tokens;
+        }
       }
     }
 
     return total;
+  }
+
+  /**
+   * 估算单条消息的 token 数量（优化版本）
+   */
+  private estimateSingleMessage(msg: Message | EnhancedMessage): number {
+    if (this.isEnhancedMessage(msg)) {
+      let total = 0;
+      for (const part of msg.parts) {
+        if (part.ignored) continue;
+        if ((part as any).__cachedTokens !== undefined) {
+          total += (part as any).__cachedTokens;
+        } else {
+          const tokens = TokenEstimator.estimate(part.content || '');
+          (part as any).__cachedTokens = tokens;
+          total += tokens;
+        }
+      }
+      return total;
+    } else {
+      if ((msg as any).__cachedTokens !== undefined) {
+        return (msg as any).__cachedTokens;
+      }
+      const tokens = TokenEstimator.estimateMessage(msg);
+      (msg as any).__cachedTokens = tokens;
+      return tokens;
+    }
+  }
+
+  /**
+   * 清除消息的 token 缓存
+   * 当消息内容被修改时调用
+   */
+  static clearTokenCache(messages: (Message | EnhancedMessage)[]): void {
+    for (const msg of messages) {
+      delete (msg as any).__cachedTokens;
+      if ('parts' in msg) {
+        for (const part of msg.parts) {
+          delete (part as any).__cachedTokens;
+        }
+      }
+    }
   }
 
   /**
@@ -167,7 +224,8 @@ export class ContextCompactor {
     const originalTokens = this.estimateMessages(messages);
 
     try {
-      const promptPath = config.promptPath || path.join(process.cwd(), 'src/tools/prompts/compaction.txt');
+      const promptPath =
+        config.promptPath || path.join(process.cwd(), 'src/tools/prompts/compaction.txt');
       const systemPrompt = await fs.readFile(promptPath, 'utf-8');
 
       const messagesText = messages
@@ -283,8 +341,12 @@ ${messagesText}`;
               break;
             }
 
-            // 估算这个结果的 token 数量
-            const partTokens = TokenEstimator.estimate(part.content || '');
+            // 估算这个结果的 token 数量（使用缓存）
+            let partTokens = (part as any).__cachedTokens;
+            if (partTokens === undefined) {
+              partTokens = TokenEstimator.estimate(part.content || '');
+              (part as any).__cachedTokens = partTokens;
+            }
 
             // 如果已经保护了足够的 tokens，加入修剪列表
             if (totalProtectedTokens > this.config.pruneProtect) {
@@ -307,6 +369,8 @@ ${messagesText}`;
         part.content = truncated + '\n... (内容已压缩，节省 tokens)';
         (part.metadata as any).compacted = true;
         (part.metadata as any).originalLength = originalContent.length;
+        // 清除缓存以便下次重新计算
+        delete (part as any).__cachedTokens;
       }
     }
 
@@ -318,8 +382,8 @@ ${messagesText}`;
    */
   private removeOldMessages(messages: (Message | EnhancedMessage)[]): void {
     // 首先分离出 system 消息和其他消息
-    const systemMessages = messages.filter(m => m.role === 'system');
-    const otherMessages = messages.filter(m => m.role !== 'system');
+    const systemMessages = messages.filter((m) => m.role === 'system');
+    const otherMessages = messages.filter((m) => m.role !== 'system');
 
     const targetTokens = this.config.maxTokens - this.config.reserveTokens;
     let currentTokens = 0;
@@ -328,7 +392,7 @@ ${messagesText}`;
     // 从后向前保留消息，直到达到目标 token 数量
     for (let i = otherMessages.length - 1; i >= 0; i--) {
       const msg = otherMessages[i];
-      const msgTokens = this.estimateMessages([msg]);
+      const msgTokens = this.estimateSingleMessage(msg);
 
       if (currentTokens + msgTokens <= targetTokens) {
         keepFromIndex = i;
