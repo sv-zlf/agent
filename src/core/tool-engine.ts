@@ -405,14 +405,13 @@ export class ToolEngine {
   /**
    * 解析AI响应中的工具调用
    * 支持多种格式：
-   * 1. JSON格式: {"tool": "Read", "parameters": {"file_path": "..."}}
+   * 1. JSON格式: {"tool": "Read", "parameters": {"filePath": "..."}}
    * 2. 代码块格式
    */
   parseToolCallsFromResponse(response: string): ToolCall[] {
     const calls: ToolCall[] = [];
-    const seen = new Set<string>(); // Deduplicate calls
+    const seen = new Set<string>();
 
-    // Helper to add call if not duplicate
     const addCall = (call: ToolCall) => {
       const signature = `${call.tool}:${JSON.stringify(call.parameters)}`;
       if (!seen.has(signature)) {
@@ -420,6 +419,8 @@ export class ToolEngine {
         calls.push(call);
       }
     };
+
+    const knownTools = new Set(this.tools.keys());
 
     // 首先尝试解析代码块中的工具调用（优先级更高）
     const codeBlockRegex = /```(?:json|tool)?\s*\n?([\s\S]*?)```/g;
@@ -434,6 +435,16 @@ export class ToolEngine {
             parameters: parsed.parameters,
             id: parsed.id || this.generateToolCallId(),
           });
+        } else if (Array.isArray(parsed)) {
+          for (const item of parsed) {
+            if (item.tool && item.parameters) {
+              addCall({
+                tool: item.tool,
+                parameters: item.parameters,
+                id: item.id || this.generateToolCallId(),
+              });
+            }
+          }
         }
       } catch {
         // 忽略解析失败的JSON
@@ -441,48 +452,53 @@ export class ToolEngine {
       match = codeBlockRegex.exec(response);
     }
 
-    // 尝试解析函数调用格式: ToolName{...parameters...}
-    const functionCallRegex = /(\w+)\{([\s\S]*?)\}/g;
-    match = functionCallRegex.exec(response);
-    while (match !== null) {
-      try {
-        const toolName = match[1];
-        const paramsStr = match[2];
+    // 预处理：移除代码块内容，避免重复解析
+    const textWithoutCodeBlocks = response.replace(codeBlockRegex, '');
 
-        // 尝试解析参数
-        let parameters: any;
+    // 尝试解析花括号格式: ToolName{...}（只匹配花括号，忽略圆括号）
+    const functionCallRegex = /\b([A-Z][a-zA-Z0-9]*)\s*\{([\s\S]*?)\}/g;
+    match = functionCallRegex.exec(textWithoutCodeBlocks);
+    while (match !== null) {
+      const toolName = match[1];
+      const paramsStr = match[2];
+
+      // 只处理已知的工具名称（忽略 AI 计划中的内容如 "TodoWrite(todos=[...])"）
+      if (knownTools.has(toolName.toLowerCase()) || knownTools.has(toolName)) {
         try {
-          // 直接尝试解析参数字符串为JSON（适用于 {"pattern": "..."} 格式）
-          parameters = JSON.parse(`{${paramsStr}}`);
-        } catch {
+          let parameters: any;
           try {
-            // 如果失败，尝试将整个参数字符串作为JSON解析（适用于 "pattern": "..." 格式）
-            parameters = JSON.parse(paramsStr);
+            parameters = JSON.parse(`{${paramsStr}}`);
           } catch {
-            // 最后尝试简化格式：将 key=value 格式转换为JSON
-            parameters = {};
-            const paramPairs = paramsStr.match(/(\w+)\s*=\s*"([^"]*)"/g) || [];
-            paramPairs.forEach((pair) => {
-              const [key, value] = pair.split('=');
-              parameters[key.trim()] = value.trim().replace(/"/g, '');
+            try {
+              parameters = JSON.parse(paramsStr);
+            } catch {
+              parameters = {};
+              const paramPairs = paramsStr.match(/(\w+)\s*=\s*"([^"]*)"/g) || [];
+              paramPairs.forEach((pair) => {
+                const [key, value] = pair.split('=');
+                parameters[key.trim()] = value.trim().replace(/"/g, '');
+              });
+            }
+          }
+
+          // 只有当解析出有效参数时才添加
+          if (Object.keys(parameters).length > 0) {
+            addCall({
+              tool: toolName,
+              parameters,
+              id: this.generateToolCallId(),
             });
           }
+        } catch {
+          // 忽略解析失败的函数调用
         }
-
-        addCall({
-          tool: toolName,
-          parameters,
-          id: this.generateToolCallId(),
-        });
-      } catch {
-        // 忽略解析失败的函数调用
       }
-      match = functionCallRegex.exec(response);
+      match = functionCallRegex.exec(textWithoutCodeBlocks);
     }
 
-    // 尝试解析纯JSON格式的工具调用（不在代码块中）
+    // 尝试解析纯JSON格式的工具调用
     const jsonRegex = /\{\s*"tool"\s*:\s*"(\w+)"\s*,\s*"parameters"\s*:\s*\{[\s\S]*?\}\s*\}/g;
-    match = jsonRegex.exec(response);
+    match = jsonRegex.exec(textWithoutCodeBlocks);
     while (match !== null) {
       try {
         const parsed = JSON.parse(match[0]);

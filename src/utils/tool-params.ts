@@ -95,7 +95,7 @@ export class ToolParameterHelper {
     params: Record<string, unknown>,
     required: string[]
   ): { valid: boolean; missing: string[] } {
-    const missing = required.filter(key => !(key in params));
+    const missing = required.filter((key) => !(key in params));
 
     return {
       valid: missing.length === 0,
@@ -134,28 +134,19 @@ export class ToolParameterHelper {
     const mappings = PARAM_MAPPINGS[toolName];
 
     if (mappings) {
-      // 应用参数名映射（支持大小写不敏感）
       for (const [snakeName, camelName] of Object.entries(mappings)) {
-        // 跳过无意义的映射（源和目标相同）
         if (snakeName === camelName) {
           continue;
         }
 
-        // 首先检查精确匹配
-        if (snakeName in adapted && adapted[snakeName] !== undefined) {
-          adapted[camelName] = adapted[snakeName];
-          delete adapted[snakeName];
-          continue;
-        }
-
-        // 检查大小写不敏感匹配
         const lowerSnakeName = snakeName.toLowerCase();
-        const matchedKey = Object.keys(adapted).find(
-          (k) => k.toLowerCase() === lowerSnakeName && adapted[k] !== undefined
-        );
-        if (matchedKey) {
-          adapted[camelName] = adapted[matchedKey];
-          delete adapted[matchedKey];
+
+        for (const key of Object.keys(adapted)) {
+          if (key.toLowerCase() === lowerSnakeName) {
+            adapted[camelName] = adapted[key];
+            delete adapted[key];
+            break;
+          }
         }
       }
     }
@@ -180,7 +171,7 @@ export class ToolParameterHelper {
    * @returns 是否包含路径参数
    */
   static hasPathParam(params: Record<string, unknown>): boolean {
-    return PATH_PARAM_KEYS.some(key => key in params);
+    return PATH_PARAM_KEYS.some((key) => key in params);
   }
 
   /**
