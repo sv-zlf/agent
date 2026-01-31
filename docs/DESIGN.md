@@ -29,6 +29,7 @@
 ## 二、核心组件设计
 
 ### 1. **API适配器层**
+
 ```typescript
 interface Message {
   role: 'system' | 'user' | 'assistant';
@@ -42,6 +43,7 @@ interface ChatAPIAdapter {
 ```
 
 ### 2. **代码操作器**
+
 ```typescript
 interface CodeOperator {
   readFile(path: string): Promise<string>;
@@ -53,6 +55,7 @@ interface CodeOperator {
 ```
 
 ### 3. **上下文管理器**
+
 ```typescript
 interface ContextManager {
   addMessage(role: 'user' | 'assistant', content: string): void;
@@ -64,6 +67,7 @@ interface ContextManager {
 ```
 
 ### 4. **任务解析器**
+
 ```typescript
 interface TaskParser {
   parseEditRequest(input: string): ParsedTask;
@@ -75,6 +79,7 @@ interface TaskParser {
 ## 三、提示词设计
 
 ### 系统提示词模板
+
 ```typescript
 const SYSTEM_PROMPT = `你是一个专业的代码编辑助手。你的职责是：
 1. 理解用户的代码修改需求
@@ -107,19 +112,20 @@ const SYSTEM_PROMPT = `你是一个专业的代码编辑助手。你的职责是
 
 ## 五、技术栈建议 (Node.js v16)
 
-| 组件 | 推荐技术 | 说明 |
-|------|---------|------|
-| 运行环境 | Node.js v16 | 内网已安装 |
-| 语言 | TypeScript | 类型安全，IDE支持好 |
-| CLI框架 | Commander.js | 成熟的CLI框架 |
-| 交互式输入 | Inquirer.js | 丰富的交互式命令行 |
-| 终端输出 | Chalk + Ora | 颜色输出和加载动画 |
-| HTTP客户端 | Axios (node@16) | 简单易用的HTTP库 |
-| 配置管理 | dotenv + js-yaml | 环境变量和YAML配置 |
-| 文件操作 | fs-extra | 增强的文件操作 |
-| 测试框架 | Jest | 完整的测试解决方案 |
+| 组件       | 推荐技术         | 说明                |
+| ---------- | ---------------- | ------------------- |
+| 运行环境   | Node.js v16      | 内网已安装          |
+| 语言       | TypeScript       | 类型安全，IDE支持好 |
+| CLI框架    | Commander.js     | 成熟的CLI框架       |
+| 交互式输入 | Inquirer.js      | 丰富的交互式命令行  |
+| 终端输出   | Chalk + Ora      | 颜色输出和加载动画  |
+| HTTP客户端 | Axios (node@16)  | 简单易用的HTTP库    |
+| 配置管理   | dotenv + js-yaml | 环境变量和YAML配置  |
+| 文件操作   | fs-extra         | 增强的文件操作      |
+| 测试框架   | Jest             | 完整的测试解决方案  |
 
 ### npm依赖清单
+
 ```json
 {
   "dependencies": {
@@ -184,7 +190,7 @@ agent/
 │   ├── system.txt                  # 系统提示词
 │   └── code-edit.txt               # 代码编辑提示词
 ├── config/
-│   └── config.yaml                 # 默认配置
+│   └── config.json                 # 默认配置（内部使用）
 ├── tests/
 │   ├── unit/
 │   └── integration/
@@ -198,30 +204,30 @@ agent/
 ## 八、配置文件示例
 
 ```yaml
-# config/config.yaml
+# ~/.ggcode/config.json (用户配置)
 api:
-  base_url: "http://10.252.167.50:8021"
-  access_key_id: "1305842310935769088"
-  tx_code: "A4011LM01"
-  sec_node_no: "400136"
-  model: "F-G-9B-V20241220-0000-00"
-  timeout: 30000  # 毫秒
+  base_url: 'http://10.252.167.50:8021'
+  access_key_id: '1305842310935769088'
+  tx_code: 'A4011LM01'
+  sec_node_no: '400136'
+  model: 'F-G-9B-V20241220-0000-00'
+  timeout: 30000 # 毫秒
 
 agent:
   max_context_tokens: 8000
   backup_before_edit: true
-  backup_dir: "./backups"
-  max_file_size: 1048576  # 1MB
+  backup_dir: './backups'
+  max_file_size: 1048576 # 1MB
   max_history: 10
 
 prompts:
-  system: "./prompts/system.txt"
-  code_edit: "./prompts/code-edit.txt"
+  system: './prompts/system.txt'
+  code_edit: './prompts/code-edit.txt'
 ```
 
 ```bash
 # .env.example
-# 内网API配置（可选，可通过config.yaml配置）
+# 内网API配置（可选，可通过config.json配置）
 INTERNAL_API_BASE=http://10.252.167.50:8021
 ACCESS_KEY_ID=1305842310935769088
 TX_CODE=A4011LM01
@@ -261,6 +267,7 @@ agent history clear         # 清空历史
 **目标**: 搭建项目基础，实现基本CLI框架
 
 **任务清单**:
+
 - [ ] 初始化项目结构
 - [ ] 配置TypeScript编译
 - [ ] 设置package.json脚本
@@ -270,6 +277,7 @@ agent history clear         # 清空历史
 - [ ] 编写单元测试框架
 
 **交付物**:
+
 - 可执行的CLI工具
 - 支持config init命令
 - 基础命令行框架
@@ -281,6 +289,7 @@ agent history clear         # 清空历史
 **目标**: 实现内网API调用和上下文管理
 
 **任务清单**:
+
 - [ ] 实现API适配器 (adapter.ts)
 - [ ] 实现上下文管理器 (context-manager.ts)
 - [ ] 实现任务解析器 (task-parser.ts)
@@ -289,6 +298,7 @@ agent history clear         # 清空历史
 - [ ] 添加流式响应支持 (可选)
 
 **交付物**:
+
 - agent命令可用
 - 支持多轮对话
 - API调用正常工作
@@ -300,6 +310,7 @@ agent history clear         # 清空历史
 **目标**: 实现代码读取、编辑和搜索功能
 
 **任务清单**:
+
 - [ ] 实现代码操作器 (code-operator.ts)
 - [ ] 实现文件读写功能
 - [ ] 实现代码搜索功能 (glob + grep)
@@ -308,6 +319,7 @@ agent history clear         # 清空历史
 - [ ] 实现差异对比 (diff.ts)
 
 **交付物**:
+
 - agent edit命令可用
 - agent search命令可用
 - 安全的备份机制
@@ -319,6 +331,7 @@ agent history clear         # 清空历史
 **目标**: 完善功能，提升用户体验
 
 **任务清单**:
+
 - [ ] 交互式确认机制 (Inquirer.js)
 - [ ] 美化终端输出 (Chalk + Ora)
 - [ ] 添加历史记录管理
@@ -328,6 +341,7 @@ agent history clear         # 清空历史
 - [ ] 编写使用文档
 
 **交付物**:
+
 - 功能完整的CLI工具
 - 完善的文档和测试
 
@@ -336,6 +350,7 @@ agent history clear         # 清空历史
 ### Phase 5 - 优化与扩展 (可选)
 
 **任务清单**:
+
 - [ ] 性能优化 (大文件处理)
 - [ ] 支持自定义提示词
 - [ ] 添加代码模板功能
@@ -345,6 +360,7 @@ agent history clear         # 清空历史
 ## 十一、关键代码示例
 
 ### API适配器示例
+
 ```typescript
 // src/api/adapter.ts
 import axios from 'axios';
@@ -386,7 +402,7 @@ interface InternalAPIResponse {
   'C-Response-Desc': string;
   'C-Response-Body': {
     codeid: string;
-    'Data_Enqr_Rslt': string;
+    Data_Enqr_Rslt: string;
   };
 }
 
@@ -447,7 +463,7 @@ export class ChatAPIAdapter {
         {
           headers: {
             'Content-Type': 'application/json',
-            'Access_Key_Id': this.config.access_key_id,
+            Access_Key_Id: this.config.access_key_id,
             'Tx-Code': this.config.tx_code,
             'Sec-Node-No': this.config.sec_node_no,
             'Trace-Id': traceId,
@@ -477,9 +493,7 @@ export class ChatAPIAdapter {
       return result.choices[0].messages.content;
     } catch (error) {
       if (axios.isAxiosError(error)) {
-        throw new Error(
-          `API调用失败: ${error.response?.status} ${error.response?.statusText}`
-        );
+        throw new Error(`API调用失败: ${error.response?.status} ${error.response?.statusText}`);
       }
       throw error;
     }
@@ -502,6 +516,7 @@ export class ChatAPIAdapter {
 ```
 
 ### 代码操作器示例
+
 ```typescript
 // src/core/code-operator.ts
 import fs from 'fs-extra';
@@ -516,11 +531,7 @@ export class CodeOperator {
     }
   }
 
-  async editFile(
-    path: string,
-    oldContent: string,
-    newContent: string
-  ): Promise<void> {
+  async editFile(path: string, oldContent: string, newContent: string): Promise<void> {
     const content = await this.readFile(path);
     if (!content.includes(oldContent)) {
       throw new Error('未找到要替换的代码');
@@ -532,7 +543,7 @@ export class CodeOperator {
 
   showDiff(oldContent: string, newContent: string): string {
     return diffLines(oldContent, newContent)
-      .map(part => {
+      .map((part) => {
         const prefix = part.added ? '+' : part.removed ? '-' : ' ';
         return prefix + part.value;
       })
@@ -542,6 +553,7 @@ export class CodeOperator {
 ```
 
 ### CLI主入口示例
+
 ```typescript
 // src/index.ts
 #!/usr/bin/env node

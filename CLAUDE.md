@@ -7,6 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 This is **GG CODE** - a TypeScript CLI application that implements an AI-powered code editing assistant inspired by Claude Code and OpenCode. It connects to an internal network chat API and provides interactive chat with autonomous code editing capabilities.
 
 **Key Technologies:**
+
 - TypeScript (Node.js >= 16.0.0)
 - Commander.js for CLI interface
 - Custom internal network API with double JSON serialization
@@ -67,6 +68,7 @@ Internal Network API (double JSON serialization)
 ### Key Components
 
 **Tool Engine** (`src/core/tool-engine.ts`)
+
 - Central registry for all tools (Read, Edit, Write, Glob, Grep, Bash, etc.)
 - Tool permission levels: `safe`, `local-modify`, `network`, `dangerous`
 - Tools with `safe` permission auto-execute without confirmation
@@ -74,6 +76,7 @@ Internal Network API (double JSON serialization)
 - Enhanced tools include smart features (file suggestions, binary detection)
 
 **Context Management** (`src/core/context-manager.ts`)
+
 - Dual message format support: legacy `Message` and enhanced `EnhancedMessage`
 - Session-isolated history files (`.agent-history-{sessionId}.json`)
 - System prompt tracking with `systemPromptSet` flag
@@ -81,6 +84,7 @@ Internal Network API (double JSON serialization)
 - Automatic pruning when exceeding limits
 
 **Context Compactor** (`src/core/context-compactor.ts`)
+
 - Intelligent pruning: protects recent 4000 tokens of tool calls
 - Two-stage compression: trim tool outputs, then remove old messages
 - Preserves last 2 conversation rounds completely
@@ -88,6 +92,7 @@ Internal Network API (double JSON serialization)
 - Configurable compression thresholds
 
 **Session Manager** (`src/core/session-manager.ts`)
+
 - Multi-session support with isolated histories
 - Session persistence in `.agent-sessions/` directory
 - Session types: default, explore, build, plan
@@ -95,17 +100,20 @@ Internal Network API (double JSON serialization)
 - Inactive session cleanup (configurable age threshold)
 
 **Interrupt Manager** (`src/core/interrupt.ts`)
+
 - P-key interrupt support during AI thinking or tool execution
 - Graceful cleanup with readline recreation
 - Global singleton pattern
 
 **Agent Orchestrator** (`src/core/agent.ts`)
+
 - Multi-agent coordination (default, explore, build, plan, general)
 - Permission-based tool approval workflow
 - Session state management
 - Iterative tool calling until completion or max iterations
 
 **Slash Commands** (`src/commands/slash-commands.ts`)
+
 - `/init` - Create/update project documentation (AGENTS.md)
 - `/models [model]` - List or switch AI models
 - `/session new/list/switch/delete` - Session management
@@ -114,6 +122,7 @@ Internal Network API (double JSON serialization)
 - `/test` - Test interactive selection features
 
 **Interactive Prompts** (`src/utils/prompt.ts`)
+
 - `select()` - Single-choice menu with arrow key navigation
 - `multiSelect()` - Multi-choice with space toggle
 - `confirm()` - Yes/no confirmation dialog
@@ -122,15 +131,17 @@ Internal Network API (double JSON serialization)
 
 ### Configuration System
 
-Configuration file: `./config/config.yaml` or `.ggrc.json`
+Configuration file: `~/.ggcode/config.json` or `.ggrc.json`
 
 Key sections:
+
 - `api` - API endpoint, auth headers, model settings
 - `agent` - Context limits, backup settings, file size limits, max iterations
 - `prompts` - System prompt template paths
 
 **Critical: Double JSON Serialization**
 The internal API requires nested JSON:
+
 ```typescript
 {
   Data_cntnt: JSON.stringify({
@@ -156,6 +167,7 @@ User can approve: once, all (for session), or reject.
 ### Message System
 
 **Legacy Format** (backward compatible):
+
 ```typescript
 interface Message {
   role: 'user' | 'assistant' | 'system';
@@ -164,11 +176,12 @@ interface Message {
 ```
 
 **Enhanced Format** (new, multi-part messages):
+
 ```typescript
 interface EnhancedMessage {
   id: string;
   role: 'user' | 'assistant' | 'system';
-  parts: MessagePart[];  // Multiple parts per message
+  parts: MessagePart[]; // Multiple parts per message
   timestamp: number;
   agent?: string;
 }

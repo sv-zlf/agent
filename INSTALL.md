@@ -31,6 +31,7 @@
 ### 步骤 1：选择安装位置
 
 将 `dist-exe` 文件夹复制到您想要的目录，例如：
+
 ```
 C:\Program Files\GGCode
 ```
@@ -89,6 +90,7 @@ ggcode --help
 ### Q: 运行 `ggcode` 命令提示"不是内部或外部命令"？
 
 A: 请确保：
+
 1. 已将安装目录添加到 PATH 环境变量
 2. **关闭所有终端窗口后重新打开**
 3. 以管理员身份运行 install.bat
@@ -100,6 +102,7 @@ A: 请右键点击 `install.bat`，选择"以管理员身份运行"
 ### Q: 安装后命令不可用？
 
 A: 尝试以下步骤：
+
 1. 重启电脑
 2. 手动检查 PATH 环境变量是否包含安装目录
 3. 直接运行完整路径测试：`C:\Program Files\GGCode\ggcode.exe --version`
@@ -115,6 +118,7 @@ A: 编辑 `install.bat`，修改第 9 行的 `INSTALL_DIR` 变量。
 ### 环境变量修改
 
 安装脚本会使用 `setx` 命令永久修改系统 PATH：
+
 ```batch
 setx PATH "%PATH%;%INSTALL_DIR%" /M
 ```
@@ -122,6 +126,7 @@ setx PATH "%PATH%;%INSTALL_DIR%" /M
 ### 文件结构
 
 安装后的目录结构：
+
 ```
 C:\Program Files\GGCode\
 ├── ggcode.exe           # 主程序
@@ -133,7 +138,7 @@ C:\Program Files\GGCode\
 
 ### 配置文件位置
 
-用户配置文件位于：`%USERPROFILE%\.ggcode\config.yaml`
+用户配置文件位于：`%USERPROFILE%\.ggcode\config.json`
 
 ---
 

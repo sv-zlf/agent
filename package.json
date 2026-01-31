@@ -89,9 +89,9 @@
     ],
     "outputPath": "dist-exe",
     "assets": [
-      "prompts/**/*",
-      "bin/**/*",
-      "config/**/*"
+      "dist/tools/prompts/**/*",
+      "dist/prompts/**/*",
+      "bin/**/*"
     ]
   },
   "jest": {
