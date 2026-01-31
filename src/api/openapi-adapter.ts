@@ -108,6 +108,7 @@ export class OpenAPIAdapter {
     try {
       const result = await withRetry(chatFn, {
         ...RETRY_CONFIG.API,
+        abortSignal: options?.abortSignal, // 传递 abortSignal
         retryOn: (error) => {
           if (error instanceof APIError) {
             const code = error.code;

@@ -10,9 +10,10 @@ export interface RetryOptions {
   backoffMultiplier?: number;
   retryOn?: (error: unknown) => boolean;
   onRetry?: (error: unknown, attempt: number) => void;
+  abortSignal?: AbortSignal;
 }
 
-const DEFAULT_OPTIONS: Required<RetryOptions> = {
+const DEFAULT_OPTIONS: Omit<Required<RetryOptions>, 'abortSignal'> = {
   maxRetries: 3,
   initialDelay: 1000,
   maxDelay: 30000,
@@ -53,6 +54,11 @@ export async function withRetry<T>(
   let lastError: unknown;
 
   for (let attempt = 0; attempt <= opts.maxRetries; attempt++) {
+    // 检查是否已中止
+    if (opts.abortSignal?.aborted) {
+      throw new Error('操作已被用户中断');
+    }
+
     try {
       const data = await fn();
       return {
@@ -98,11 +104,34 @@ export async function withRetry<T>(
 
       opts.onRetry(error, attempt + 1);
 
+      // 可中断的延迟等待
       const delay = Math.min(
         opts.initialDelay * Math.pow(opts.backoffMultiplier, attempt),
         opts.maxDelay
       );
-      await new Promise((resolve) => setTimeout(resolve, delay));
+
+      // 使用支持 abortSignal 的延迟
+      await new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => resolve(), delay);
+
+        // 监听 abort 信号
+        if (opts.abortSignal) {
+          const onAbort = () => {
+            clearTimeout(timeout);
+            reject(new Error('操作已被用户中断'));
+          };
+
+          // 如果已经中止，立即拒绝
+          if (opts.abortSignal.aborted) {
+            clearTimeout(timeout);
+            reject(new Error('操作已被用户中断'));
+            return;
+          }
+
+          // 添加中止监听器
+          opts.abortSignal.addEventListener('abort', onAbort, { once: true });
+        }
+      });
     }
   }
 
