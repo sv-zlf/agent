@@ -34,6 +34,13 @@ const DEFAULT_CONFIG: AgentConfig = {
     max_iterations: 20,
     auto_approve: false,
   },
+  sessions: {
+    max_sessions: 20, // 最多保留20个会话
+    max_inactive_days: 30, // 30天未活跃的会话将被清理
+    auto_cleanup: true, // 启用自动清理
+    cleanup_interval_hours: 24, // 每24小时检查一次
+    preserve_recent_sessions: 5, // 最近5个会话不受时间限制
+  },
 };
 
 /**

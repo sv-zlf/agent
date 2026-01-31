@@ -140,6 +140,8 @@ export const MultiEditTool = defineTool('multiedit', {
       const validation = validateEditOperations(edits);
       if (!validation.valid) {
         return {
+          success: false,
+          error: validation.error!,
           title: 'MultiEdit 验证失败',
           output: validation.error!,
           metadata: { error: true, validationFailed: true },
@@ -163,6 +165,8 @@ export const MultiEditTool = defineTool('multiedit', {
             originalContent = null; // 新文件不需要回滚
           } else {
             return {
+              success: false,
+              error: `File not found: ${filePath}`,
               title: 'MultiEdit 失败',
               output: `文件不存在: ${filePath}\n\n提示: 如要创建新文件，第一个编辑操作应使用空 oldString`,
               metadata: { error: true, notFound: true },
@@ -236,6 +240,8 @@ export const MultiEditTool = defineTool('multiedit', {
           });
 
           return {
+            success: false,
+            error: `MultiEdit failed at step ${i + 1}`,
             title: `MultiEdit 失败 (${results.filter((r) => r.success).length}/${edits.length} 成功)`,
             output: formatMultiEditResults(filePath, results, edits.length),
             metadata: {
@@ -274,6 +280,8 @@ export const MultiEditTool = defineTool('multiedit', {
       };
     } catch (error: any) {
       return {
+        success: false,
+        error: `MultiEdit error: ${error.message}`,
         title: 'MultiEdit 错误',
         output: `执行 MultiEdit 时出错: ${error.message}`,
         metadata: { error: true },

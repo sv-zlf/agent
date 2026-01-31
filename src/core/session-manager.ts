@@ -6,6 +6,7 @@
 import * as fs from 'fs-extra';
 import * as path from 'path';
 import * as crypto from 'crypto';
+import type { SessionManagementConfig } from '../types';
 import { createLogger, getSessionsDir, getCurrentSessionFile } from '../utils';
 
 const logger = createLogger(false);
@@ -59,6 +60,7 @@ export interface SessionSummary {
 export interface SessionConfig {
   sessionsDir: string;
   currentSessionFile: string;
+  sessionLimits?: SessionManagementConfig;
 }
 
 /**
@@ -68,6 +70,7 @@ export class SessionManager {
   private sessions: Map<string, Session> = new Map();
   private currentSessionId: string | null = null;
   private config: SessionConfig;
+  private lastCleanupTime: number = 0;
 
   constructor(config: SessionConfig) {
     this.config = config;
@@ -86,6 +89,9 @@ export class SessionManager {
     // 加载当前会话
     await this.loadCurrentSession();
 
+    // 执行清理检查（如果启用）
+    await this.performAutoCleanup();
+
     logger.debug(
       `SessionManager 初始化完成: ${this.sessions.size} 个会话, 当前: ${this.currentSessionId || '无'}`
     );
@@ -99,6 +105,9 @@ export class SessionManager {
     agentType: string = 'default',
     parentID?: string
   ): Promise<Session> {
+    // 检查会话数量限制
+    await this.enforceSessionLimits();
+
     // 验证agentType
     const validAgentTypes = ['default', 'explore', 'build', 'plan'];
     if (!validAgentTypes.includes(agentType)) {
@@ -355,21 +364,103 @@ export class SessionManager {
   }
 
   /**
+   * 强制执行会话数量限制
+   */
+  private async enforceSessionLimits(): Promise<void> {
+    if (!this.config.sessionLimits) {
+      return;
+    }
+
+    const { max_sessions, preserve_recent_sessions } = this.config.sessionLimits;
+
+    if (this.sessions.size >= max_sessions) {
+      logger.debug(`会话数量达到限制 (${this.sessions.size}/${max_sessions})，执行清理`);
+
+      // 获取所有会话，按最后活跃时间排序
+      const allSessions = Array.from(this.sessions.values()).sort(
+        (a, b) => b.lastActiveAt - a.lastActiveAt
+      );
+
+      // 保留最近的前N个会话和当前会话
+      const toKeep = new Set<string>();
+
+      // 添加当前会话
+      if (this.currentSessionId) {
+        toKeep.add(this.currentSessionId);
+      }
+
+      // 添加最近的前N个会话
+      const recentSessions = allSessions
+        .filter((s) => !toKeep.has(s.id))
+        .slice(0, preserve_recent_sessions);
+      recentSessions.forEach((s) => toKeep.add(s.id));
+
+      // 找出需要删除的会话
+      const toDelete = allSessions.filter((s) => !toKeep.has(s.id)).map((s) => s.id);
+
+      // 删除超出限制的会话
+      for (const sessionId of toDelete) {
+        await this.deleteSession(sessionId);
+      }
+
+      if (toDelete.length > 0) {
+        logger.info(`清理了 ${toDelete.length} 个旧会话以保持数量限制`);
+      }
+    }
+  }
+
+  /**
    * 清理不活跃的会话
    */
-  async cleanupInactiveSessions(maxAge = 30 * 24 * 60 * 60 * 1000): Promise<number> {
+  async cleanupInactiveSessions(maxAge?: number): Promise<number> {
+    if (!this.config.sessionLimits) {
+      return 0;
+    }
+
     const now = Date.now();
+    const maxInactiveAge =
+      maxAge || this.config.sessionLimits.max_inactive_days * 24 * 60 * 60 * 1000;
+    const { preserve_recent_sessions } = this.config.sessionLimits;
+
     const toDelete: string[] = [];
 
-    for (const [id, session] of this.sessions) {
-      const age = now - session.lastActiveAt;
-      if (age > maxAge && id !== this.currentSessionId) {
-        toDelete.push(id);
+    // 获取所有会话，按最后活跃时间排序
+    const allSessions = Array.from(this.sessions.entries()).sort(
+      ([, a], [, b]) => b.lastActiveAt - a.lastActiveAt
+    );
+
+    // 保留当前会话和最近的前N个会话
+    const toKeep = new Set<string>();
+
+    // 添加当前会话
+    if (this.currentSessionId) {
+      toKeep.add(this.currentSessionId);
+    }
+
+    // 添加最近的前N个会话（不受时间限制）
+    const recentSessions = allSessions
+      .filter(([id]) => !toKeep.has(id))
+      .slice(0, preserve_recent_sessions);
+    recentSessions.forEach(([id]) => toKeep.add(id));
+
+    // 检查其余会话的活跃时间
+    for (const [id, session] of allSessions) {
+      if (!toKeep.has(id)) {
+        const age = now - session.lastActiveAt;
+        if (age > maxInactiveAge) {
+          toDelete.push(id);
+        }
       }
     }
 
     for (const id of toDelete) {
       await this.deleteSession(id);
+    }
+
+    if (toDelete.length > 0) {
+      logger.info(
+        `清理了 ${toDelete.length} 个超过 ${Math.round(maxInactiveAge / (24 * 60 * 60 * 1000))} 天未活跃的会话`
+      );
     }
 
     return toDelete.length;
@@ -583,6 +674,84 @@ export class SessionManager {
     return Array.from(this.sessions.values())
       .filter((s) => s.parentID === sessionId)
       .sort((a, b) => b.createdAt - a.createdAt);
+  }
+
+  /**
+   * 执行自动清理检查
+   */
+  private async performAutoCleanup(): Promise<void> {
+    if (!this.config.sessionLimits?.auto_cleanup) {
+      return;
+    }
+
+    const now = Date.now();
+    const { cleanup_interval_hours } = this.config.sessionLimits;
+    const cleanupInterval = cleanup_interval_hours * 60 * 60 * 1000;
+
+    // 检查是否需要进行清理
+    if (now - this.lastCleanupTime >= cleanupInterval) {
+      logger.debug('执行自动会话清理');
+
+      const cleanedCount = await this.cleanupInactiveSessions();
+      this.lastCleanupTime = now;
+
+      if (cleanedCount > 0) {
+        logger.info(`自动清理完成，删除了 ${cleanedCount} 个会话`);
+      }
+    }
+  }
+
+  /**
+   * 手动触发会话清理
+   */
+  async manualCleanup(): Promise<{ sessionsCleaned: number; message: string }> {
+    const cleanedCount = await this.cleanupInactiveSessions();
+    this.lastCleanupTime = Date.now();
+
+    return {
+      sessionsCleaned: cleanedCount,
+      message: cleanedCount > 0 ? `清理了 ${cleanedCount} 个过期会话` : '没有需要清理的会话',
+    };
+  }
+
+  /**
+   * 获取会话统计信息
+   */
+  getSessionStats(): {
+    total: number;
+    current: string | null;
+    oldestSession: Date | null;
+    oldestSessionDays: number | null;
+    averageAge: number;
+  } {
+    const sessions = Array.from(this.sessions.values());
+    const now = Date.now();
+
+    if (sessions.length === 0) {
+      return {
+        total: 0,
+        current: null,
+        oldestSession: null,
+        oldestSessionDays: null,
+        averageAge: 0,
+      };
+    }
+
+    const ages = sessions.map((s) => now - s.createdAt);
+    const totalAge = ages.reduce((sum, age) => sum + age, 0);
+    const averageAge = totalAge / ages.length;
+
+    const oldestSession = sessions.reduce((oldest, current) =>
+      current.createdAt < oldest.createdAt ? current : oldest
+    );
+
+    return {
+      total: sessions.length,
+      current: this.currentSessionId,
+      oldestSession: new Date(oldestSession.createdAt),
+      oldestSessionDays: Math.floor((now - oldestSession.createdAt) / (24 * 60 * 60 * 1000)),
+      averageAge: Math.floor(averageAge / (24 * 60 * 60 * 1000)),
+    };
   }
 
   /**

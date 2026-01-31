@@ -7,6 +7,16 @@ export { select, confirm, question, multiSelect } from './prompt';
 export type { SelectOption, SelectConfig } from './prompt';
 export { truncateOutput, cleanupOldTruncationFiles, formatTruncateStats } from './truncation';
 export type { TruncateOptions, TruncateResult, TruncateStats } from './truncation';
+export {
+  renderMarkdown,
+  renderMarkdownSimple,
+  renderDiff,
+  renderCode,
+  renderKeyValue,
+  hasMarkdown,
+  smartRender,
+} from './markdown';
+// MarkdownOptions 类型已在使用时内联定义，不单独导出
 
 /**
  * 获取系统根目录下的 .ggcode 路径

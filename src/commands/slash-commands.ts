@@ -18,7 +18,8 @@ export interface CommandResult {
   shouldContinue: boolean; // 是否继续执行（false 表示命令处理后停止）
   message?: string; // 可选的返回消息
   systemPrompt?: string; // 可选的系统提示词更新
-  sessionSwitched?: { // 会话切换信息
+  sessionSwitched?: {
+    // 会话切换信息
     sessionId: string;
     historyFile: string;
   };
@@ -1013,9 +1014,49 @@ export class CommandManager {
         return { shouldContinue: false };
       }
 
+      case 'cleanup': {
+        console.log(chalk.cyan('\n🧹 会话清理\n'));
+
+        // 显示当前统计信息
+        const stats = sessionManager.getSessionStats();
+        console.log(chalk.blue(`当前会话统计:`));
+        console.log(chalk.gray(`  总数: ${stats.total}`));
+        console.log(
+          chalk.gray(`  当前: ${stats.current ? stats.current.substring(0, 8) + '...' : '无'}`)
+        );
+        if (stats.oldestSession) {
+          console.log(
+            chalk.gray(
+              `  最旧会话: ${stats.oldestSession.toLocaleString('zh-CN')} (${stats.oldestSessionDays}天前)`
+            )
+          );
+        }
+        console.log(chalk.gray(`  平均年龄: ${stats.averageAge}天\n`));
+
+        // 询问是否执行清理
+        const shouldCleanup = await confirm('是否立即执行会话清理？', false);
+
+        if (shouldCleanup) {
+          try {
+            const result = await sessionManager.manualCleanup();
+            console.log(chalk.green(`✓ ${result.message}\n`));
+
+            // 显示清理后的统计
+            const newStats = sessionManager.getSessionStats();
+            console.log(chalk.blue(`清理后统计:`));
+            console.log(chalk.gray(`  总数: ${newStats.total}`));
+          } catch (error) {
+            console.log(chalk.red(`✗ 清理失败: ${(error as Error).message}\n`));
+          }
+        }
+
+        return { shouldContinue: false };
+      }
+
       default:
         console.log(chalk.red(`✗ 未知的命令: ${command}\n`));
-        console.log(chalk.gray('可用命令: status, list, fork, rename, export, import\n'));
+        console.log(chalk.gray('可用命令: status, list, fork, rename, export, import, cleanup\n'));
+        console.log(chalk.gray('  cleanup - 清理过期会话（基于配置的保留规则）\n'));
         return { shouldContinue: false };
     }
   }

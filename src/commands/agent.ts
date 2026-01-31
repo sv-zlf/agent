@@ -15,10 +15,12 @@ import {
 import { executeAPIRequest, API_PRIORITY } from '../core/api-concurrency';
 import { getBuiltinTools } from '../tools';
 import { PermissionManager, PermissionAction } from '../core/permissions';
-import { createLogger } from '../utils';
+import { createLogger, getSessionsDir, getCurrentSessionFile } from '../utils';
 import { displayBanner } from '../utils/logo';
 import { createCommandManager, type CommandResult } from './slash-commands';
 import { readFileSync } from 'fs';
+import { renderMarkdown } from '../utils/markdown';
+import type { ToolDefinition } from '../types';
 
 const logger = createLogger();
 
@@ -60,7 +62,9 @@ function printAssistantMessage(message: string): void {
   if (!message || !message.trim()) {
     return; // 不打印空消息
   }
-  console.log(chalk.magenta('● ') + chalk.white(message));
+  // 渲染 Markdown 格式
+  const rendered = renderMarkdown(message, { colors: true });
+  console.log(chalk.magenta('● ') + rendered);
 }
 
 function printCompactAssistant(response: string): void {
@@ -69,11 +73,111 @@ function printCompactAssistant(response: string): void {
   console.log(chalk.magenta('● ') + brief);
 }
 
-function printCompactToolCall(tool: string, params: Record<string, unknown>): void {
+/**
+ * Get tool definition by name
+ */
+function getToolInfo(toolName: string, toolEngine: any): ToolDefinition | undefined {
+  return toolEngine.getTool(toolName);
+}
+
+/**
+ * Get permission level description
+ */
+function getPermissionDescription(permission: string): string {
+  const descriptions: Record<string, string> = {
+    safe: '只读操作，无副作用',
+    'local-modify': '会修改本地文件',
+    network: '会进行网络请求',
+    dangerous: '执行系统命令，可能有危险',
+  };
+  return descriptions[permission] || permission;
+}
+
+/**
+ * Get permission level color
+ */
+function getPermissionColor(permission: string): chalk.Chalk {
+  const colors: Record<string, chalk.Chalk> = {
+    safe: chalk.green,
+    'local-modify': chalk.yellow,
+    network: chalk.blue,
+    dangerous: chalk.red,
+  };
+  return colors[permission] || chalk.gray;
+}
+
+/**
+ * Print enhanced tool call with detailed information
+ */
+function printCompactToolCall(
+  tool: string,
+  params: Record<string, unknown>,
+  _toolEngine: any
+): void {
   const paramsStr = Object.entries(params)
     .map(([k, v]) => `${k}=${JSON.stringify(v)}`)
     .join(', ');
   console.log(chalk.yellow('● ') + chalk.cyan(tool) + (paramsStr ? `(${paramsStr})` : ''));
+}
+
+/**
+ * Print detailed tool information for permission prompt
+ */
+function printDetailedToolInfo(
+  tool: string,
+  params: Record<string, unknown>,
+  toolEngine: any
+): void {
+  const toolInfo = getToolInfo(tool, toolEngine);
+  if (!toolInfo) {
+    printCompactToolCall(tool, params, toolEngine);
+    return;
+  }
+
+  // Header
+  console.log(chalk.bold.cyan(`\n┌─ ${tool} ──────────────────────────────────────────────`));
+  console.log(chalk.bold.cyan('│'));
+
+  // Description
+  console.log(
+    chalk.bold.cyan('│ ') + chalk.white.bold('📝 描述: ') + chalk.white(toolInfo.description)
+  );
+
+  // Permission level
+  const permColor = getPermissionColor(toolInfo.permission);
+  console.log(
+    chalk.bold.cyan('│ ') +
+      chalk.white.bold('🔒 权限: ') +
+      permColor(`● ${toolInfo.permission}`) +
+      chalk.gray(` (${getPermissionDescription(toolInfo.permission)})`)
+  );
+
+  // Category
+  console.log(
+    chalk.bold.cyan('│ ') + chalk.white.bold('📂 类别: ') + chalk.white(toolInfo.category)
+  );
+
+  // Parameters
+  if (Object.keys(params).length > 0) {
+    console.log(chalk.bold.cyan('│ ') + chalk.white.bold('⚙️  参数:'));
+    for (const [key, value] of Object.entries(params)) {
+      const paramDef = toolInfo.parameters[key];
+      const valueStr = JSON.stringify(value);
+      const valuePreview = valueStr.length > 50 ? valueStr.substring(0, 50) + '...' : valueStr;
+
+      console.log(
+        chalk.bold.cyan('│   ') +
+          chalk.yellow(`${key}: `) +
+          chalk.gray(paramDef?.description || '') +
+          (paramDef?.required ? chalk.red(' *') : chalk.gray(' (可选)'))
+      );
+      console.log(chalk.bold.cyan('│     ') + chalk.dim(`= ${valuePreview}`));
+    }
+  }
+
+  // Footer
+  console.log(chalk.bold.cyan('│'));
+  console.log(chalk.bold.cyan('└──────────────────────────────────────────────────────────'));
 }
 
 function printToolCompactResult(
@@ -164,7 +268,11 @@ export const agentCommand = new Command('agent')
     });
 
     // 创建会话管理器
-    const sessionManager = createSessionManager();
+    const sessionManager = createSessionManager({
+      sessionsDir: getSessionsDir(),
+      currentSessionFile: getCurrentSessionFile(),
+      sessionLimits: config.get().sessions,
+    });
     await sessionManager.initialize();
 
     // 如果指定了 agent，更新会话类型
@@ -715,7 +823,7 @@ export const agentCommand = new Command('agent')
 
               // 显示工具调用（紧凑格式）
               for (const call of toolCalls) {
-                printCompactToolCall(call.tool, call.parameters);
+                printCompactToolCall(call.tool, call.parameters, toolEngine);
               }
 
               const toolResults: any[] = [];
@@ -765,12 +873,12 @@ export const agentCommand = new Command('agent')
 
                   // 如果需要确认但未自动批准
                   if (needsApproval && !approved) {
-                    // 显示工具调用（紧凑格式）
-                    printCompactToolCall(call.tool, call.parameters);
+                    // 显示详细工具信息
+                    printDetailedToolInfo(call.tool, call.parameters, toolEngine);
 
                     // 如果有权限原因，显示原因
                     if (permissionResult.reason) {
-                      console.log(chalk.gray(`  ${permissionResult.reason}`));
+                      console.log(chalk.yellow(`⚠️  ${permissionResult.reason}`));
                     }
 
                     const choice = await askForApproval();
@@ -884,9 +992,7 @@ export const agentCommand = new Command('agent')
                 contextManager.addMessage('user', '\n\n请分析上述错误，修正后重试。');
               }
 
-
               // 工具执行完成，显示分隔线
-
             } catch (roundError) {
               // 单轮工具调用出错，记录错误并继续
               console.log(chalk.red(`\n❌ 工具调用轮次错误: ${(roundError as Error).message}`));
@@ -989,11 +1095,16 @@ export const agentCommand = new Command('agent')
     // 辅助函数：询问是否批准（使用按键监听）
     const askForApproval = (): Promise<'yes-once' | 'yes-all' | 'no'> => {
       return new Promise((resolve) => {
-        console.log(chalk.gray('    按键选择:\n'));
-        console.log(chalk.green('        1     - 仅同意当前操作 (yes)\n'));
-        console.log(chalk.yellow('        2     - 同意当前及后续所有操作 (all)\n'));
-        console.log(chalk.red('        3     - 拒绝，停止当前操作 (no)\n'));
-        console.log(chalk.cyan('    [按 1/2/3 键快速选择]\n'));
+        console.log(chalk.gray('\n═ 按键选择 ════════════════════════════════════════════\n'));
+        console.log(chalk.green('  [1] ') + chalk.white('仅同意当前操作') + chalk.gray(' (yes)\n'));
+        console.log(
+          chalk.yellow('  [2] ') + chalk.white('同意当前及后续所有操作') + chalk.gray(' (all)\n')
+        );
+        console.log(
+          chalk.red('  [3] ') + chalk.white('拒绝，停止当前操作') + chalk.gray(' (no)\n')
+        );
+        console.log(chalk.cyan('═════════════════════════════════════════════════════════\n'));
+        console.log(chalk.dim('  按 1/2/3 键快速选择...\n'));
 
         // 设置按键监听
         setupKeyListener(resolve);
@@ -1023,11 +1134,20 @@ export const agentCommand = new Command('agent')
 
           // Add helpful hints for common errors
           if (result.error?.includes('Unknown tool')) {
-            lines.push(`\nHint: Tool names are case-sensitive. Available tools: ${Array.from(toolEngine.getAllTools().map(t => t.name)).join(', ')}`);
+            lines.push(
+              `\nHint: Tool names are case-sensitive. Available tools: ${Array.from(toolEngine.getAllTools().map((t) => t.name)).join(', ')}`
+            );
           } else if (result.error?.includes('Missing required parameter')) {
-            lines.push(`\nHint: Check that all required parameters are provided in snake_case format (e.g., file_path not filePath)`);
-          } else if (result.error?.includes('tool call format') || result.error?.includes('parse')) {
-            lines.push(`\nHint: Tool calls must be valid JSON in code blocks. Use format: {"tool": "ToolName", "parameters": {...}}`);
+            lines.push(
+              `\nHint: Check that all required parameters are provided in snake_case format (e.g., file_path not filePath)`
+            );
+          } else if (
+            result.error?.includes('tool call format') ||
+            result.error?.includes('parse')
+          ) {
+            lines.push(
+              `\nHint: Tool calls must be valid JSON in code blocks. Use format: {"tool": "ToolName", "parameters": {...}}`
+            );
           }
         }
         lines.push(''); // 空行分隔

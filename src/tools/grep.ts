@@ -111,6 +111,8 @@ export const GrepTool = defineTool('grep', {
       };
     } catch (error: any) {
       return {
+        success: false,
+        error: `Error searching content: ${error.message}`,
         title: 'Grep Error',
         output: `Error searching content: ${error.message}`,
         metadata: { error: true },

@@ -38,6 +38,8 @@ export const WriteTool = defineTool('write', {
       };
     } catch (error: any) {
       return {
+        success: false,
+        error: `Error writing file: ${error.message}`,
         title: 'Write Error',
         output: `Error writing file: ${error.message}`,
         metadata: { error: true },

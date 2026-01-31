@@ -83,6 +83,8 @@ export const GlobTool = defineTool('glob', {
       };
     } catch (error: any) {
       return {
+        success: false,
+        error: `Error searching files: ${error.message}`,
         title: 'Glob Error',
         output: `Error searching files: ${error.message}`,
         metadata: { error: true },

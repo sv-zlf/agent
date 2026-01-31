@@ -68,12 +68,16 @@ export const EditTool = defineTool('edit', {
     } catch (error: any) {
       if (error.code === 'ENOENT') {
         return {
+          success: false,
+          error: `Edit failed: file not found`,
           title: 'Edit Failed',
           output: `Edit failed: file not found\n\nFile does not exist: ${filePath}\n\nUse the Write tool to create new files.`,
           metadata: { error: true, notFound: true },
         };
       }
       return {
+        success: false,
+        error: `Error editing file: ${error.message}`,
         title: 'Edit Error',
         output: `Error editing file: ${error.message}`,
         metadata: { error: true },

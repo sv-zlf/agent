@@ -119,6 +119,8 @@ export const BashTool = defineTool('bash', {
       });
 
       return {
+        success: false,
+        error: `Command failed with exit code ${error.code || 1}`,
         title: `Command failed: ${command.substring(0, 50)}`,
         output: truncateResult.content,
         metadata: {

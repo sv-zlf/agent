@@ -183,7 +183,7 @@ export class ToolEngine {
           // 检查大小写不敏感匹配
           const lowerParamName = paramName.toLowerCase();
           const foundKey = Object.keys(adaptedParams).find(
-            k => k.toLowerCase() === lowerParamName
+            (k) => k.toLowerCase() === lowerParamName
           );
           if (foundKey) {
             // 找到了，重命名键为正确的格式
@@ -227,7 +227,7 @@ export class ToolEngine {
 
         // 执行工具，传入组合 abort 信号
         const execParams = {
-          ...adaptedParams,  // 使用适配后的参数
+          ...adaptedParams, // 使用适配后的参数
           __abortSignal__: combinedSignal,
           __timeout__: toolTimeout,
         };
@@ -526,7 +526,10 @@ export class ToolEngine {
   /**
    * 适配工具参数（支持 snake_case → camelCase 和大小写不敏感匹配）
    */
-  private adaptToolParameters(toolName: string, params: Record<string, unknown>): Record<string, unknown> {
+  private adaptToolParameters(
+    toolName: string,
+    params: Record<string, unknown>
+  ): Record<string, unknown> {
     const adapted = { ...params };
 
     // 定义参数映射（snake_case → camelCase）
@@ -576,7 +579,7 @@ export class ToolEngine {
         // 检查大小写不敏感匹配
         const lowerSnakeKey = snakeKey.toLowerCase();
         const matchedKey = Object.keys(adapted).find(
-          k => k.toLowerCase() === lowerSnakeKey && adapted[k] !== undefined
+          (k) => k.toLowerCase() === lowerSnakeKey && adapted[k] !== undefined
         );
         if (matchedKey) {
           adapted[camelKey] = adapted[matchedKey];

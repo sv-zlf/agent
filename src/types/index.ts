@@ -89,7 +89,7 @@ export interface InternalAPIResponse {
   'C-Response-Desc': string;
   'C-Response-Body': {
     codeid: string;
-    'Data_Enqr_Rslt': string;
+    Data_Enqr_Rslt: string;
   };
 }
 
@@ -150,6 +150,17 @@ export interface ParsedResult {
 }
 
 /**
+ * 会话管理配置
+ */
+export interface SessionManagementConfig {
+  max_sessions: number; // 最大会话数量
+  max_inactive_days: number; // 最大非活跃天数
+  auto_cleanup: boolean; // 是否自动清理
+  cleanup_interval_hours: number; // 清理检查间隔（小时）
+  preserve_recent_sessions: number; // 保留最近的会话数量（不受时间限制）
+}
+
+/**
  * Agent配置接口
  */
 export interface AgentConfig {
@@ -160,6 +171,7 @@ export interface AgentConfig {
     max_iterations?: number;
     auto_approve?: boolean;
   };
+  sessions?: SessionManagementConfig;
 }
 
 /**
@@ -249,12 +261,13 @@ export interface ToolCall {
  * 支持标准字段和自定义扩展字段
  */
 export interface ToolResultMetadata extends Record<string, unknown> {
-  startTime?: number;    // 开始时间戳
-  endTime?: number;      // 结束时间戳
-  duration?: number;     // 执行时长（毫秒）
-  truncated?: boolean;   // 输出是否被截断
+  startTime?: number; // 开始时间戳
+  endTime?: number; // 结束时间戳
+  duration?: number; // 执行时长（毫秒）
+  truncated?: boolean; // 输出是否被截断
   truncationFile?: string; // 截断后完整输出的存储路径
-  truncationStats?: {    // 截断统计信息
+  truncationStats?: {
+    // 截断统计信息
     totalLines: number;
     totalBytes: number;
     keptLines: number;
@@ -264,9 +277,9 @@ export interface ToolResultMetadata extends Record<string, unknown> {
     truncateReason: 'lines' | 'bytes';
   };
   attachments?: string[]; // 文件附件路径列表
-  exitCode?: number;     // 退出码（用于命令工具）
-  signal?: string;       // 中断信号（如果被中断）
-  retryCount?: number;   // 重试次数
+  exitCode?: number; // 退出码（用于命令工具）
+  signal?: string; // 中断信号（如果被中断）
+  retryCount?: number; // 重试次数
 }
 
 /**
