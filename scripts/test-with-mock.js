@@ -70,12 +70,17 @@ async function testToolCallParsing(apiAdapter) {
   log('='.repeat(60), 'cyan');
 
   try {
+    // 明确选择工具调用解析测试场景
+    apiAdapter.selectScenario('tool-call-parsing');
+
     const message = {
       role: 'user',
       content: '请读取 src/test.ts 文件',
     };
 
     const response = await apiAdapter.chat([message]);
+
+    info(`响应内容: ${response.substring(0, 100)}...`);
 
     // 检查响应中是否包含工具调用标记
     const hasToolCall = response.includes('<tool>') || response.includes('⮐');
@@ -84,6 +89,7 @@ async function testToolCallParsing(apiAdapter) {
       return true;
     } else {
       error('未检测到工具调用标记');
+      info(`完整响应: ${response}`);
       return false;
     }
   } catch (err) {
@@ -166,7 +172,6 @@ async function main() {
   }
 
   // 测试工具调用解析
-  apiAdapter.resetScenario();
   results.toolCallParsing = await testToolCallParsing(apiAdapter);
 
   // 测试多轮对话

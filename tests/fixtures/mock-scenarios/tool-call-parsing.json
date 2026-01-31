@@ -1,0 +1,18 @@
+{
+  "name": "tool-call-parsing",
+  "description": "专门测试工具调用标记解析的场景",
+  "responses": [
+    {
+      "input": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "请读取 src/test.ts 文件"
+          }
+        ]
+      },
+      "output": "我会使用 Read 工具来读取文件。\n⮐\n{\"name\": \"Read\", \"parameters\": {\"filePath\": \"src/test.ts\"}}\n",
+      "delay": 100
+    }
+  ]
+}

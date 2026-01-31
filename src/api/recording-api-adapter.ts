@@ -213,7 +213,7 @@ export class RecordingAPIAdapter extends ChatAPIAdapter {
   /**
    * 回放模式：返回录制的响应
    */
-  private async chatWithPlayback(messages: Message[], options?: any): Promise<string> {
+  private async chatWithPlayback(_messages: Message[], _options?: any): Promise<string> {
     if (!this.currentSession) {
       throw new Error('未加载录制会话');
     }
