@@ -117,7 +117,7 @@ npm run agent -- -a explore    # 使用 explore agent
 ```json
 {
   "api": {
-    "mode": "A4011LM01",  // 或 "OpenApi"
+    "mode": "A4011LM01", // 或 "OpenApi"
     "base_url": "http://10.252.167.50:8021",
     "model": "DeepSeek-V3-671B_20250725"
   }
@@ -127,6 +127,7 @@ npm run agent -- -a explore    # 使用 explore agent
 **详细配置说明请查看**: [CONFIG.md](CONFIG.md)
 
 **主要配置项：**
+
 - `api.mode` - API 模式：A4011LM01（内网）或 OpenApi（外网）
 - `api.base_url` - API 基础 URL
 - `api.model` - 使用的模型名称
@@ -139,7 +140,7 @@ npm run agent -- -a explore    # 使用 explore agent
 
 ### 快捷键
 
-- **P 键**: 中断当前操作（AI思考或工具执行中）
+- **ESC 键**: 中断当前操作（AI思考或工具执行中）
 - **Ctrl+C**: 退出程序
 
 ### 内置命令
@@ -225,19 +226,23 @@ npm run clean:dist           # 只清理 dist
 项目实现了完整的工具系统，包含以下工具：
 
 **文件操作**
+
 - `Read` - 读取文件内容
 - `Write` - 写入文件
 - `Edit` - 编辑文件（字符串替换）
 - `MultiEdit` - 多次编辑同一文件
 
 **搜索工具**
+
 - `Glob` - 文件名模式搜索
 - `Grep` - 文件内容正则搜索
 
 **执行工具**
+
 - `Bash` - 执行 shell 命令
 
 **高级功能**
+
 - `Task` - 启动专门的 agent（explore 等）
 - `Batch` - 批量并行执行工具
 - `TodoWrite/Read/Delete/Clear` - 任务管理
@@ -247,6 +252,7 @@ npm run clean:dist           # 只清理 dist
 ### 1. API调用失败
 
 检查：
+
 - 网络连接是否正常
 - API配置是否正确（`~/.ggcode/config.json`）
 - 认证信息是否有效
