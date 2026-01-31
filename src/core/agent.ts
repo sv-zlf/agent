@@ -672,26 +672,32 @@ export class AgentManager {
       return agent.systemPrompt;
     }
 
-    // 否则尝试从 prompts 目录加载
+    // 优先尝试使用打包的提示词
+    const { hasPackedPrompts, getProjectPrompt } = await import('../utils/packed-prompts');
+    if (hasPackedPrompts()) {
+      const packedPrompt = getProjectPrompt(agentName);
+      if (packedPrompt) {
+        return packedPrompt;
+      }
+    }
+
+    // 回退到文件读取（开发环境）
     const fs = await import('fs/promises');
     const fsSync = await import('fs');
     const path = await import('path');
 
     // 检测运行环境：开发环境还是生产环境
     const isDev = fsSync.existsSync(path.join(process.cwd(), 'src'));
-    const promptsBasePath = path.join(
-      process.cwd(),
-      isDev ? 'src/tools/prompts' : 'dist/tools/prompts'
-    );
+    const projectPromptsBasePath = path.join(process.cwd(), isDev ? 'src/prompts' : 'dist/prompts');
 
-    const promptFile = path.join(promptsBasePath, `${agentName}.txt`);
+    const promptFile = path.join(projectPromptsBasePath, `${agentName}.txt`);
 
     try {
       const content = await fs.readFile(promptFile, 'utf-8');
       return content;
     } catch (error) {
       // 如果找不到文件，使用默认提示词
-      const defaultPromptFile = path.join(promptsBasePath, 'default.txt');
+      const defaultPromptFile = path.join(projectPromptsBasePath, 'default.txt');
       try {
         const content = await fs.readFile(defaultPromptFile, 'utf-8');
         return content;

@@ -9,6 +9,43 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 
+/**
+ * 递归复制目录
+ * @param {string} src 源目录
+ * @param {string} dest 目标目录
+ */
+function copyRecursive(src, dest) {
+  if (!fs.existsSync(dest)) {
+    fs.mkdirSync(dest, { recursive: true });
+  }
+
+  const entries = fs.readdirSync(src, { withFileTypes: true });
+
+  for (const entry of entries) {
+    const srcPath = path.join(src, entry.name);
+    const destPath = path.join(dest, entry.name);
+
+    if (entry.isDirectory()) {
+      copyRecursive(srcPath, destPath);
+    } else {
+      fs.copyFileSync(srcPath, destPath);
+    }
+  }
+}
+
+/**
+ * 格式化文件大小
+ * @param {number} bytes 字节数
+ * @returns {string} 格式化的大小
+ */
+function formatFileSize(bytes) {
+  if (bytes === 0) return '0 Bytes';
+  const k = 1024;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
 const rootDir = path.resolve(__dirname, '..');
 const packageJson = require(path.join(rootDir, 'package.json'));
 
@@ -42,18 +79,47 @@ if (!pkgInstalled) {
 // 清理并创建输出目录
 const outputDir = path.join(__dirname, '..', 'dist-exe');
 if (fs.existsSync(outputDir)) {
-  fs.rmSync(outputDir, { recursive: true, force: true });
-  console.log('✓ 清理旧的输出目录');
+  try {
+    console.log('🧹 清理旧的输出目录...');
+
+    // 在 Windows 上使用 robocopy 清理目录
+    try {
+      const tempDir = path.join(path.dirname(outputDir), 'temp-delete');
+      fs.mkdirSync(tempDir, { recursive: true });
+
+      // 使用 robocopy 镜像空目录来删除内容
+      execSync(`robocopy "${tempDir}" "${outputDir}" /MIR /NFL /NDL /NJH /NJS`, { stdio: 'pipe' });
+      fs.rmSync(tempDir, { recursive: true });
+
+      // 再次尝试删除目录
+      fs.rmSync(outputDir, { recursive: true, force: true });
+      console.log('✓ 清理旧的输出目录');
+    } catch (robocopyError) {
+      // 如果 robocopy 失败，尝试正常删除
+      try {
+        fs.rmSync(outputDir, { recursive: true, force: true });
+        console.log('✓ 清理旧的输出目录');
+      } catch (fsError) {
+        console.log('❌ 无法清理输出目录，请手动删除 dist-exe 文件夹后重试');
+        console.log(`路径: ${outputDir}`);
+        process.exit(1);
+      }
+    }
+  } catch (error) {
+    console.log('❌ 清理输出目录失败:', error.message);
+    process.exit(1);
+  }
 }
 fs.mkdirSync(outputDir, { recursive: true });
 
 // 确保项目已编译
 console.log('\n📦 编译 TypeScript...');
 try {
-  execSync('npm run build', { cwd: rootDir, stdio: 'inherit' });
+  const buildResult = execSync('npm run build', { cwd: rootDir, encoding: 'utf8' });
   console.log('✓ 编译完成\n');
-} catch (e) {
-  console.error('❌ 编译失败');
+} catch (error) {
+  console.error('\n❌ 编译失败:');
+  console.error(error.stdout || error.message);
   process.exit(1);
 }
 
@@ -72,50 +138,28 @@ try {
 
   execSync(pkgCmd, { cwd: rootDir, stdio: 'inherit' });
 
+  // 验证文件是否生成
+  if (!fs.existsSync(outputFile)) {
+    throw new Error('可执行文件未生成');
+  }
+
   console.log('\n✅ Windows 可执行文件打包完成!\n');
 } catch (error) {
-  console.error('\n❌ 打包失败:', error.message);
+  console.error('\n❌ 打包失败:');
+  console.error(error.message || error);
+
+  // 提供故障排除提示
+  console.log('\n💡 故障排除提示:');
+  console.log('  1. 确保有足够的磁盘空间');
+  console.log('  2. 检查网络连接（pkg 需要下载 Node.js 运行时）');
+  console.log('  3. 尝试更新 pkg: npm update pkg');
+
   process.exit(1);
 }
 
-// 复制必要的资源文件
-console.log('📄 复制资源文件...\n');
-
-// 创建资源目录
-const resourcesDir = path.join(outputDir, 'resources');
-fs.mkdirSync(resourcesDir, { recursive: true });
-
-// 复制 prompts 目录
-const promptsDir = path.join(rootDir, 'prompts');
-if (fs.existsSync(promptsDir)) {
-  const promptsDest = path.join(resourcesDir, 'prompts');
-  fs.mkdirSync(promptsDest, { recursive: true });
-
-  const promptsFiles = fs.readdirSync(promptsDir);
-  promptsFiles.forEach((file) => {
-    const srcPath = path.join(promptsDir, file);
-    const destPath = path.join(promptsDest, file);
-    if (fs.statSync(srcPath).isFile()) {
-      fs.copyFileSync(srcPath, destPath);
-    }
-  });
-  console.log('  ✓ prompts/');
-}
-
-// 复制配置示例
-const configDir = path.join(rootDir, 'config');
-if (fs.existsSync(configDir)) {
-  const configDest = path.join(resourcesDir, 'config');
-  fs.mkdirSync(configDest, { recursive: true });
-
-  const configFiles = fs.readdirSync(configDir);
-  configFiles.forEach((file) => {
-    if (file.endsWith('.example.yaml') || file.endsWith('.example.json')) {
-      fs.copyFileSync(path.join(configDir, file), path.join(configDest, file));
-      console.log(`  ✓ config/${file}`);
-    }
-  });
-}
+// 所有提示词已内嵌到可执行文件中，无需外部资源
+console.log('📄 提示词已内嵌到可执行文件\n');
+const copiedFiles = 0;
 
 // 生成安装脚本
 console.log('\n📝 生成安装脚本...');
@@ -127,9 +171,9 @@ echo =========================================
 echo.
 
 :: 获取脚本所在目录
-set "SCRIPT_DIR=%~dp0"
-set "EXE_FILE=%SCRIPT_DIR%${name}-win.exe"
-set "INSTALL_DIR=%USERPROFILE%\\.ggcode"
+set SCRIPT_DIR=%~dp0
+set EXE_FILE=%SCRIPT_DIR%${name}-win.exe
+set INSTALL_DIR=%USERPROFILE%\\.ggcode
 
 :: 检查 exe 文件是否存在
 if not exist "%EXE_FILE%" (
@@ -140,76 +184,55 @@ if not exist "%EXE_FILE%" (
     exit /b 1
 )
 
-echo [1/4] 创建安装目录...
+echo [1/3] 创建安装目录...
 if not exist "%INSTALL_DIR%" mkdir "%INSTALL_DIR%"
 if not exist "%INSTALL_DIR%\\bin" mkdir "%INSTALL_DIR%\\bin"
-if not exist "%INSTALL_DIR%\\resources" mkdir "%INSTALL_DIR%\\resources"
 echo       ✓ 安装目录: %INSTALL_DIR%
 
 echo.
-echo [2/4] 复制可执行文件...
+echo [2/3] 复制可执行文件...
 copy /Y "%EXE_FILE%" "%INSTALL_DIR%\\bin\\ggcode.exe" >nul
 echo       ✓ 可执行文件已复制
 
 echo.
-echo [3/4] 复制资源文件...
-if exist "%SCRIPT_DIR%resources" (
-    xcopy /E /I /Y "%SCRIPT_DIR%resources" "%INSTALL_DIR%\\resources" >nul
-    echo       ✓ 资源文件已复制
-) else (
-    echo       ⚠ 未找到 resources 目录，跳过
-)
-
-echo.
-echo [4/4] 添加到系统 PATH...
-set "PATH_ADD=%INSTALL_DIR%\\bin"
-
-:: 检查是否已在 PATH 中
-for /f "tokens=2 delims==" %%A in ('"%SystemRoot%\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -NoProfile -Command "\$env:PATH -split ';' | Select-String -Pattern '^%PATH_ADD%$' -Quiet"') do (
-    set IN_PATH=%%A
-)
-
-if "%IN_PATH%"=="True" (
-    echo       ✓ ggcode 已在 PATH 中，跳过添加
-    goto :CREATE_SHORTCUT
-)
+echo [3/3] 添加到系统 PATH...
+set PATH_ADD=%INSTALL_DIR%\\bin
 
 :: 使用 PowerShell 添加到用户 PATH
-"%SystemRoot%\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -NoProfile -Command "\$oldPath = [Environment]::GetEnvironmentVariable('Path', 'User'); if (\$oldPath -notlike '*%PATH_ADD%*') { [Environment]::SetEnvironmentVariable('Path', \$oldPath + ';%PATH_ADD%', 'User'); Write-Host '       ✓ 已添加到用户 PATH'; } else { Write-Host '       ✓ 已在 PATH 中'; }"
+powershell -NoProfile -Command "$oldPath = [Environment]::GetEnvironmentVariable('Path', 'User'); if ($oldPath -notlike '*%PATH_ADD%*') { [Environment]::SetEnvironmentVariable('Path', $oldPath + ';%PATH_ADD%', 'User'); Write-Host '       ✓ 已添加到用户 PATH'; } else { Write-Host '       ✓ 已在 PATH 中'; }"
 
-:CREATE_SHORTCUT
 echo.
+echo =========================================
 echo [完成] 安装成功！
-echo.
 echo =========================================
 echo 使用方法:
-echo =========================================
 echo.
 echo 1. 关闭当前终端窗口，重新打开一个新的终端
 echo.
 echo 2. 在任何目录下输入以下命令启动:
-echo.
 echo    ggcode
 echo.
 echo 3. 查看帮助:
-echo.
 echo    ggcode --help
 echo.
 echo =========================================
 echo 安装信息:
-echo =========================================
 echo   安装目录: %INSTALL_DIR%
 echo   可执行文件: %INSTALL_DIR%\\bin\\ggcode.exe
 echo   版本: ${version}
 echo.
-echo 💡 提示: 如果 ggcode 命令无法使用，请重启电脑或手动添加以下路径到系统 PATH:
-echo           %PATH_ADD%
+echo 💡 提示: 如果 ggcode 命令无法使用，请重启电脑
 echo.
 pause
 `;
 
-fs.writeFileSync(path.join(outputDir, 'install.bat'), installScriptContent, 'utf-8');
-console.log('  ✓ install.bat (安装脚本)');
+try {
+  fs.writeFileSync(path.join(outputDir, 'install.bat'), installScriptContent, 'utf-8');
+  console.log('  ✓ install.bat (安装脚本)');
+  copiedFiles++;
+} catch (error) {
+  console.error('  ❌ 生成 install.bat 失败:', error.message);
+}
 
 // 创建使用说明
 const readmeContent = `# GG CODE v${version} - Windows 可执行文件
@@ -231,7 +254,7 @@ const readmeContent = `# GG CODE v${version} - Windows 可执行文件
 ## 使用说明
 
 ### 基本命令
-\`\`\`
+\`\`\`bash
 # 启动 AI 编程助手
 ggcode
 
@@ -246,7 +269,7 @@ ggcode --help
 \`\`\`
 
 ### 配置文件
-配置文件位于用户主目录下的 \`.ggcode/config.yaml\`
+配置文件位于用户主目录下的 \`~/.ggcode/config.json\`
 
 首次运行会自动创建配置文件模板。
 
@@ -269,24 +292,29 @@ MIT License
 如有问题，请访问项目主页或提交 Issue。
 `;
 
-fs.writeFileSync(path.join(outputDir, 'README.txt'), readmeContent);
-console.log('  ✓ README.txt (使用说明)');
+try {
+  fs.writeFileSync(path.join(outputDir, 'README.txt'), readmeContent);
+  console.log('  ✓ README.txt (使用说明)');
+  copiedFiles++;
+} catch (error) {
+  console.error('  ❌ 生成 README.txt 失败:', error.message);
+}
 
 // 获取文件大小
 if (fs.existsSync(outputFile)) {
   const stats = fs.statSync(outputFile);
-  const sizeInMB = (stats.size / 1024 / 1024).toFixed(2);
-  console.log(`\n📊 可执行文件大小: ${sizeInMB} MB`);
+  console.log(`\n📊 可执行文件大小: ${formatFileSize(stats.size)}`);
 }
 
+console.log(`\n📊 复制了 ${copiedFiles} 个资源文件`);
 console.log(`\n📁 输出目录: ${outputDir}`);
 console.log('\n✅ 打包完成!\n');
 console.log('💡 分发给用户的文件:');
-console.log('  1. gg-code-win.exe (主程序)');
+console.log('  1. gg-code-win.exe (主程序，包含所有提示词)');
 console.log('  2. install.bat (安装脚本)');
-console.log('  3. resources/ (资源文件，可选)');
-console.log('  4. README.txt (使用说明)');
+console.log('  3. README.txt (使用说明)');
 console.log('\n💡 用户安装步骤:');
 console.log('  1. 将上述文件放在同一目录');
 console.log('  2. 双击 install.bat 安装');
 console.log('  3. 重启终端后即可使用 ggcode 命令');
+console.log('\n📦 所有提示词已内嵌到可执行文件中，无需外部资源文件！');

@@ -9,7 +9,7 @@
     "ggcode": "./bin/ggcode.js"
   },
   "scripts": {
-    "build": "tsc && robocopy src/tools/prompts dist/tools/prompts /E /NFL /NDL /NJH /NJS && robocopy src/prompts dist/prompts /E /NFL /NDL /NJH /NJS || echo 'Prompts directories copied'",
+    "build": "node scripts/pack-prompts.js && tsc",
     "typecheck": "tsc --noEmit",
     "dev": "npx ts-node src/index.ts",
     "test": "jest",
@@ -89,8 +89,6 @@
     ],
     "outputPath": "dist-exe",
     "assets": [
-      "dist/tools/prompts/**/*",
-      "dist/prompts/**/*",
       "bin/**/*"
     ]
   },

@@ -234,15 +234,21 @@ export class CommandManager {
 
     try {
       // 1. 读取提示词模板
-      // 检测运行环境：开发环境还是生产环境
-      const isDev = fsSync.existsSync(path.join(process.cwd(), 'src'));
-      const promptsBasePath = path.join(process.cwd(), isDev ? 'src/prompts' : 'dist/prompts');
-      const templatePath = path.join(promptsBasePath, 'init.txt');
+      // 优先尝试使用打包的提示词
+      const { getProjectPrompt } = await import('../utils/packed-prompts');
+      let promptTemplate = getProjectPrompt('init');
 
-      let promptTemplate = await fs.readFile(templatePath, 'utf-8').catch(() => {
-        console.log(chalk.yellow('⚠️  未找到 prompts/init.txt，使用默认模板\n'));
-        return this.getDefaultInitTemplate();
-      });
+      if (!promptTemplate) {
+        // 回退到文件读取（开发环境）
+        const isDev = fsSync.existsSync(path.join(process.cwd(), 'src'));
+        const promptsBasePath = path.join(process.cwd(), isDev ? 'src/prompts' : 'dist/prompts');
+        const templatePath = path.join(promptsBasePath, 'init.txt');
+
+        promptTemplate = await fs.readFile(templatePath, 'utf-8').catch(() => {
+          console.log(chalk.yellow('⚠️  未找到 prompts/init.txt，使用默认模板\n'));
+          return this.getDefaultInitTemplate();
+        });
+      }
 
       // 2. 替换模板变量
       promptTemplate = promptTemplate.replace(/\$\{path\}/g, context.workingDirectory);

@@ -29,6 +29,17 @@ export async function loadToolPrompt(toolId: string): Promise<string> {
     return promptCache.get(toolId)!;
   }
 
+  // 优先尝试使用打包的提示词
+  const { hasPackedPrompts, getToolPrompt } = await import('./packed-prompts');
+  if (hasPackedPrompts()) {
+    const packedPrompt = getToolPrompt(toolId);
+    if (packedPrompt) {
+      promptCache.set(toolId, packedPrompt);
+      return packedPrompt;
+    }
+  }
+
+  // 开发环境回退到文件加载
   try {
     const promptPath = getToolPromptPath(toolId);
     const content = await fs.readFile(promptPath, 'utf-8');

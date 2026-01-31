@@ -45,30 +45,7 @@ export class FunctionalAgentManager {
 
   constructor(apiAdapter: IAPIAdapter, promptsDir?: string) {
     this.apiAdapter = apiAdapter;
-    // 默认使用相对于项目根目录的 prompts 目录
-    // 在开发环境中，从 src/core/ 向上找到 tools/prompts
-    // 在打包环境中，使用相对于当前工作目录的路径
-    if (promptsDir) {
-      this.promptsDir = promptsDir;
-    } else {
-      // 尝试从不同位置找到prompts目录
-      const possiblePaths = [
-        path.join(__dirname, '../../tools/prompts'), // 开发环境
-        path.join(process.cwd(), 'src/tools/prompts'), // 在项目根目录运行
-        path.join(process.cwd(), 'tools/prompts'), // 在项目根目录运行（已编译）
-        path.join(__dirname, '../tools/prompts'), // 在dist/core运行时
-      ];
-
-      let foundPath: string | undefined;
-      for (const testPath of possiblePaths) {
-        if (require('fs').existsSync(testPath)) {
-          foundPath = testPath;
-          break;
-        }
-      }
-
-      this.promptsDir = foundPath || path.join(process.cwd(), 'tools/prompts');
-    }
+    this.promptsDir = promptsDir || path.join(process.cwd(), 'src/tools/prompts');
   }
 
   /**

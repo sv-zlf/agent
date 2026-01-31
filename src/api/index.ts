@@ -3,6 +3,15 @@
  * 支持多种模式：内网 API（A4011LM01）、OpenAPI、Mock API、录制/回放
  */
 
+// 导入类型
+import type { APIConfig, APIMode, InternalAPIConfig, OpenAPIConfig } from '../types';
+
+// 导入适配器类
+import { InternalAPIAdapter } from './internal-adapter';
+import { OpenAPIAdapter } from './openapi-adapter';
+import { MockAPIAdapter } from './mock-api-adapter';
+import { RecordingAPIAdapter } from './recording-api-adapter';
+
 // 导出所有适配器
 export { InternalAPIAdapter, APIError, createInternalAPIAdapter } from './internal-adapter';
 export { OpenAPIAdapter, createOpenAPIAdapter } from './openapi-adapter';
@@ -12,12 +21,6 @@ export { RecordingAPIAdapter, createRecordingAPIAdapter } from './recording-api-
 // 导出类型
 export type { MockResponse, MockScenario } from './mock-api-adapter';
 export type { RecordedInteraction, RecordingSession } from './recording-api-adapter';
-
-import type { APIConfig, APIMode, InternalAPIConfig, OpenAPIConfig } from '../types';
-import { InternalAPIAdapter } from './internal-adapter';
-import { OpenAPIAdapter } from './openapi-adapter';
-import { MockAPIAdapter } from './mock-api-adapter';
-import { RecordingAPIAdapter } from './recording-api-adapter';
 
 /**
  * 适配器运行模式
