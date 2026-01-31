@@ -723,7 +723,11 @@ export const agentCommand = new Command('agent')
                     '\n\n用户中断了AI思考。请重新开始或询问其他问题。'
                   );
                 } else {
-                  // 其他错误继续抛出
+                  console.log(chalk.red(`\n❌ ${apiError.message || apiError.toString()}`));
+                  contextManager.addMessage(
+                    'user',
+                    `\n\n执行过程中发生错误: ${apiError.message || apiError.toString()}`
+                  );
                   throw apiError;
                 }
               } finally {
@@ -914,15 +918,12 @@ export const agentCommand = new Command('agent')
 
               // 工具执行完成，显示分隔线
             } catch (roundError) {
-              // 单轮工具调用出错，记录错误并继续
-              console.log(chalk.red(`\n❌ 工具调用轮次错误: ${(roundError as Error).message}`));
-
-              // 将错误信息添加到上下文，让AI知道发生了什么
+              console.log(chalk.red(`\n❌ ${(roundError as Error).message}`));
               contextManager.addMessage(
                 'user',
                 `\n\n执行过程中发生错误: ${(roundError as Error).message}`
               );
-              break; // 出错后退出工具调用循环
+              break;
             }
           }
 
@@ -954,8 +955,18 @@ export const agentCommand = new Command('agent')
             }
           }
         } catch (error) {
-          console.log(chalk.red(`\n❌ 错误: ${(error as Error).message}`));
-          console.log(chalk.gray(`\nStack: ${(error as Error).stack}`));
+          const err = error as any;
+
+          // 原样输出 API 返回的错误信息
+          if (err.message) {
+            if (err.message.includes('{')) {
+              console.log(chalk.red(`\n❌ ${err.message}\n`));
+            } else {
+              console.log(chalk.red(`\n❌ ${err.message}\n`));
+            }
+          } else {
+            console.log(chalk.red(`\n❌ 未知错误\n`));
+          }
         }
 
         // 继续下一轮对话

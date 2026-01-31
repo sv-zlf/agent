@@ -108,30 +108,26 @@ export class APIConcurrencyController {
             await new Promise((resolve) => setTimeout(resolve, 1000));
           }
         } catch (error: any) {
-          // 精确判断429错误类型
-          if (error.message && error.message.includes('429')) {
-            // 判断是否是配额/使用上限（不需要等待，直接继续）
+          // 只对网络连接错误（非 API 响应错误）做并发控制
+          // API 返回的 429 等错误由 withRetry 处理重试，这里直接透传
+          const isAPIResponseError = error?.context?.responseData || error?.message?.includes('{');
+
+          if (!isAPIResponseError && error.message && error.message.includes('429')) {
             if (
               error.message.includes('使用上限') ||
               error.message.includes('限额') ||
               error.message.includes('quota') ||
               error.message.includes('limit')
             ) {
-              logger.error(`API配额已达上限: ${error.message}`);
-            }
-            // 判断是否是并发数过高（需要等待）
-            else if (
+              logger.info(`API配额已达上限: ${error.message}`);
+            } else if (
               error.message.includes('并发') ||
               error.message.includes('concurrent') ||
               error.message.includes('过高')
             ) {
-              logger.error(`API并发限制，等待3秒后继续: ${error.message}`);
-              await new Promise((resolve) => setTimeout(resolve, 3000));
-            }
-            // 其他429错误，短暂等待
-            else {
-              logger.error(`API限制，等待1秒后继续: ${error.message}`);
-              await new Promise((resolve) => setTimeout(resolve, 1000));
+              logger.info(`API并发限制: ${error.message}`);
+            } else {
+              logger.info(`API限制: ${error.message}`);
             }
           }
 

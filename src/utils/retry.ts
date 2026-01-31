@@ -65,10 +65,30 @@ export async function withRetry<T>(
       lastError = error;
 
       if (attempt === opts.maxRetries) {
-        const err = new Error(`重试失败，已达到最大重试次数 (${opts.maxRetries})`) as RetryError;
+        const originalError = error as any;
+
+        // 提取 responseData（可能是 APIError.context.responseData 或 RetryError.responseData）
+        const responseData = originalError?.context?.responseData || originalError?.responseData;
+        const isAPIError = originalError?.code?.startsWith('API_');
+
+        let errMsg: string;
+        if (isAPIError && responseData) {
+          errMsg = `重试失败，已达到最大重试次数 (${opts.maxRetries}): ${JSON.stringify(responseData)}`;
+        } else if (isAPIError && originalError?.message) {
+          errMsg = `重试失败，已达到最大重试次数 (${opts.maxRetries}): ${originalError.message}`;
+        } else {
+          errMsg = `重试失败，已达到最大重试次数 (${opts.maxRetries}): ${originalError?.message || String(error)}`;
+        }
+
+        const err = new Error(errMsg) as RetryError & { originalError: Error; responseData?: any };
         err.attempts = attempt + 1;
         err.lastError = error;
         err.totalTime = Date.now() - startTime;
+        err.originalError =
+          originalError instanceof Error ? originalError : new Error(String(originalError));
+        if (responseData) {
+          err.responseData = responseData;
+        }
         throw err;
       }
 

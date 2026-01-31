@@ -141,16 +141,21 @@ export class InternalAPIAdapter {
           throw new APIError('请求已被用户中断', ErrorCode.API_ABORTED);
         }
         if (error.response) {
+          const status = error.response.status;
+          const data = error.response.data as any;
           throw new APIError(
-            `API调用失败: ${error.response.status} ${error.response.statusText}`,
+            `API调用失败: ${JSON.stringify(data)}`,
             ErrorCode.API_NETWORK_ERROR,
-            error.response.status
+            status,
+            { responseData: data }
           );
         }
         if (error.request) {
           throw new APIError(
-            `网络错误: 无法连接到API服务器 (${this.config.base_url})`,
-            ErrorCode.API_NETWORK_ERROR
+            `网络错误: 无法连接到API服务器 (${this.config.base_url}): ${error.code || 'unknown'}`,
+            ErrorCode.API_NETWORK_ERROR,
+            undefined,
+            { axiosCode: error.code }
           );
         }
       }
