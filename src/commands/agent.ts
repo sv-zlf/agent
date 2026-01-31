@@ -452,10 +452,11 @@ export const agentCommand = new Command('agent')
       // 每次调用 chatLoop 时都重新获取 rl
       const currentRl = getReadline();
 
-      // 在等待用户输入时，暂时关闭 raw mode（如果有）
-      const wasRaw = currentRl.input.isRaw;
-      if (wasRaw) {
-        currentRl.input.setRawMode(false);
+      // 保持 raw mode 开启以支持 P 键中断
+      // 不关闭 raw mode，否则无法捕获单个按键
+      if (!currentRl.input.isRaw) {
+        currentRl.input.setRawMode(true);
+        setupInterruptKey();
       }
 
       // 显示提示符
@@ -466,8 +467,8 @@ export const agentCommand = new Command('agent')
         // 移除监听器，避免重复触发
         currentRl.removeListener('line', onLine);
 
-        // 重新设置 raw mode（如果之前是开启的）
-        if (wasRaw && !currentRl.input.isRaw) {
+        // 重新设置 raw mode（为了支持 P 键中断）
+        if (!currentRl.input.isRaw) {
           currentRl.input.setRawMode(true);
         }
 
@@ -550,6 +551,7 @@ export const agentCommand = new Command('agent')
                   currentRl.input.on('data', keyListener);
                 }
                 if (savedInterruptKeyListener) {
+                  interruptKeyListener = savedInterruptKeyListener;
                   currentRl.input.on('data', savedInterruptKeyListener);
                 }
               };
