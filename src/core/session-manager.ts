@@ -99,6 +99,12 @@ export class SessionManager {
     agentType: string = 'default',
     parentID?: string
   ): Promise<Session> {
+    // 验证agentType
+    const validAgentTypes = ['default', 'explore', 'build', 'plan'];
+    if (!validAgentTypes.includes(agentType)) {
+      console.log(`⚠️ 无效的agent类型: ${agentType}，使用默认值`);
+      agentType = 'default';
+    }
     const sessionId = this.generateId();
 
     const sessionFile = path.join(this.config.sessionsDir, `${sessionId}.json`);
@@ -237,6 +243,30 @@ export class SessionManager {
    */
   getAgent(): string {
     return this.getCurrentSession()?.agentType || 'default';
+  }
+
+  /**
+   * 设置会话标题（从第一条用户消息生成）
+   */
+  async setTitle(sessionId: string, title: string): Promise<void> {
+    const session = this.sessions.get(sessionId);
+    if (session) {
+      session.title = title;
+      session.updatedAt = Date.now();
+      await this.saveSession(session);
+    }
+  }
+
+  /**
+   * 设置当前会话的标题
+   */
+  async setCurrentSessionTitle(title: string): Promise<void> {
+    const session = this.getCurrentSession();
+    if (session) {
+      session.title = title;
+      session.updatedAt = Date.now();
+      await this.saveSession(session);
+    }
   }
 
   /**

@@ -126,47 +126,113 @@ export class FunctionalAgentManager {
 
   /**
    * 生成摘要
+   * 优化：提取关键对话内容，排除工具执行细节
    */
   async summarize(messages: Message[]): Promise<FunctionalAgentResult> {
-    // 只取最近的对话来生成摘要，避免 tokens 过多
-    const conversation = messages
-      .filter((m) => m.role === 'user' || m.role === 'assistant')
-      .slice(-10); // 只保留最近10条消息
+    // 构建精简的对话上下文，排除工具执行结果
+    const cleanedMessages: Message[] = [];
 
-    try {
-      // 使用超时机制，避免长时间阻塞
-      const response = await Promise.race([
-        this.executeAgent(FunctionalAgentType.SUMMARY, conversation, {
-          maxTokens: 1000, // 增加到 1000，确保有足够空间生成摘要
-          priority: API_PRIORITY.LOW,
-        }),
-        new Promise<FunctionalAgentResult>((_, reject) =>
-          setTimeout(() => reject(new Error('摘要生成超时')), 30000)
-        ),
-      ]);
+    for (const msg of messages) {
+      // 跳过系统消息（标题生成的系统消息已经包含在 prompt 中）
+      if (msg.role === 'system') {
+        continue;
+      }
 
-      return response;
-    } catch (error) {
-      // 超时或失败时返回简单摘要
+      // 过滤掉工具执行结果消息
+      const content = msg.content;
+      const isToolResult = content.includes('工具执行结果') ||
+                           content.includes('Tool execution result') ||
+                           content.includes('**') && content.includes('✓') ||
+                           (content.startsWith('\n') && content.includes('工具'));
+
+      if (isToolResult) {
+        continue;
+      }
+
+      // 对于用户消息，只保留前 200 字符
+      if (msg.role === 'user') {
+        cleanedMessages.push({
+          role: 'user',
+          content: content.substring(0, 200),
+        });
+      }
+      // 对于助手消息，只保留前 300 字符
+      else if (msg.role === 'assistant') {
+        cleanedMessages.push({
+          role: 'assistant',
+          content: content.substring(0, 300),
+        });
+      }
+
+      // 只取最近 5 条消息（去除工具结果后的）
+      if (cleanedMessages.length >= 5) {
+        break;
+      }
+    }
+
+    // 如果没有有效消息，返回默认摘要
+    if (cleanedMessages.length === 0) {
       return {
         success: true,
-        output: '对话摘要\n\n对话刚开始，暂无详细摘要。',
+        output: '新会话\n\n对话刚开始，暂无详细摘要。',
       };
     }
+
+    return this.executeAgent(FunctionalAgentType.SUMMARY, cleanedMessages, {
+      maxTokens: 150, // 进一步减少 maxTokens
+      priority: API_PRIORITY.LOW, // 摘要生成使用低优先级
+    });
   }
 
   /**
    * 生成标题
+   * 优化：只基于用户原始输入，排除工具执行结果
    */
-  async generateTitle(messages: Message[]): Promise<FunctionalAgentResult> {
-    // 只取第一条用户消息来生成标题，更准确反映用户意图
-    const firstUserMessage = messages.find((m) => m.role === 'user');
-    const context = firstUserMessage ? [firstUserMessage] : messages.slice(0, 2);
+  async generateTitle(userInput: string): Promise<FunctionalAgentResult> {
+    // 直接使用用户输入，不需要完整消息历史
+    // 这样避免携带工具执行结果等无关信息
+    const context: Message[] = [
+      {
+        role: 'user',
+        content: userInput.substring(0, 500), // 限制输入长度，避免过长
+      },
+    ];
 
     return this.executeAgent(FunctionalAgentType.TITLE, context, {
-      maxTokens: 100,
-      priority: API_PRIORITY.LOW,
+      maxTokens: 50, // 标题只需要很少的 tokens
+      priority: API_PRIORITY.LOW, // 标题生成优先级低
     });
+  }
+
+  /**
+   * 生成标题（从完整消息历史）- 兼容旧版本
+   */
+  async generateTitleFromHistory(messages: Message[]): Promise<FunctionalAgentResult> {
+    // 只取第一条用户消息来生成标题
+    const firstUserMessage = messages.find((m) => m.role === 'user');
+    if (!firstUserMessage) {
+      return {
+        success: false,
+        error: '没有找到用户消息',
+      };
+    }
+
+    // 排除工具执行结果消息（通常包含 "工具执行结果" 等关键词）
+    const content = firstUserMessage.content;
+    const isToolResult = content.includes('工具执行结果') ||
+                         content.includes('Tool execution result');
+
+    if (isToolResult) {
+      // 如果第一条用户消息是工具结果，查找下一条
+      const userMessages = messages.filter((m) => m.role === 'user');
+      for (const msg of userMessages) {
+        if (!msg.content.includes('工具执行结果') && !msg.content.includes('Tool execution result')) {
+          return this.generateTitle(msg.content);
+        }
+      }
+    }
+
+    return this.generateTitle(content);
   }
 
   /**

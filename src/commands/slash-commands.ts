@@ -18,6 +18,10 @@ export interface CommandResult {
   shouldContinue: boolean; // 是否继续执行（false 表示命令处理后停止）
   message?: string; // 可选的返回消息
   systemPrompt?: string; // 可选的系统提示词更新
+  sessionSwitched?: { // 会话切换信息
+    sessionId: string;
+    historyFile: string;
+  };
 }
 
 /**
@@ -299,11 +303,42 @@ export class CommandManager {
               chalk.yellow(`API调用失败（尝试 ${retryCount}/${maxRetries}）: ${apiError.message}`)
             );
 
-            // 如果是429错误且还有重试机会，等待后重试
-            if (apiError.message && apiError.message.includes('429') && retryCount < maxRetries) {
-              console.log(chalk.gray(`等待 ${retryDelay}ms 后重试...`));
-              await new Promise((resolve) => setTimeout(resolve, retryDelay));
-              retryDelay *= 2; // 指数退避
+            // 精确判断429错误类型
+            if (apiError.message && apiError.message.includes('429')) {
+              // 判断是否是配额/使用上限（需要等待重置，不需要重试）
+              if (
+                apiError.message.includes('使用上限') ||
+                apiError.message.includes('限额') ||
+                apiError.message.includes('quota') ||
+                apiError.message.includes('limit')
+              ) {
+                console.log(chalk.yellow('⏰ API使用已达上限，等待配额重置'));
+                throw apiError; // 配额问题，直接抛出，不重试
+              }
+
+              // 判断是否是并发数过高（可以重试）
+              if (
+                apiError.message.includes('并发') ||
+                apiError.message.includes('concurrent') ||
+                apiError.message.includes('过高')
+              ) {
+                if (retryCount < maxRetries) {
+                  console.log(chalk.gray(`🔄 并发限制，等待 ${retryDelay}ms 后重试...`));
+                  await new Promise((resolve) => setTimeout(resolve, retryDelay));
+                  retryDelay *= 2; // 指数退避
+                } else {
+                  throw apiError; // 重试次数用完
+                }
+              } else {
+                // 其他类型的429错误，有限重试
+                if (retryCount < maxRetries) {
+                  console.log(chalk.gray(`🔄 429错误，等待 ${retryDelay}ms 后重试...`));
+                  await new Promise((resolve) => setTimeout(resolve, retryDelay));
+                  retryDelay *= 2;
+                } else {
+                  throw apiError;
+                }
+              }
             } else if (retryCount >= maxRetries) {
               throw apiError; // 重试次数用完，抛出错误
             } else {
@@ -657,9 +692,17 @@ export class CommandManager {
       });
 
       if (selected.value !== currentSessionId) {
-        await sessionManager.switchSession(selected.value);
+        const switchedSession = await sessionManager.switchSession(selected.value);
         console.log(chalk.green(`\n✓ 已切换到会话: ${selected.label.replace(' ✅', '')}\n`));
-        console.log(chalk.gray('提示: 请重新启动 GG CODE 以加载该会话的历史记录\n'));
+
+        // 返回 sessionSwitched 信息，让 agent.ts 加载历史记录
+        return {
+          shouldContinue: false,
+          sessionSwitched: {
+            sessionId: switchedSession.id,
+            historyFile: switchedSession.historyFile,
+          },
+        };
       }
 
       return { shouldContinue: false };
@@ -891,15 +934,21 @@ export class CommandManager {
         }
 
         try {
-          await sessionManager.switchSession(targetSessionId!);
-          const switchedSession = sessionManager.getCurrentSession();
+          const switchedSession = await sessionManager.switchSession(targetSessionId!);
           console.log(chalk.green(`✓ 已切换到会话: ${switchedSession?.title}\n`));
-          console.log(chalk.gray('提示: 切换会话后需要重新启动才能加载该会话的历史记录\n'));
+
+          // 返回 sessionSwitched 信息，让 agent.ts 加载历史记录
+          return {
+            shouldContinue: false,
+            sessionSwitched: {
+              sessionId: switchedSession.id,
+              historyFile: switchedSession.historyFile,
+            },
+          };
         } catch (error) {
           console.log(chalk.red(`✗ 切换失败: ${(error as Error).message}\n`));
+          return { shouldContinue: false };
         }
-
-        return { shouldContinue: false };
       }
 
       case 'rename': {

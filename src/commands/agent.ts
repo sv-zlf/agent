@@ -572,6 +572,9 @@ export const agentCommand = new Command('agent')
           const userMessages = messageHistory.filter((m: any) => m.role === 'user');
           const isFirstMessage = userMessages.length === 1 && options.history;
 
+          // 保存用户的原始输入，用于标题生成（避免携带工具执行结果）
+          const userInput = input;
+
           // 每次新的用户输入时，重置所有状态
           autoApproveAll = options.yes || agentConfig.auto_approve || false;
 
@@ -926,18 +929,21 @@ export const agentCommand = new Command('agent')
             console.log(chalk.gray('\n⏳ 正在生成会话标题和摘要...\n'));
 
             try {
+              // 优化：使用用户原始输入生成标题，避免携带工具执行结果
               // 串行执行：先生成标题，再生成摘要，避免 API 并发冲突
-              // 1. 生成标题
-              const titleResult = await functionalAgentManager.generateTitle(messageHistory);
+              // 1. 生成标题（只使用用户原始输入）
+              const titleResult = await functionalAgentManager.generateTitle(userInput);
               if (titleResult.success && titleResult.output) {
                 const title = titleResult.output.trim();
-                sessionManager.setAgent(title);
+                // 使用正确的方法设置会话标题
+                await sessionManager.setCurrentSessionTitle(title);
                 console.log(chalk.gray(`  ✓ 标题: ${title}`));
               } else {
                 console.error(chalk.gray(`  ✗ 标题生成失败: ${titleResult.error}`));
               }
 
               // 2. 生成摘要（等待标题完成后再执行）
+              // 摘要生成会自动过滤工具执行结果
               const summaryResult = await functionalAgentManager.summarize(messageHistory);
               if (summaryResult.success && summaryResult.output) {
                 try {
