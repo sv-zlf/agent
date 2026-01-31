@@ -1,0 +1,16 @@
+Reads a file from the local filesystem. You can access any file directly by using this tool.
+Assume this tool is able to read all files on the machine. If the User provides a path to a file assume that path is valid. It is okay to read a file that does not exist; an error will be returned.
+
+Usage:
+- The filePath parameter must be an absolute path, not a relative path
+- By default, it reads up to 2000 lines starting from the beginning of the file
+- You can optionally specify a line offset and limit, which is especially handy for long files
+- Any lines longer than 2000 characters will be truncated
+- Results are returned with line numbers starting at 1
+- You can read image files using this tool (PNG, JPG, GIF, SVG, etc.)
+- You have the capability to call multiple tools in a single response - it is always better to speculatively read multiple files as a batch
+
+Recommendations:
+- Read multiple relevant files in one tool call whenever possible
+- For exploring unknown codebases, start with package.json, README.md, or entry point files
+- If you need to read a specific part of a large file, use offset and limit parameters

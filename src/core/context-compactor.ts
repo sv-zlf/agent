@@ -300,7 +300,7 @@ ${messagesText}`;
 
     // 只有当修剪量超过最小阈值时才执行修剪
     if (prunedParts > this.config.pruneMinimum) {
-      for (const { part, msgIndex, partIndex } of toPrune) {
+      for (const { part } of toPrune) {
         // 截断内容
         const originalContent = part.content || '';
         const truncated = this.truncateContent(originalContent, 500); // 保留前 500 字符

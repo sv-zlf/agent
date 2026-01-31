@@ -19,7 +19,6 @@ const MAX_TOOL_TIMEOUT = 120000; // 2分钟
 export class ToolEngine {
   private tools: Map<string, ToolDefinition> = new Map();
   private defaultToolTimeout: number = DEFAULT_TOOL_TIMEOUT;
-  private cleanupScheduled: boolean = false;
 
   /**
    * 初始化工具引擎（执行清理等初始化操作）
@@ -286,7 +285,6 @@ export class ToolEngine {
 
         // 检查中断原因
         if (combinedSignal?.aborted) {
-          const duration = endTime - (endTime - 10000); // 近似计算
           if (toolTimeoutController.signal.aborted) {
             return {
               success: false,

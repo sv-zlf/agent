@@ -8,14 +8,6 @@ import { defineTool } from './tool';
 import * as tools from './index';
 
 /**
- * 工具调用定义
- */
-interface ToolCallDef {
-  tool: string;
-  parameters: Record<string, any>;
-}
-
-/**
  * 禁止在 Batch 中使用的工具
  */
 const DISALLOWED_TOOLS = new Set(['batch']);
@@ -41,7 +33,7 @@ async function executeToolCall(
     if (!tool) {
       // 尝试通过别名查找（小写、驼峰转换等）
       const normalizedKey = Object.keys(toolMap).find(
-        key => key.toLowerCase() === toolName.toLowerCase()
+        (key) => key.toLowerCase() === toolName.toLowerCase()
       );
       if (normalizedKey) {
         throw new Error(`工具名称应为 '${normalizedKey}'，请使用标准工具名称`);
@@ -58,7 +50,7 @@ async function executeToolCall(
     } catch (error) {
       if (error instanceof z.ZodError) {
         const errorMsg = error.issues
-          .map(issue => `  - ${issue.path.join('.')}: ${issue.message}`)
+          .map((issue) => `  - ${issue.path.join('.')}: ${issue.message}`)
           .join('\n');
         throw new Error(`参数验证失败:\n${errorMsg}`);
       }
@@ -73,7 +65,7 @@ async function executeToolCall(
     return {
       success: false,
       tool: toolName,
-      error: error instanceof Error ? error.message : String(error)
+      error: error instanceof Error ? error.message : String(error),
     };
   }
 }
@@ -81,9 +73,11 @@ async function executeToolCall(
 /**
  * 格式化批量执行结果
  */
-function formatBatchResults(results: Array<{ success: boolean; tool: string; result?: any; error?: string }>): string {
-  const successful = results.filter(r => r.success);
-  const failed = results.filter(r => !r.success);
+function formatBatchResults(
+  results: Array<{ success: boolean; tool: string; result?: any; error?: string }>
+): string {
+  const successful = results.filter((r) => r.success);
+  const failed = results.filter((r) => !r.success);
 
   let lines: string[] = [];
 
@@ -95,7 +89,7 @@ function formatBatchResults(results: Array<{ success: boolean; tool: string; res
     // 显示成功的工具
     if (successful.length > 0) {
       lines.push(`### 成功的工具 (${successful.length})`);
-      successful.forEach(r => {
+      successful.forEach((r) => {
         const title = r.result?.title || '无标题';
         lines.push(`- ${r.tool}: ${title}`);
       });
@@ -105,7 +99,7 @@ function formatBatchResults(results: Array<{ success: boolean; tool: string; res
     // 显示失败的工具
     if (failed.length > 0) {
       lines.push(`### 失败的工具 (${failed.length})`);
-      failed.forEach(r => {
+      failed.forEach((r) => {
         lines.push(`- ${r.tool}: ${r.error}`);
       });
       lines.push('');
@@ -114,9 +108,10 @@ function formatBatchResults(results: Array<{ success: boolean; tool: string; res
     // 显示详细输出
     if (successful.length > 0) {
       lines.push(`### 详细输出\n`);
-      successful.forEach((r, idx) => {
+      successful.forEach((r) => {
         const output = r.result?.output || '';
-        const truncated = output.length > 500 ? output.substring(0, 500) + '\n... (输出已截断)' : output;
+        const truncated =
+          output.length > 500 ? output.substring(0, 500) + '\n... (输出已截断)' : output;
         lines.push(`#### ${r.tool}\n${truncated}\n`);
       });
     }
@@ -127,7 +122,7 @@ function formatBatchResults(results: Array<{ success: boolean; tool: string; res
     lines.push(`所有 ${successful.length} 个工具执行成功！\n`);
 
     // 显示所有工具的简要结果
-    successful.forEach(r => {
+    successful.forEach((r) => {
       const title = r.result?.title || '无标题';
       lines.push(`✓ ${r.tool}: ${title}`);
     });
@@ -151,16 +146,20 @@ function formatBatchResults(results: Array<{ success: boolean; tool: string; res
 export const BatchTool = defineTool('batch', {
   description: '批量并行执行多个独立工具调用，提高效率。适用于读取多个文件、组合搜索等场景。',
   parameters: z.object({
-    tool_calls: z.array(
-      z.object({
-        tool: z.string().describe('要执行的工具名称'),
-        parameters: z.object({}).loose().describe('工具参数（JSON 对象）'),
-      })
-    ).min(1, '至少需要一个工具调用').max(25, '最多支持 25 个工具调用').describe('要并行执行的工具调用数组'),
+    tool_calls: z
+      .array(
+        z.object({
+          tool: z.string().describe('要执行的工具名称'),
+          parameters: z.object({}).loose().describe('工具参数（JSON 对象）'),
+        })
+      )
+      .min(1, '至少需要一个工具调用')
+      .max(25, '最多支持 25 个工具调用')
+      .describe('要并行执行的工具调用数组'),
   }),
   formatValidationError(error) {
     const formattedErrors = error.issues
-      .map(issue => {
+      .map((issue) => {
         const path = issue.path.length > 0 ? issue.path.join('.') : 'root';
         return `  - ${path}: ${issue.message}`;
       })
@@ -173,11 +172,11 @@ export const BatchTool = defineTool('batch', {
 
     // 执行所有工具调用（并行）
     const results = await Promise.all(
-      tool_calls.map(call => executeToolCall(call.tool, call.parameters, ctx))
+      tool_calls.map((call) => executeToolCall(call.tool, call.parameters, ctx))
     );
 
     // 统计结果
-    const successfulCount = results.filter(r => r.success).length;
+    const successfulCount = results.filter((r) => r.success).length;
     const failedCount = results.length - successfulCount;
 
     // 格式化输出
@@ -185,8 +184,8 @@ export const BatchTool = defineTool('batch', {
 
     // 收集所有成功工具的附件
     const attachments = results
-      .filter(r => r.success && r.result?.attachments)
-      .flatMap(r => r.result.attachments);
+      .filter((r) => r.success && r.result?.attachments)
+      .flatMap((r) => r.result.attachments);
 
     return {
       title: `批量执行 (${successfulCount}/${results.length} 成功)`,
@@ -195,8 +194,8 @@ export const BatchTool = defineTool('batch', {
         totalCalls: results.length,
         successful: successfulCount,
         failed: failedCount,
-        tools: tool_calls.map(c => c.tool),
-        details: results.map(r => ({
+        tools: tool_calls.map((c) => c.tool),
+        details: results.map((r) => ({
           tool: r.tool,
           success: r.success,
           error: r.error,

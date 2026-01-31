@@ -8,7 +8,6 @@
  */
 export class TokenEstimator {
   private static readonly CHARS_PER_TOKEN = 4; // 英文约 4 字符 = 1 token
-  private static readonly CHINESE_CHAR_TOKEN = 2; // 中文字符约 1 字 = 1.5-2 token
 
   /**
    * 估算文本的 token 数量

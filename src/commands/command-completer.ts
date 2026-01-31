@@ -5,7 +5,7 @@
 
 import inquirer from 'inquirer';
 import chalk from 'chalk';
-import { CommandManager, type CommandDefinition } from './slash-commands';
+import { CommandManager } from './slash-commands';
 
 /**
  * 命令选择器
@@ -34,16 +34,17 @@ export class CommandCompleter {
   async showCommandSelector(): Promise<string> {
     const commands = this.commandManager.getCommands();
 
-    const choices = commands.map(cmd => ({
+    const choices = commands.map((cmd) => ({
       name: `/${cmd.name}`,
       value: `/${cmd.name}`,
       short: cmd.description,
     }));
 
     // 如果有当前输入，过滤命令
-    const filteredChoices = this.currentInput.trim() === '/'
-      ? choices
-      : choices.filter(c => c.name.startsWith(this.currentInput.trim()));
+    const filteredChoices =
+      this.currentInput.trim() === '/'
+        ? choices
+        : choices.filter((c) => c.name.startsWith(this.currentInput.trim()));
 
     if (filteredChoices.length === 0) {
       // 没有匹配的命令，返回当前输入
@@ -51,11 +52,7 @@ export class CommandCompleter {
     }
 
     // 暂停 readline 以避免冲突
-    const readline = require('readline');
-    const rl = readline.createInterface({
-      input: process.stdin,
-      output: process.stdout,
-    });
+    require('readline');
 
     const answers = await inquirer.prompt([
       {
@@ -65,7 +62,7 @@ export class CommandCompleter {
         choices: filteredChoices,
         pageSize: 10,
         default: filteredChoices[0]?.value || '',
-      }
+      },
     ]);
 
     return answers.command;
@@ -78,7 +75,7 @@ export class CommandCompleter {
     const commands = this.commandManager.getCommands();
     const prefix = input.startsWith('/') ? '' : '/';
 
-    return commands.map(cmd => prefix + cmd.name);
+    return commands.map((cmd) => prefix + cmd.name);
   }
 
   /**
@@ -90,7 +87,7 @@ export class CommandCompleter {
     const lines: string[] = [];
     lines.push(chalk.cyan('\n📋 可用命令列表:\n'));
 
-    const maxLength = Math.max(...commands.map(cmd => cmd.name.length));
+    const maxLength = Math.max(...commands.map((cmd) => cmd.name.length));
 
     for (const cmd of commands) {
       const paddedName = cmd.name.padEnd(maxLength + 2);
@@ -111,7 +108,7 @@ export class CommandCompleter {
    */
   getCommandHelp(commandName: string): string {
     const commands = this.commandManager.getCommands();
-    const command = commands.find(cmd => cmd.name === commandName);
+    const command = commands.find((cmd) => cmd.name === commandName);
 
     if (!command) {
       return chalk.red(`未知命令: ${commandName}`);

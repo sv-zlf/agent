@@ -18,29 +18,31 @@ This is **GG CODE** - a TypeScript CLI application that implements an AI-powered
 ```bash
 # Development and Building
 npm run build               # Compile TypeScript to dist/
+npm run typecheck           # Type check without emitting files
 npm run agent               # Run the main agent CLI
-npm run dev -- [command]    # Run with ts-node (for development)
-
-# Agent CLI
-npm run agent               # Start AI assistant with default agent
 npm run agent -- -y         # Auto-approve all tool calls
 npm run agent -- -a explore # Use read-only explore agent
 npm run agent -- -a build   # Use build agent
 npm run agent -- --no-history # Don't save conversation history
 
 # Testing
-npm test                    # Run Jest tests
-npm run test:watch          # Run tests in watch mode
+npm test                     # Run Jest tests
+npm run test:watch           # Watch mode
+npm run test:coverage        # Coverage report
+npm run test:tools           # Quick tool system test
 
 # Code Quality
-npm run lint                # ESLint for TypeScript files
-npm run format              # Prettier formatting
+npm run lint                 # ESLint check
+npm run lint:fix             # ESLint auto-fix
+npm run format               # Prettier format
+npm run format:check         # Check format
 
-# Packaging
-npm run package             # Create distribution zip without node_modules
+# Cleanup
+npm run clean                # Clean all temp files
+npm run clean:dist            # Clean only dist/
 ```
 
-## Architecture
+## Code Architecture
 
 ### Core System Architecture
 
@@ -65,9 +67,9 @@ Internal Network API (double JSON serialization)
 ### Key Components
 
 **Tool Engine** (`src/core/tool-engine.ts`)
-- Central registry for all tools (Read, Edit, Write, Bash, etc.)
+- Central registry for all tools (Read, Edit, Write, Glob, Grep, Bash, etc.)
 - Tool permission levels: `safe`, `local-modify`, `network`, `dangerous`
-- Tools with `safe` permission (Read, Glob, Grep) auto-execute without confirmation
+- Tools with `safe` permission auto-execute without confirmation
 - Default timeout: 30s, max: 120s
 - Enhanced tools include smart features (file suggestions, binary detection)
 
@@ -104,7 +106,7 @@ Internal Network API (double JSON serialization)
 - Iterative tool calling until completion or max iterations
 
 **Slash Commands** (`src/commands/slash-commands.ts`)
-- `/init` - Create/update project DESIGN.md
+- `/init` - Create/update project documentation (AGENTS.md)
 - `/models [model]` - List or switch AI models
 - `/session new/list/switch/delete` - Session management
 - `/compress on/off/manual/status` - Context compression control
@@ -229,22 +231,3 @@ Message parts can be: text, file, tool_call, tool_result, reasoning, system
 4. **Tool Timeout**: Each tool call has configurable timeout with abort signal support
 5. **Interrupt Handling**: Cleanly stops mid-operation, recreates readline to clear buffer
 6. **Token Estimation**: Separate estimators for Chinese (2 chars/token) vs English (4 chars/token)
-
-### Testing Interactive Features
-
-Run `/test` command in agent to test:
-- Single-choice menu with arrow navigation
-- Multi-select with space toggle
-- Confirmation dialogs
-- Text input with defaults
-
-### Reference Implementation
-
-This project references OpenCode (https://github.com/anomalyco/opencode) for:
-- Session management patterns
-- Context compression strategies
-- Interactive TUI patterns
-- Permission system design
-
-Reference code is kept in `temp/opencode/` (not in git).
-

@@ -1,0 +1,28 @@
+Executes shell commands and returns the output. Use this tool ONLY when specialized tools are insufficient.
+
+Allowed Use Cases:
+- Running tests (npm test, pytest, etc.)
+- Building projects (npm run build, make, etc.)
+- Git operations (git status, git commit, git push, etc.)
+- Installing dependencies (npm install, pip install, etc.)
+- Executing project-specific scripts
+- Operations that cannot be completed with other tools
+
+NOT Recommended For:
+- Searching for files - Use Glob tool instead
+- Searching file contents - Use Grep tool instead
+- Reading files - Use Read tool instead
+- Listing directory contents - Use Glob tool instead
+
+Usage:
+- The command parameter is the shell command to execute
+- Commands are executed in the current working directory
+- Command output (stdout and stderr) is returned
+- Command execution is limited to 30 seconds by default
+
+Recommendations:
+- Use this tool sparingly and only when absolutely necessary
+- Prefer specialized tools (Glob, Grep, Read) for file operations
+- Test your commands locally before using them in the tool
+- Be aware that commands are platform-dependent (Windows vs Linux/macOS)
+- For complex operations, consider breaking them into multiple simpler commands

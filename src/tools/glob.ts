@@ -5,29 +5,34 @@
 
 import * as z from 'zod';
 import { defineTool } from './tool';
+import { truncateOutput } from '../utils/truncation';
 
-// 使用 require 避免 glob 类型问题
 const globFn = require('glob');
 
 export const GlobTool = defineTool('glob', {
-  description: '使用 glob 模式搜索文件。支持 **/* 和 *.ts 等通配符。返回匹配的文件路径列表，按修改时间排序。',
+  description:
+    '使用 glob 模式搜索文件。支持 **/* 和 *.ts 等通配符。返回匹配的文件路径列表，按修改时间排序。',
   parameters: z.object({
     pattern: z.string().describe('Glob 搜索模式，例如 **/*.ts 或 src/**/*.js'),
     path: z.string().optional().describe('搜索的根目录（默认为当前工作目录）'),
   }),
-  async execute(args, ctx) {
+  async execute(args, _ctx) {
     const { pattern, path: searchPath = process.cwd() } = args;
 
     try {
       const files: string[] = await new Promise((resolve, reject) => {
-        globFn(pattern, {
-          cwd: searchPath,
-          absolute: true,
-          windowsPathsNoEscape: true,
-        }, (err: any, matches: string[]) => {
-          if (err) reject(err);
-          else resolve(matches);
-        });
+        globFn(
+          pattern,
+          {
+            cwd: searchPath,
+            absolute: true,
+            windowsPathsNoEscape: true,
+          },
+          (err: any, matches: string[]) => {
+            if (err) reject(err);
+            else resolve(matches);
+          }
+        );
       });
 
       if (files.length === 0) {
@@ -38,7 +43,6 @@ export const GlobTool = defineTool('glob', {
         };
       }
 
-      // 按修改时间排序
       interface FileStat {
         filePath: string;
         mtime: number;
@@ -60,14 +64,21 @@ export const GlobTool = defineTool('glob', {
 
       const output = sortedFiles.join('\n');
 
+      const truncateResult = await truncateOutput(output, {
+        maxLines: 100,
+        maxBytes: 10 * 1024,
+        direction: 'head',
+      });
+
       return {
         title: `Found ${files.length} file(s)`,
-        output: output.length > 1000 ? output.substring(0, 1000) + '\n...' : output,
+        output: truncateResult.content,
         metadata: {
           pattern,
           path: searchPath,
           count: files.length,
-          truncated: output.length > 1000,
+          truncated: truncateResult.truncated,
+          truncationFile: truncateResult.truncated ? (truncateResult as any).outputPath : undefined,
         },
       };
     } catch (error: any) {

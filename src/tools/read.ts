@@ -13,13 +13,14 @@ const DEFAULT_READ_LIMIT = 2000;
 const MAX_LINE_LENGTH = 2000;
 
 export const ReadTool = defineTool('read', {
-  description: '读取文件内容。如果文件不存在，会尝试提供相似文件的建议。支持通过 offset 和 limit 参数分页读取大文件。',
+  description:
+    '读取文件内容。如果文件不存在，会尝试提供相似文件的建议。支持通过 offset 和 limit 参数分页读取大文件。',
   parameters: z.object({
     filePath: z.string().describe('要读取的文件的绝对路径'),
     offset: z.coerce.number().optional().describe('开始读取的行号（从0开始）'),
     limit: z.coerce.number().optional().describe('要读取的行数（默认为2000）'),
   }),
-  async execute(args, ctx) {
+  async execute(args, _ctx) {
     const { filePath, offset = 0, limit = DEFAULT_READ_LIMIT } = args;
 
     try {
@@ -91,7 +92,8 @@ export const ReadTool = defineTool('read', {
       // 格式化输出
       const contentWithLineNumbers = raw
         .map((line, index) => {
-          return `${(index + offset + 1).toString().padStart(5, '0')}| ${line}`;
+          const lineNum = offset + index + 1;
+          return `${lineNum.toString().padStart(5, '0')}| ${line}`;
         })
         .join('\n');
 

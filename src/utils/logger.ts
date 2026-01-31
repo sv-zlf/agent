@@ -47,7 +47,9 @@ export class Logger {
    * 调试日志
    */
   debug(message: string): void {
-    // 始终不显示调试日志
+    if (this.debugMode) {
+      console.log(chalk.gray('ℹ'), message);
+    }
   }
 
   /**

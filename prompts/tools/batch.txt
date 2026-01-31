@@ -1,0 +1,30 @@
+Executes multiple tool calls in parallel, significantly improving efficiency for independent operations.
+
+Parameters:
+- tool_calls (array, required): List of tool calls to execute
+  - tool (string, required): Tool name
+  - parameters (object, required): Tool parameters
+
+Usage:
+- Use this tool when you need to execute multiple independent operations
+- All tool calls are executed in parallel (up to 25 at once)
+- Returns aggregated results with success/failure counts
+- Nested batch calls are not allowed
+
+Recommendations:
+- Batch independent operations together for better performance
+- Group related file reads or searches
+- Do not use Batch for sequential operations (execute them one by one instead)
+- Check results to identify which operations succeeded or failed
+- Use Batch to reduce round-trip time when multiple tools need to be called
+
+Example:
+```json
+{
+  "tool_calls": [
+    { "tool": "read", "parameters": { "filePath": "/src/app.ts" } },
+    { "tool": "read", "parameters": { "filePath": "/src/utils.ts" } },
+    { "tool": "grep", "parameters": { "pattern": "interface User", "path": "/src" } }
+  ]
+}
+```

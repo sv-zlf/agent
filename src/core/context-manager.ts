@@ -20,7 +20,6 @@ export class ContextManager {
   private autoCompress: boolean = false;
   private systemPromptSet: boolean = false;
   private llmChat: LLMChatFunction | null = null;
-  private llmCompactEnabled: boolean = false;
 
   constructor(
     maxHistory: number = 10,
@@ -236,13 +235,6 @@ export class ContextManager {
    */
   supportsLLMCompact(): boolean {
     return this.llmChat !== null;
-  }
-
-  /**
-   * 启用/禁用 LLM 压缩
-   */
-  setLLMCompactEnabled(enabled: boolean): void {
-    this.llmCompactEnabled = enabled && this.supportsLLMCompact();
   }
 
   /**

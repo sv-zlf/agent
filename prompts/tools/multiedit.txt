@@ -1,0 +1,32 @@
+Performs multiple edit operations on a single file. All edits are executed sequentially as atomic operations.
+
+Parameters:
+- filePath (string, required): The absolute path to the file
+- edits (array, required): List of edit operations
+  - oldString (string, required): The string to replace
+  - newString (string, required): The replacement string
+  - replaceAll (boolean, optional): Replace all occurrences (default: false)
+
+Usage:
+- All edits are applied sequentially in the order they appear in the array
+- If any edit fails, all changes are rolled back and the file is not modified
+- For creating new files, use empty oldString
+- Maximum 50 edit operations allowed per call
+
+Recommendations:
+- Use MultiEdit when you need to make multiple related changes to a file
+- Break large refactorings into multiple MultiEdit calls if needed
+- Test your oldStrings carefully to ensure they match exactly
+- Use the Read tool first to verify the file content before editing
+- For single edits, use the Edit tool instead
+
+Example:
+```json
+{
+  "filePath": "/src/utils/config.ts",
+  "edits": [
+    { "oldString": "export const API_URL = 'old'", "newString": "export const API_URL = 'new'" },
+    { "oldString": "export const TIMEOUT = 5000", "newString": "export const TIMEOUT = 10000" }
+  ]
+}
+```

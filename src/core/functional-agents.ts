@@ -13,8 +13,8 @@ import type { Message } from '../types';
  */
 export enum FunctionalAgentType {
   COMPACTION = 'compaction', // 对话压缩
-  SUMMARY = 'summary',       // 对话摘要
-  TITLE = 'title',           // 标题生成
+  SUMMARY = 'summary', // 对话摘要
+  TITLE = 'title', // 标题生成
 }
 
 /**
@@ -68,17 +68,14 @@ export class FunctionalAgentManager {
   async executeAgent(
     type: FunctionalAgentType,
     messages: Message[],
-    options?: { maxTokens?: number }
+    _options?: { maxTokens?: number }
   ): Promise<FunctionalAgentResult> {
     try {
       // 加载 prompt
       const systemPrompt = await this.loadPrompt(type);
 
       // 构建消息列表（系统提示词 + 对话历史）
-      const apiMessages: Message[] = [
-        { role: 'system', content: systemPrompt },
-        ...messages,
-      ];
+      const apiMessages: Message[] = [{ role: 'system', content: systemPrompt }, ...messages];
 
       // 调用 AI API
       // 注意：当前 API adapter 不支持 maxTokens 参数，所以这里忽略它
@@ -101,9 +98,7 @@ export class FunctionalAgentManager {
    */
   async compact(messages: Message[]): Promise<FunctionalAgentResult> {
     // 过滤掉系统消息，只保留用户和助手的对话
-    const conversation = messages.filter(
-      (m) => m.role === 'user' || m.role === 'assistant'
-    );
+    const conversation = messages.filter((m) => m.role === 'user' || m.role === 'assistant');
 
     return this.executeAgent(FunctionalAgentType.COMPACTION, conversation, {
       maxTokens: 2000,
@@ -114,9 +109,7 @@ export class FunctionalAgentManager {
    * 生成摘要
    */
   async summarize(messages: Message[]): Promise<FunctionalAgentResult> {
-    const conversation = messages.filter(
-      (m) => m.role === 'user' || m.role === 'assistant'
-    );
+    const conversation = messages.filter((m) => m.role === 'user' || m.role === 'assistant');
 
     return this.executeAgent(FunctionalAgentType.SUMMARY, conversation, {
       maxTokens: 500,
@@ -140,7 +133,7 @@ export class FunctionalAgentManager {
    */
   async getMaxStepsWarning(): Promise<string> {
     try {
-      const content = await this.loadPrompt(FunctionalAgentType.TITLE); // 使用 title 位置，实际是 max-steps
+      await this.loadPrompt(FunctionalAgentType.TITLE); // 使用 title 位置，实际是 max-steps
       const maxStepsPath = path.join(this.promptsDir, 'max-steps.txt');
       const maxStepsContent = await fs.readFile(maxStepsPath, 'utf-8');
       return maxStepsContent;

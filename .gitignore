@@ -12,6 +12,14 @@ backups/
 !/temp/opencode/  # 保留 opencode 参考项目
 /.github/
 /.vscode/
+
+# 测试临时文件
+tests/temp/
+
+# Jest
+.nyc_output
+*.test.js.snap
+
 # 项目配置文件（保留在当前目录）
 .ggrc.json
 

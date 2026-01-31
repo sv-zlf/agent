@@ -79,7 +79,7 @@ function formatTodoList(todos: TodoItem[]): string {
   }
 
   const lines = [`任务列表 (${todos.length} 个任务):\n`];
-  const completedCount = todos.filter(t => t.done).length;
+  const completedCount = todos.filter((t) => t.done).length;
 
   todos.forEach((todo, index) => {
     const status = todo.done ? '✓' : '○';
@@ -106,13 +106,18 @@ import chalk from 'chalk';
 export const TodoWriteTool = defineTool('todowrite', {
   description: '创建或更新任务列表，帮助追踪待办事项',
   parameters: z.object({
-    todos: z.array(z.object({
-      id: z.string().optional().describe('任务 ID（可选，不提供则自动生成）'),
-      content: z.string().describe('任务内容'),
-      done: z.boolean().optional().describe('是否完成（默认 false）'),
-    })).min(1).describe('至少需要一个任务'),
+    todos: z
+      .array(
+        z.object({
+          id: z.string().optional().describe('任务 ID（可选，不提供则自动生成）'),
+          content: z.string().describe('任务内容'),
+          done: z.boolean().optional().describe('是否完成（默认 false）'),
+        })
+      )
+      .min(1)
+      .describe('至少需要一个任务'),
   }),
-  async execute(args, ctx) {
+  async execute(args, _ctx) {
     const existingTodos = await loadTodos();
 
     // 创建或更新任务
@@ -123,7 +128,7 @@ export const TodoWriteTool = defineTool('todowrite', {
     for (const todo of args.todos) {
       if (todo.id) {
         // 更新现有任务
-        const index = updatedTodos.findIndex(t => t.id === todo.id);
+        const index = updatedTodos.findIndex((t) => t.id === todo.id);
         if (index !== -1) {
           updatedTodos[index] = {
             ...updatedTodos[index],
@@ -158,7 +163,7 @@ export const TodoWriteTool = defineTool('todowrite', {
 
     await saveTodos(updatedTodos);
 
-    const completedCount = updatedTodos.filter(t => t.done).length;
+    const completedCount = updatedTodos.filter((t) => t.done).length;
 
     return {
       title: `已更新任务列表`,
@@ -179,16 +184,19 @@ export const TodoWriteTool = defineTool('todowrite', {
 export const TodoReadTool = defineTool('todoread', {
   description: '读取当前任务列表，查看所有待办事项',
   parameters: z.object({
-    filter: z.string().optional().describe('过滤条件：all（全部）/pending（未完成）/completed（已完成）'),
+    filter: z
+      .string()
+      .optional()
+      .describe('过滤条件：all（全部）/pending（未完成）/completed（已完成）'),
   }),
-  async execute(args, ctx) {
+  async execute(args, _ctx) {
     const todos = await loadTodos();
 
     let filteredTodos = todos;
     if (args.filter === 'pending') {
-      filteredTodos = todos.filter(t => !t.done);
+      filteredTodos = todos.filter((t) => !t.done);
     } else if (args.filter === 'completed') {
-      filteredTodos = todos.filter(t => t.done);
+      filteredTodos = todos.filter((t) => t.done);
     }
 
     return {
@@ -196,8 +204,8 @@ export const TodoReadTool = defineTool('todoread', {
       output: formatTodoList(filteredTodos),
       metadata: {
         total: todos.length,
-        pending: todos.filter(t => !t.done).length,
-        completed: todos.filter(t => t.done).length,
+        pending: todos.filter((t) => !t.done).length,
+        completed: todos.filter((t) => t.done).length,
       },
     };
   },
@@ -211,9 +219,9 @@ export const TodoDeleteTool = defineTool('tododelete', {
   parameters: z.object({
     id: z.string().describe('要删除的任务 ID'),
   }),
-  async execute(args, ctx) {
+  async execute(args, _ctx) {
     const todos = await loadTodos();
-    const index = todos.findIndex(t => t.id === args.id);
+    const index = todos.findIndex((t) => t.id === args.id);
 
     if (index === -1) {
       return {
@@ -245,7 +253,7 @@ export const TodoDeleteTool = defineTool('tododelete', {
 export const TodoClearTool = defineTool('todoclear', {
   description: '清空所有任务',
   parameters: z.object({}),
-  async execute(args, ctx) {
+  async execute(_args, _ctx) {
     const todos = await loadTodos();
     const count = todos.length;
 

@@ -1,0 +1,20 @@
+Performs precise string replacement within a file. You MUST read the file content before using this tool.
+
+Usage:
+- The filePath parameter must be an absolute path
+- The oldString parameter must match the file content exactly, including indentation and newlines
+- The newString parameter contains the replacement content
+- If oldString appears multiple times and replaceAll is false, the edit will fail
+- The replaceAll parameter replaces all occurrences when set to true
+
+Important Notes:
+- This tool performs exact string matching - case-sensitive, including all whitespace
+- If the edit fails with "oldString not found in content", the oldString may not match exactly
+- For multi-line replacements, ensure the oldString includes proper line endings
+- Always use the Read tool first to see the exact content before editing
+
+Recommendations:
+- Use Edit tool for small, targeted changes
+- For large file rewrites, use Write tool instead
+- Test your oldString by searching for unique identifiers in the file
+- If oldString contains special characters, consider escaping them

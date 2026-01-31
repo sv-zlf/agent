@@ -14,7 +14,7 @@ export const WriteTool = defineTool('write', {
     filePath: z.string().describe('要写入的文件的绝对路径'),
     content: z.string().describe('要写入文件的内容'),
   }),
-  async execute(args, ctx) {
+  async execute(args, _ctx) {
     const { filePath, content } = args;
 
     try {

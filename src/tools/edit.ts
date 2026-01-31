@@ -9,14 +9,15 @@ import * as path from 'path';
 import { defineTool } from './tool';
 
 export const EditTool = defineTool('edit', {
-  description: '对文件执行精确的字符串替换。必须在读取文件后才能使用此工具。old_string 必须与文件内容完全匹配，包括缩进和换行符。',
+  description:
+    '对文件执行精确的字符串替换。必须在读取文件后才能使用此工具。old_string 必须与文件内容完全匹配，包括缩进和换行符。',
   parameters: z.object({
     filePath: z.string().describe('要编辑的文件的绝对路径'),
     oldString: z.string().describe('要替换的旧字符串（必须完全匹配）'),
     newString: z.string().describe('要替换成的新字符串'),
     replaceAll: z.boolean().optional().describe('是否替换所有匹配项（默认只替换第一个）'),
   }),
-  async execute(args, ctx) {
+  async execute(args, _ctx) {
     const { filePath, oldString, newString, replaceAll = false } = args;
 
     try {

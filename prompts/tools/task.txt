@@ -1,0 +1,26 @@
+Launches a specialized agent to handle complex, multi-step tasks.
+
+Available Subagent Types:
+- explore - File search specialist for exploring and navigating codebases
+
+When to Use Task Tool:
+- When you need to rapidly explore a codebase
+- When searching for specific file patterns or code content
+- For tasks requiring broad codebase navigation
+- When the main context is too large and you need a focused exploration
+
+When NOT to Use Task Tool:
+- To read specific files - Use Read tool directly
+- To search specific class definitions - Use Glob tool directly
+- To search 2-3 specific files for code - Use Read tool directly
+
+Usage:
+- description (required): A brief task description (3-5 words)
+- prompt (required): The specific task for the agent to execute
+- subagent_type (required): The specialized agent type to use (currently only supports 'explore')
+
+Recommendations:
+- Be specific and clear in your task description
+- Provide detailed instructions in the prompt
+- Use the explore agent for codebase exploration and file/content searches
+- The explore agent excels at finding files using glob patterns and searching with regex

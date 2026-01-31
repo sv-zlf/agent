@@ -7,9 +7,8 @@ import * as fs from 'fs/promises';
 import * as fsSync from 'fs';
 import * as path from 'path';
 import chalk from 'chalk';
-import { getConfig } from '../config';
 import type { Message } from '../types';
-import { select, confirm, question, multiSelect, type SelectOption, getConfigPath } from '../utils';
+import { select, confirm, question, multiSelect, getConfigPath } from '../utils';
 import type { Session } from '../core/session-manager';
 
 /**
@@ -17,17 +16,14 @@ import type { Session } from '../core/session-manager';
  */
 export interface CommandResult {
   shouldContinue: boolean; // 是否继续执行（false 表示命令处理后停止）
-  message?: string;        // 可选的返回消息
-  systemPrompt?: string;   // 可选的系统提示词更新
+  message?: string; // 可选的返回消息
+  systemPrompt?: string; // 可选的系统提示词更新
 }
 
 /**
  * 命令处理器类型
  */
-export type CommandHandler = (
-  args: string,
-  context: CommandContext
-) => Promise<CommandResult>;
+export type CommandHandler = (args: string, context: CommandContext) => Promise<CommandResult>;
 
 /**
  * 命令上下文
@@ -175,10 +171,7 @@ export class CommandManager {
   /**
    * 执行命令
    */
-  async executeCommand(
-    input: string,
-    context: CommandContext
-  ): Promise<CommandResult> {
+  async executeCommand(input: string, context: CommandContext): Promise<CommandResult> {
     const parsed = this.parseCommand(input);
     if (!parsed) {
       return { shouldContinue: true };
@@ -210,10 +203,7 @@ export class CommandManager {
    * /init 命令处理器 - 创建/更新 AGENTS.md 项目文档
    * 使用 AI 分析项目并生成标准化文档
    */
-  private async handleInitCommand(
-    args: string,
-    context: CommandContext
-  ): Promise<CommandResult> {
+  private async handleInitCommand(_args: string, context: CommandContext): Promise<CommandResult> {
     const agentsFilePath = path.join(context.workingDirectory, 'AGENTS.md');
 
     // 检查是否需要使用 AI 生成（有 API adapter）
@@ -242,7 +232,8 @@ export class CommandManager {
       const messages: Message[] = [
         {
           role: 'system',
-          content: '你是一个专业的项目文档生成助手。请分析提供的项目信息，生成清晰、准确、实用的 AGENTS.md 文档。',
+          content:
+            '你是一个专业的项目文档生成助手。请分析提供的项目信息，生成清晰、准确、实用的 AGENTS.md 文档。',
         },
         {
           role: 'user',
@@ -294,7 +285,9 @@ export class CommandManager {
     try {
       const pkgJson = JSON.parse(await fs.readFile(packageJsonPath, 'utf-8'));
       if (pkgJson.scripts) {
-        contextParts.push(`### package.json scripts\n\`\`\`json\n${JSON.stringify(pkgJson.scripts, null, 2)}\n\`\`\`\n`);
+        contextParts.push(
+          `### package.json scripts\n\`\`\`json\n${JSON.stringify(pkgJson.scripts, null, 2)}\n\`\`\`\n`
+        );
       }
     } catch {}
 
@@ -302,7 +295,9 @@ export class CommandManager {
     const agentsPath = path.join(workingDir, 'AGENTS.md');
     try {
       const existingAgents = await fs.readFile(agentsPath, 'utf-8');
-      contextParts.push(`### 现有的 AGENTS.md\n\`\`\`\n${existingAgents.substring(0, 2000)}\n\`\`\`\n`);
+      contextParts.push(
+        `### 现有的 AGENTS.md\n\`\`\`\n${existingAgents.substring(0, 2000)}\n\`\`\`\n`
+      );
     } catch {}
 
     // 4. Cursor/Copilot 规则
@@ -324,14 +319,18 @@ export class CommandManager {
     const copilotInstructionsPath = path.join(workingDir, '.github', 'copilot-instructions.md');
     try {
       const copilotInstructions = await fs.readFile(copilotInstructionsPath, 'utf-8');
-      contextParts.push(`### .github/copilot-instructions.md\n\`\`\`\n${copilotInstructions}\n\`\`\`\n`);
+      contextParts.push(
+        `### .github/copilot-instructions.md\n\`\`\`\n${copilotInstructions}\n\`\`\`\n`
+      );
     } catch {}
 
     // 5. CONTRIBUTING.md
     const contributingPath = path.join(workingDir, 'CONTRIBUTING.md');
     try {
       const contributing = await fs.readFile(contributingPath, 'utf-8');
-      contextParts.push(`### CONTRIBUTING.md\n\`\`\`\n${contributing.substring(0, 2000)}\n\`\`\`\n`);
+      contextParts.push(
+        `### CONTRIBUTING.md\n\`\`\`\n${contributing.substring(0, 2000)}\n\`\`\`\n`
+      );
     } catch {}
 
     // 6. 项目结构（简要）
@@ -340,7 +339,7 @@ export class CommandManager {
       const items = await fs.readdir(srcPath, { withFileTypes: true });
       const structure = items
         .slice(0, 15)
-        .map(item => `${item.isDirectory() ? '📁' : '📄'} ${item.name}`)
+        .map((item) => `${item.isDirectory() ? '📁' : '📄'} ${item.name}`)
         .join('\n');
       contextParts.push(`### src/ 目录结构\n\`\`\`\n${structure}\n\`\`\`\n`);
     } catch {}
@@ -402,7 +401,10 @@ export class CommandManager {
     workingDir: string,
     agentsFilePath: string
   ): Promise<CommandResult> {
-    const exists = await fs.access(agentsFilePath).then(() => true).catch(() => false);
+    const exists = await fs
+      .access(agentsFilePath)
+      .then(() => true)
+      .catch(() => false);
 
     // 基础模板
     const lines: string[] = [];
@@ -481,10 +483,7 @@ export class CommandManager {
     };
   }
 
-  private async handleModelsCommand(
-    args: string,
-    context: CommandContext
-  ): Promise<CommandResult> {
+  private async handleModelsCommand(args: string, context: CommandContext): Promise<CommandResult> {
     const config = context.config;
 
     // 如果没有参数，列出可用模型（交互式选择）
@@ -499,7 +498,10 @@ export class CommandManager {
   /**
    * 列出可用模型（交互式选择）
    */
-  private async listModels(config: any, pauseKeyListener?: () => () => void): Promise<CommandResult> {
+  private async listModels(
+    config: any,
+    pauseKeyListener?: () => () => void
+  ): Promise<CommandResult> {
     const currentModel = config.getAPIConfig().model;
 
     // 常用模型列表
@@ -511,7 +513,7 @@ export class CommandManager {
     ];
 
     // 找到当前模型的索引
-    const currentIndex = commonModels.findIndex(m => m.name === currentModel);
+    const currentIndex = commonModels.findIndex((m) => m.name === currentModel);
     const defaultIndex = currentIndex >= 0 ? currentIndex : 0;
 
     // 暂停按键监听器（如果有）
@@ -526,7 +528,7 @@ export class CommandManager {
       // 使用交互式选择器
       const selected = await select({
         message: '选择模型:',
-        options: commonModels.map(model => ({
+        options: commonModels.map((model) => ({
           label: `${model.name}${model.name === currentModel ? ' ✅ (当前)' : ''}`,
           value: model.name,
           description: `${model.provider} - ${model.description}`,
@@ -553,7 +555,10 @@ export class CommandManager {
   /**
    * 列出所有会话（交互式选择切换）
    */
-  private async listSessions(sessionManager: any, pauseKeyListener?: () => () => void): Promise<CommandResult> {
+  private async listSessions(
+    sessionManager: any,
+    pauseKeyListener?: () => () => void
+  ): Promise<CommandResult> {
     const sessions = sessionManager.getAllSessions();
     const currentSessionId = sessionManager.getCurrentSession()?.id;
 
@@ -569,7 +574,7 @@ export class CommandManager {
 
       const selected = await select({
         message: '选择要切换的会话 (或按 Esc 取消):',
-        options: sessions.map((session: Session, index: number) => ({
+        options: sessions.map((session: Session) => ({
           label: `${session.title || session.name}${session.id === currentSessionId ? ' ✅' : ''}`,
           value: session.id,
           description: `${new Date(session.lastActiveAt).toLocaleString('zh-CN')} | ${session.agentType || 'default'}`,
@@ -599,10 +604,7 @@ export class CommandManager {
   /**
    * 切换模型
    */
-  private async switchModel(
-    modelName: string,
-    config: any
-  ): Promise<CommandResult> {
+  private async switchModel(modelName: string, config: any): Promise<CommandResult> {
     const oldModel = config.getAPIConfig().model;
 
     if (modelName === oldModel) {
@@ -873,7 +875,6 @@ export class CommandManager {
     }
   }
 
-
   /**
    * /compress 命令处理器 - 压缩管理
    */
@@ -910,7 +911,11 @@ export class CommandManager {
           console.log(chalk.green('✓ 压缩完成:'));
           console.log(chalk.gray(`  原始: ${result.originalTokens} tokens`));
           console.log(chalk.gray(`  压缩后: ${result.compressedTokens} tokens`));
-          console.log(chalk.gray(`  节省: ${result.savedTokens} tokens (${Math.round(result.savedTokens / result.originalTokens * 100)}%)`));
+          console.log(
+            chalk.gray(
+              `  节省: ${result.savedTokens} tokens (${Math.round((result.savedTokens / result.originalTokens) * 100)}%)`
+            )
+          );
           if (result.prunedParts > 0) {
             console.log(chalk.gray(`  修剪: ${result.prunedParts} 个部件`));
           }
@@ -932,7 +937,11 @@ export class CommandManager {
             console.log(chalk.green('✓ LLM 压缩完成:'));
             console.log(chalk.gray(`  原始: ${llmResult.originalTokens} tokens`));
             console.log(chalk.gray(`  压缩后: ${llmResult.compressedTokens} tokens`));
-            console.log(chalk.gray(`  节省: ${llmResult.savedTokens} tokens (${Math.round(llmResult.savedTokens / llmResult.originalTokens * 100)}%)`));
+            console.log(
+              chalk.gray(
+                `  节省: ${llmResult.savedTokens} tokens (${Math.round((llmResult.savedTokens / llmResult.originalTokens) * 100)}%)`
+              )
+            );
             console.log();
           } else {
             console.log(chalk.yellow('  LLM 压缩返回空结果\n'));
@@ -949,13 +958,25 @@ export class CommandManager {
         const currentTokens = contextManager.estimateTokens();
 
         console.log(chalk.cyan('📊 压缩状态:\n'));
-        console.log(chalk.gray(`  自动压缩: ${config.enabled ? chalk.green('启用') : chalk.yellow('禁用')}`));
+        console.log(
+          chalk.gray(`  自动压缩: ${config.enabled ? chalk.green('启用') : chalk.yellow('禁用')}`)
+        );
         console.log(chalk.gray(`  当前 tokens: ${currentTokens}`));
         console.log(chalk.gray(`  最大限制: ${config.maxTokens}`));
         console.log(chalk.gray(`  保留空间: ${config.reserveTokens}`));
-        console.log(chalk.gray(`  使用率: ${Math.round(currentTokens / (config.maxTokens - config.reserveTokens) * 100)}%`));
-        console.log(chalk.gray(`  需要压缩: ${needsCompaction ? chalk.red('是') : chalk.green('否')}`));
-        console.log(chalk.gray(`  LLM 压缩: ${contextManager.supportsLLMCompact() ? chalk.green('可用 (/compress llm)') : chalk.gray('不可用')}`));
+        console.log(
+          chalk.gray(
+            `  使用率: ${Math.round((currentTokens / (config.maxTokens - config.reserveTokens)) * 100)}%`
+          )
+        );
+        console.log(
+          chalk.gray(`  需要压缩: ${needsCompaction ? chalk.red('是') : chalk.green('否')}`)
+        );
+        console.log(
+          chalk.gray(
+            `  LLM 压缩: ${contextManager.supportsLLMCompact() ? chalk.green('可用 (/compress llm)') : chalk.gray('不可用')}`
+          )
+        );
         console.log();
         return { shouldContinue: false };
 
@@ -975,7 +996,7 @@ export class CommandManager {
    * /tokens 命令处理器 - 显示 token 使用情况
    */
   private async handleTokensCommand(
-    args: string,
+    _args: string,
     context: CommandContext
   ): Promise<CommandResult> {
     const { contextManager } = context;
@@ -1010,7 +1031,9 @@ export class CommandManager {
     console.log();
 
     const config = compactor.getConfig();
-    const usagePercent = Math.round(totalTokens / (config.maxTokens - config.reserveTokens) * 100);
+    const usagePercent = Math.round(
+      (totalTokens / (config.maxTokens - config.reserveTokens)) * 100
+    );
 
     if (usagePercent > 80) {
       console.log(chalk.yellow('⚠️  上下文使用率较高，建议启用压缩: /compress on\n'));
@@ -1028,7 +1051,7 @@ export class CommandManager {
     args: string,
     context: CommandContext
   ): Promise<CommandResult> {
-    const { config, workingDirectory } = context;
+    const { config } = context;
     const parts = args.trim().split(/\s+/);
     const subCommand = parts[0] || 'list';
 
@@ -1091,10 +1114,26 @@ export class CommandManager {
 
     // 模型参数
     console.log(chalk.yellow('模型参数:'));
-    console.log(chalk.gray(`  temperature:       ${modelConfig.temperature !== undefined ? modelConfig.temperature : '未设置 (使用默认)'}`));
-    console.log(chalk.gray(`  top_p:             ${modelConfig.top_p !== undefined ? modelConfig.top_p : '未设置 (使用默认)'}`));
-    console.log(chalk.gray(`  top_k:             ${modelConfig.top_k !== undefined ? modelConfig.top_k : '未设置 (使用默认)'}`));
-    console.log(chalk.gray(`  repetition_penalty: ${modelConfig.repetition_penalty !== undefined ? modelConfig.repetition_penalty : '未设置 (使用默认)'}`));
+    console.log(
+      chalk.gray(
+        `  temperature:       ${modelConfig.temperature !== undefined ? modelConfig.temperature : '未设置 (使用默认)'}`
+      )
+    );
+    console.log(
+      chalk.gray(
+        `  top_p:             ${modelConfig.top_p !== undefined ? modelConfig.top_p : '未设置 (使用默认)'}`
+      )
+    );
+    console.log(
+      chalk.gray(
+        `  top_k:             ${modelConfig.top_k !== undefined ? modelConfig.top_k : '未设置 (使用默认)'}`
+      )
+    );
+    console.log(
+      chalk.gray(
+        `  repetition_penalty: ${modelConfig.repetition_penalty !== undefined ? modelConfig.repetition_penalty : '未设置 (使用默认)'}`
+      )
+    );
     console.log();
 
     console.log(chalk.gray('💡 提示:'));
@@ -1112,7 +1151,7 @@ export class CommandManager {
   private async updateSetting(
     paramName: string,
     value: string,
-    config: any
+    _config: any
   ): Promise<CommandResult> {
     // 验证参数名
     const validParams = ['temperature', 'top_p', 'top_k', 'repetition_penalty'];
@@ -1145,7 +1184,11 @@ export class CommandManager {
 
     const validationRule = validation[paramName];
     if (numValue < validationRule.min || numValue > validationRule.max) {
-      console.log(chalk.red(`✗ ${validationRule.description} 值超出范围: ${validationRule.min} - ${validationRule.max}\n`));
+      console.log(
+        chalk.red(
+          `✗ ${validationRule.description} 值超出范围: ${validationRule.min} - ${validationRule.max}\n`
+        )
+      );
       return { shouldContinue: false };
     }
 
@@ -1187,7 +1230,7 @@ export class CommandManager {
   /**
    * 重置设置为默认值
    */
-  private async resetSettings(config: any): Promise<CommandResult> {
+  private async resetSettings(_config: any): Promise<CommandResult> {
     const configPath = getConfigPath();
     try {
       // 检查文件是否存在
@@ -1262,7 +1305,7 @@ export class CommandManager {
     });
 
     console.log(chalk.green(`你选择了 ${features.length} 个功能:`));
-    features.forEach(f => console.log(chalk.gray(`  - ${f.label}`)));
+    features.forEach((f) => console.log(chalk.gray(`  - ${f.label}`)));
     console.log();
 
     return { shouldContinue: false };

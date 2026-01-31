@@ -1,7 +1,7 @@
 import * as fs from 'fs-extra';
 import * as path from 'path';
 import * as fg from 'fast-glob';
-import type { CodeEdit, FileAnalysis, SearchOptions } from '../types';
+import type { FileAnalysis, SearchOptions } from '../types';
 
 /**
  * 代码操作器

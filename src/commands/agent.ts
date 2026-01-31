@@ -10,8 +10,6 @@ import { PermissionManager, PermissionAction } from '../core/permissions';
 import { createLogger } from '../utils';
 import { displayBanner } from '../utils/logo';
 import { createCommandManager, type CommandResult } from './slash-commands';
-import { CommandCompleter } from './command-completer';
-import type { ToolCall } from '../types';
 import { readFileSync } from 'fs';
 
 const logger = createLogger();
@@ -35,15 +33,6 @@ function formatTimestamp(): string {
 
 function printSeparator(color: chalk.Chalk = chalk.gray): void {
   console.log(color('─'.repeat(60)));
-}
-
-function printUserMessage(message: string): void {
-  console.log();
-  printSeparator(chalk.cyan);
-  console.log(chalk.cyan('👤 用户') + chalk.gray(`  ${formatTimestamp()}`));
-  console.log();
-  console.log(chalk.white(message));
-  console.log();
 }
 
 function printAssistantMessage(message: string): void {
@@ -79,19 +68,10 @@ function printToolCompactResult(success: boolean, result: { output?: string; err
   }
 }
 
-function printSection(title: string, color: chalk.Chalk = chalk.cyan): void {
-  console.log();
-  printSeparator(color);
-  console.log(color(title));
-  printSeparator(color);
-  console.log();
-}
-
 /**
  * 从工具参数中提取路径（用于权限检查）
  */
-function extractPathFromParams(tool: string, params: Record<string, unknown>): string | undefined {
-  // 常见的路径参数名
+function extractPathFromParams(_tool: string, params: Record<string, unknown>): string | undefined {
   const pathKeys = ['file_path', 'path', 'filePath', 'pattern', 'glob'];
 
   for (const key of pathKeys) {
@@ -101,22 +81,6 @@ function extractPathFromParams(tool: string, params: Record<string, unknown>): s
   }
 
   return undefined;
-}
-
-/**
- * 将 ToolDefinition.permission 映射到 PermissionAction
- */
-function mapPermissionToAction(permission: string): PermissionAction {
-  switch (permission) {
-    case 'safe':
-      return PermissionAction.ALLOW;
-    case 'local-modify':
-    case 'network':
-    case 'dangerous':
-      return PermissionAction.ASK;
-    default:
-      return PermissionAction.ASK;
-  }
 }
 
 /**
@@ -178,9 +142,9 @@ export const agentCommand = new Command('agent')
     const sessionManager = createSessionManager();
     await sessionManager.initialize();
 
-    // 如果指定了 agent，创建新会话
+    // 如果指定了 agent，更新会话类型
     if (options.agent) {
-      const newSession = await sessionManager.createSession(`Agent: ${options.agent}`, options.agent);
+      await sessionManager.createSession(`Agent: ${options.agent}`, options.agent);
       await sessionManager.updateSessionActivity();
     }
 
@@ -293,16 +257,6 @@ export const agentCommand = new Command('agent')
       rl.input.on('data', interruptKeyListener);
     };
 
-    // 移除中断按键监听
-    const removeInterruptKey = () => {
-      if (interruptKeyListener) {
-        rl.input.removeListener('data', interruptKeyListener);
-        interruptKeyListener = null;
-        // 关闭 raw mode，恢复正常输入
-        rl.input.setRawMode(false);
-      }
-    };
-
     // 设置 SIGINT 处理 - 只用于退出程序
     process.on('SIGINT', () => {
       console.log();
@@ -396,15 +350,6 @@ export const agentCommand = new Command('agent')
       rl.input.resume();
     };
 
-    // 移除按键监听器的辅助函数
-    const removeKeyListener = (): void => {
-      if (keyListener) {
-        rl.input.removeListener('data', keyListener);
-        keyListener = null;
-      }
-      rl.input.setRawMode(false);
-    };
-
     // 设置系统提示词（只设置一次）
     // 使用 AgentManager 加载对应的 agent 提示词
     const agentManager = getAgentManager();
@@ -421,9 +366,8 @@ export const agentCommand = new Command('agent')
 
     contextManager.setSystemPrompt(systemPrompt);
 
-    // 创建命令管理器和补全器
+    // 创建命令管理器
     const commandManager = createCommandManager();
-    const commandCompleter = new CommandCompleter(commandManager);
 
     // 记录用户是否已经批准了所有工具调用
     let autoApproveAll = false;
@@ -567,7 +511,6 @@ export const agentCommand = new Command('agent')
 
         // 处理特殊命令（如果不是斜杠命令）
         if (input.toLowerCase() === 'exit' || input.toLowerCase() === 'quit') {
-          const rlToClose = getReadline(); // 获取当前的 rl
           cleanupAndExit();
           return;
         }

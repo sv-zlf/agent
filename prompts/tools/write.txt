@@ -1,0 +1,14 @@
+Creates a new file or completely overwrites the existing file content.
+The tool automatically creates any necessary parent directories.
+
+Usage:
+- The filePath parameter must be an absolute path
+- If the file already exists, it will be completely overwritten
+- You MUST read the file content with the Read tool BEFORE writing to an existing file
+- Prioritize editing existing files over creating new files
+
+Recommendations:
+- Always use Read tool first to check if a file exists before writing
+- For small changes, use the Edit tool instead of Write tool
+- Do not create documentation files (*.md) unless explicitly requested
+- The content parameter should contain the complete file content, not just a fragment

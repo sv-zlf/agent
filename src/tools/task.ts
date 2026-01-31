@@ -10,11 +10,13 @@ import { getAgentManager } from '../core/agent';
 import { createSessionManager, type Session } from '../core/session-manager';
 import { createContextManager, type ContextManager } from '../core/context-manager';
 import { createAPIAdapter } from '../api';
-import { createToolEngine } from '../core/tool-engine';
+import { createToolEngine, ToolEngine } from '../core/tool-engine';
 import { createAgentOrchestrator, type AgentExecutionConfig } from '../core/agent';
 import { getConfig } from '../config';
+import { PermissionManager, PermissionAction, PermissionPresets } from '../core/permissions';
+import { getBuiltinTools } from './index';
 
-interface TaskMetadata {
+export interface TaskMetadata {
   sessionId: string;
   subagentType: string;
   description: string;
@@ -34,6 +36,66 @@ const TaskParameters = z.object({
   subagent_type: z.string().describe('子 agent 类型').default('explore'),
   session_id: z.string().describe('继续现有任务会话').optional(),
 });
+
+async function registerSubagentTools(toolEngine: ToolEngine, subagentType: string): Promise<void> {
+  const tools = await getBuiltinTools();
+
+  const allowedTools = getAllowedToolsForAgent(subagentType);
+
+  const filteredTools = tools.filter((tool) => {
+    const toolName = tool.name
+      .toLowerCase()
+      .replace(/([A-Z])/g, '-$1')
+      .toLowerCase();
+    return allowedTools.includes(toolName) || allowedTools.includes('*');
+  });
+
+  toolEngine.registerTools(filteredTools);
+}
+
+function getAllowedToolsForAgent(agentType: string): string[] {
+  const agentConfigs: Record<string, string[]> = {
+    explore: ['read', 'glob', 'grep', 'bash'],
+    default: [
+      'read',
+      'write',
+      'edit',
+      'glob',
+      'grep',
+      'bash',
+      'task',
+      'todowrite',
+      'todoread',
+      'batch',
+      'multiedit',
+    ],
+    build: ['read', 'write', 'edit', 'bash', 'todowrite', 'todoread'],
+    plan: ['read', 'glob', 'grep'],
+  };
+
+  return agentConfigs[agentType] || agentConfigs['default'];
+}
+
+function configureSubagentPermissions(
+  permissionManager: PermissionManager,
+  subagentType: string
+): void {
+  switch (subagentType) {
+    case 'explore':
+      permissionManager.addRules(PermissionPresets.explore);
+      break;
+    case 'plan':
+      permissionManager.addRules([
+        { tool: 'Read', pattern: '*', action: PermissionAction.ALLOW },
+        { tool: 'Glob', pattern: '*', action: PermissionAction.ALLOW },
+        { tool: 'Grep', pattern: '*', action: PermissionAction.ALLOW },
+        { tool: '*', pattern: '*', action: PermissionAction.DENY },
+      ]);
+      break;
+    default:
+      permissionManager.setDefaultAction(PermissionAction.ALLOW);
+  }
+}
 
 export const TaskTool = defineTool('task', {
   description: `启动专门的 agent 来处理复杂、多步骤的任务。
@@ -78,7 +140,9 @@ export const TaskTool = defineTool('task', {
     let subagentContextManager: ContextManager;
 
     if (session_id) {
-      const existingSession = Array.from(sessionManager.getAllSessions()).find(s => s.id === session_id);
+      const existingSession = Array.from(sessionManager.getAllSessions()).find(
+        (s) => s.id === session_id
+      );
       if (existingSession) {
         session = existingSession;
         subagentContextManager = createContextManager(
@@ -88,7 +152,10 @@ export const TaskTool = defineTool('task', {
         );
         await subagentContextManager.loadHistory();
       } else {
-        session = await sessionManager.createSession(`${description} (@${subagent_type})`, subagent_type);
+        session = await sessionManager.createSession(
+          `${description} (@${subagent_type})`,
+          subagent_type
+        );
         subagentContextManager = createContextManager(
           agentConfig.max_history,
           agentConfig.max_context_tokens,
@@ -96,7 +163,10 @@ export const TaskTool = defineTool('task', {
         );
       }
     } else {
-      session = await sessionManager.createSession(`${description} (@${subagent_type})`, subagent_type);
+      session = await sessionManager.createSession(
+        `${description} (@${subagent_type})`,
+        subagent_type
+      );
       subagentContextManager = createContextManager(
         agentConfig.max_history,
         agentConfig.max_context_tokens,
@@ -122,7 +192,10 @@ export const TaskTool = defineTool('task', {
 
     for (const msg of lastMessages) {
       if (msg.role === 'system') continue;
-      subagentContextManager.addMessage(msg.role as 'user' | 'assistant', 'content' in msg ? msg.content : '');
+      subagentContextManager.addMessage(
+        msg.role as 'user' | 'assistant',
+        'content' in msg ? msg.content : ''
+      );
     }
 
     const userPrompt = `## 主任务\n${prompt}\n\n## 背景信息\n这是从主会话传递过来的任务。请完成上述任务，并在最后提供清晰的总结。`;
@@ -132,10 +205,15 @@ export const TaskTool = defineTool('task', {
     const apiAdapter = createAPIAdapter(apiConfig);
     const toolEngine = createToolEngine();
 
+    await registerSubagentTools(toolEngine, subagent_type);
+
+    const permissionManager = new PermissionManager();
+    configureSubagentPermissions(permissionManager, subagent_type);
+
     const execConfig: AgentExecutionConfig = {
       workingDirectory: process.cwd(),
       maxIterations: agent.maxSteps || 20,
-      autoApprove: false,
+      autoApprove: true,
       dangerousCommands: [],
     };
 
@@ -143,7 +221,9 @@ export const TaskTool = defineTool('task', {
       apiAdapter,
       toolEngine,
       subagentContextManager,
-      execConfig
+      execConfig,
+      undefined,
+      permissionManager
     );
 
     let subagentResult: Awaited<ReturnType<typeof orchestrator.execute>>;
@@ -154,7 +234,7 @@ export const TaskTool = defineTool('task', {
     }
 
     const messages = subagentContextManager.getRawMessages();
-    const assistantMessages = messages.filter(m => m.role === 'assistant');
+    const assistantMessages = messages.filter((m) => m.role === 'assistant');
 
     const summary = assistantMessages.flatMap((msg: any) => {
       if ('parts' in msg) {

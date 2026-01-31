@@ -126,42 +126,52 @@ export async function getAllToolInfos() {
 
 /**
  * 生成工具描述（用于系统提示词）
+ * 从外部文件加载的工具描述已经是完整的使用说明
  */
 export async function generateToolsDescription(): Promise<string> {
   const infos = await getAllToolInfos();
   const lines: string[] = [];
 
   for (const info of infos) {
-    lines.push(`### ${info.id}`);
-    lines.push(`**描述**: ${info.description}`);
-    lines.push('**参数**:');
+    // 工具描述已经从 prompts/tools/*.txt 加载
+    // 如果描述较短，补充参数信息
+    const hasExternalPrompt = info.description.includes('\n');
 
-    // Zod schema 转换为可读格式
-    const schema = info.parameters as any;
-    const keys = schema ? Object.keys(schema.shape || {}) : [];
-
-    if (keys.length === 0) {
-      lines.push('  (无参数)');
+    if (hasExternalPrompt) {
+      // 外部文件已经包含完整说明
+      lines.push(`## ${info.id}\n`);
+      lines.push(info.description);
+      lines.push('');
     } else {
-      keys.forEach((key: string) => {
-        // 获取字段的描述和是否必需
-        const fieldSchema = schema.shape[key];
-        const isOptional = fieldSchema?.isOptional?.();
-        const description = (fieldSchema as any).description || '';
+      // 回退到简短描述 + 参数列表
+      lines.push(`## ${info.id}`);
+      lines.push(`${info.description}\n`);
+      lines.push('**Parameters**:');
 
-        // 推断类型
-        let typeName = 'unknown';
-        if (fieldSchema instanceof z.ZodString) typeName = 'string';
-        else if (fieldSchema instanceof z.ZodNumber) typeName = 'number';
-        else if (fieldSchema instanceof z.ZodBoolean) typeName = 'boolean';
-        else if (fieldSchema instanceof z.ZodOptional) typeName = 'any'; // 简化处理
+      const schema = info.parameters as any;
+      const keys = schema ? Object.keys(schema.shape || {}) : [];
 
-        const optional = isOptional ? ' **[可选]**' : ' **[必需]**';
-        lines.push(`  - \`${key}\` (${typeName})${optional}: ${description}`);
-      });
+      if (keys.length === 0) {
+        lines.push('  (None)');
+      } else {
+        keys.forEach((key: string) => {
+          const fieldSchema = schema.shape[key];
+          const isOptional = fieldSchema?.isOptional?.();
+          const description = (fieldSchema as any).description || '';
+
+          let typeName = 'unknown';
+          if (fieldSchema instanceof z.ZodString) typeName = 'string';
+          else if (fieldSchema instanceof z.ZodNumber) typeName = 'number';
+          else if (fieldSchema instanceof z.ZodBoolean) typeName = 'boolean';
+          else if (fieldSchema instanceof z.ZodOptional) typeName = 'any';
+
+          const optional = isOptional ? ' [optional]' : ' [required]';
+          lines.push(`  - \`${key}\` (${typeName})${optional}: ${description}`);
+        });
+      }
+
+      lines.push('');
     }
-
-    lines.push('');
   }
 
   return lines.join('\n');

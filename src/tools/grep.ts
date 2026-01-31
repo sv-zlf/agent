@@ -16,7 +16,7 @@ export const GrepTool = defineTool('grep', {
     path: z.string().optional().describe('搜索的根目录（默认为当前工作目录）'),
     filePattern: z.string().optional().describe('限制搜索的文件模式，例如 *.ts'),
   }),
-  async execute(args, ctx) {
+  async execute(args, _ctx) {
     const { pattern, path: searchPath = process.cwd(), filePattern = '**/*' } = args;
 
     try {
@@ -24,15 +24,27 @@ export const GrepTool = defineTool('grep', {
 
       // 手动实现简单搜索
       const files: string[] = await new Promise((resolve, reject) => {
-        globFn(filePattern, {
-          cwd: searchPath,
-          absolute: true,
-          windowsPathsNoEscape: true,
-        }, (err: any, matches: string[]) => {
-          if (err) reject(err);
-          else resolve(matches);
-        });
+        globFn(
+          filePattern,
+          {
+            cwd: searchPath,
+            absolute: true,
+            windowsPathsNoEscape: true,
+          },
+          (err: any, matches: string[]) => {
+            if (err) reject(err);
+            else resolve(matches);
+          }
+        );
       });
+
+      if (pattern.length > 10000) {
+        return {
+          title: 'Invalid Pattern',
+          output: `正则表达式过于复杂，可能导致性能问题。请简化搜索模式。`,
+          metadata: { error: true, pattern },
+        };
+      }
 
       const regex = new RegExp(pattern, 'i');
 

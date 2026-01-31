@@ -64,8 +64,8 @@ function formatMultiEditResults(
   lines.push(`## MultiEdit 结果`);
   lines.push(`文件: ${path.basename(filePath)}\n`);
 
-  const successful = results.filter(r => r.success);
-  const failed = results.filter(r => !r.success);
+  const successful = results.filter((r) => r.success);
+  const failed = results.filter((r) => !r.success);
 
   if (failed.length > 0) {
     lines.push(`### ❌ 编辑失败`);
@@ -73,7 +73,7 @@ function formatMultiEditResults(
     lines.push(`失败: ${failed.length}/${totalCount}\n`);
 
     lines.push(`### 失败的操作:`);
-    failed.forEach(r => {
+    failed.forEach((r) => {
       lines.push(`${r.index}. ${r.message}`);
     });
   } else {
@@ -84,7 +84,7 @@ function formatMultiEditResults(
     lines.push(`总计: ${totalReplacements} 处替换\n`);
 
     lines.push(`### 编辑详情:`);
-    successful.forEach(r => {
+    successful.forEach((r) => {
       lines.push(`${r.index}. ${r.message}`);
     });
   }
@@ -106,20 +106,25 @@ function formatMultiEditResults(
  * - 创建新文件并进行初始编辑
  */
 export const MultiEditTool = defineTool('multiedit', {
-  description: '对单个文件执行多次编辑操作。所有编辑按顺序执行，原子性操作（全部成功或全部失败）。适用于需要对同一文件进行多处修改的场景。',
+  description:
+    '对单个文件执行多次编辑操作。所有编辑按顺序执行，原子性操作（全部成功或全部失败）。适用于需要对同一文件进行多处修改的场景。',
   parameters: z.object({
     filePath: z.string().describe('要编辑的文件的绝对路径'),
-    edits: z.array(
-      z.object({
-        oldString: z.string().describe('要替换的旧字符串（必须完全匹配）'),
-        newString: z.string().describe('要替换成的新字符串'),
-        replaceAll: z.boolean().optional().describe('是否替换所有匹配项（默认只替换第一个）'),
-      })
-    ).min(1, '至少需要一个编辑操作').max(50, '最多支持 50 个编辑操作').describe('编辑操作数组，按顺序执行'),
+    edits: z
+      .array(
+        z.object({
+          oldString: z.string().describe('要替换的旧字符串（必须完全匹配）'),
+          newString: z.string().describe('要替换成的新字符串'),
+          replaceAll: z.boolean().optional().describe('是否替换所有匹配项（默认只替换第一个）'),
+        })
+      )
+      .min(1, '至少需要一个编辑操作')
+      .max(50, '最多支持 50 个编辑操作')
+      .describe('编辑操作数组，按顺序执行'),
   }),
   formatValidationError(error) {
     const formattedErrors = error.issues
-      .map(issue => {
+      .map((issue) => {
         const path = issue.path.join('.');
         return `  - ${path}: ${issue.message}`;
       })
@@ -127,7 +132,7 @@ export const MultiEditTool = defineTool('multiedit', {
 
     return `MultiEdit 工具参数验证失败:\n${formattedErrors}\n\n期望的格式:\n{\n  "filePath": "绝对路径",\n  "edits": [\n    {"oldString": "...", "newString": "...", "replaceAll": false}\n  ]\n}`;
   },
-  async execute(args, ctx) {
+  async execute(args, _ctx) {
     const { filePath, edits } = args;
 
     try {
@@ -169,7 +174,12 @@ export const MultiEditTool = defineTool('multiedit', {
       }
 
       // 执行所有编辑操作
-      const results: Array<{ index: number; success: boolean; message: string; replacements?: number }> = [];
+      const results: Array<{
+        index: number;
+        success: boolean;
+        message: string;
+        replacements?: number;
+      }> = [];
       let contentAfterEdits = currentContent;
 
       for (let i = 0; i < edits.length; i++) {
@@ -191,14 +201,19 @@ export const MultiEditTool = defineTool('multiedit', {
 
           // 检查是否包含要替换的字符串
           if (!contentAfterEdits.includes(oldString)) {
-            throw new Error(`未找到要替换的内容: "${oldString.substring(0, 50)}${oldString.length > 50 ? '...' : ''}"`);
+            throw new Error(
+              `未找到要替换的内容: "${oldString.substring(0, 50)}${oldString.length > 50 ? '...' : ''}"`
+            );
           }
 
           // 计算匹配数量
-          const count = (contentAfterEdits.match(new RegExp(escapeRegExp(oldString), 'g')) || []).length;
+          const count = (contentAfterEdits.match(new RegExp(escapeRegExp(oldString), 'g')) || [])
+            .length;
 
           if (count > 1 && !replaceAll) {
-            throw new Error(`找到 ${count} 处匹配，需要设置 replaceAll=true 或提供更唯一的 oldString`);
+            throw new Error(
+              `找到 ${count} 处匹配，需要设置 replaceAll=true 或提供更唯一的 oldString`
+            );
           }
 
           // 执行替换
@@ -220,16 +235,16 @@ export const MultiEditTool = defineTool('multiedit', {
             message: error.message || String(error),
           });
 
-          // 原子性：如果有失败，不写入文件
           return {
-            title: `MultiEdit 失败 (${results.filter(r => r.success).length}/${edits.length} 成功)`,
+            title: `MultiEdit 失败 (${results.filter((r) => r.success).length}/${edits.length} 成功)`,
             output: formatMultiEditResults(filePath, results, edits.length),
             metadata: {
               error: true,
               partialFailure: true,
-              successful: results.filter(r => r.success).length,
-              failed: results.filter(r => !r.success).length,
+              successful: results.filter((r) => r.success).length,
+              failed: results.filter((r) => !r.success).length,
               details: results,
+              fileModified: false,
             },
           };
         }

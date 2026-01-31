@@ -1,14 +1,11 @@
-import type { Message, ToolCall, ToolResult, AgentRuntimeConfig, AgentContext, AgentStatus } from '../types';
-import { PartType, createMessage, createToolCallPart, createToolResultPart, messageToText } from '../types/message';
+import type { ToolCall, ToolResult, AgentRuntimeConfig, AgentContext, AgentStatus } from '../types';
 import { ToolEngine } from './tool-engine';
 import { ChatAPIAdapter } from '../api';
 import { ContextManager } from './context-manager';
 import { SessionStateManager, SessionState } from './session-state';
 import { PermissionManager, PermissionAction, type PermissionRequest } from './permissions';
 import { FunctionalAgentManager } from './functional-agents';
-import { createLogger } from '../utils';
-
-const logger = createLogger(true);
+import { generateToolsDescription } from '../tools';
 
 /**
  * Agent执行配置
@@ -109,7 +106,7 @@ export class AgentOrchestrator {
       const hasSystemPrompt = messages.length > 0 && messages[0].role === 'system';
 
       if (!hasSystemPrompt) {
-        const systemPrompt = this.buildSystemPrompt();
+        const systemPrompt = await this.buildSystemPrompt();
         this.contextManager.setSystemPrompt(systemPrompt);
       }
 
@@ -162,7 +159,10 @@ export class AgentOrchestrator {
         }
 
         // 执行工具调用阶段
-        this.stateManager.setState(SessionState.EXECUTING, `执行 ${toolCalls.length} 个工具调用...`);
+        this.stateManager.setState(
+          SessionState.EXECUTING,
+          `执行 ${toolCalls.length} 个工具调用...`
+        );
 
         const toolResults = await this.executeToolCallsWithApproval(toolCalls);
 
@@ -188,7 +188,10 @@ export class AgentOrchestrator {
       }
 
       // 达到最大迭代次数 - 添加 max-steps 提示
-      this.stateManager.setState(SessionState.COMPLETED, `达到最大迭代次数 (${this.config.maxIterations})`);
+      this.stateManager.setState(
+        SessionState.COMPLETED,
+        `达到最大迭代次数 (${this.config.maxIterations})`
+      );
 
       // 如果有功能性 Agent 管理器，添加 max-steps 警告
       if (this.functionalAgentManager) {
@@ -198,7 +201,7 @@ export class AgentOrchestrator {
         const currentContext = this.contextManager.getContext();
         const messagesWithWarning = [
           ...currentContext,
-          { role: 'user' as const, content: maxStepsWarning }
+          { role: 'user' as const, content: maxStepsWarning },
         ];
 
         // 进行最后一次 API 调用，让 AI 生成总结
@@ -308,7 +311,10 @@ export class AgentOrchestrator {
   /**
    * 从工具参数中提取路径（用于权限检查）
    */
-  private extractPathFromParams(tool: string, params: Record<string, unknown>): string | undefined {
+  private extractPathFromParams(
+    _tool: string,
+    params: Record<string, unknown>
+  ): string | undefined {
     // 常见的路径参数名
     const pathKeys = ['file_path', 'path', 'filePath', 'pattern', 'glob'];
 
@@ -343,30 +349,20 @@ export class AgentOrchestrator {
       /就这样/g,
     ];
 
-    const hasCompletionSignal = completionPatterns.some(pattern => pattern.test(response));
+    const hasCompletionSignal = completionPatterns.some((pattern) => pattern.test(response));
     if (hasCompletionSignal) {
       return true;
     }
 
     // 3. 检测明确的结束信号（如总结性陈述）
-    const endingPatterns = [
-      /总结：?/g,
-      /综上所述/g,
-      /以上就是/g,
-      /简而言之/g,
-    ];
+    const endingPatterns = [/总结：?/g, /综上所述/g, /以上就是/g, /简而言之/g];
 
-    const hasEndingSignal = endingPatterns.some(pattern => pattern.test(response));
+    const hasEndingSignal = endingPatterns.some((pattern) => pattern.test(response));
 
     // 4. 检测是否在等待用户输入
-    const waitingPatterns = [
-      /需要.*信息/g,
-      /请提供/g,
-      /需要.*确认/g,
-      /是否.*继续/g,
-    ];
+    const waitingPatterns = [/需要.*信息/g, /请提供/g, /需要.*确认/g, /是否.*继续/g];
 
-    const hasWaitingSignal = waitingPatterns.some(pattern => pattern.test(response));
+    const hasWaitingSignal = waitingPatterns.some((pattern) => pattern.test(response));
 
     // 如果有等待信号，说明还没完成
     if (hasWaitingSignal) {
@@ -399,11 +395,11 @@ export class AgentOrchestrator {
 
   /**
    * 构建系统提示词
-   * 包含完整的工具信息和参数说明
+   * 包含完整的工具信息和参数说明（从外部文件加载）
    */
-  private buildSystemPrompt(): string {
-    // 使用详细的工具描述（包含参数）
-    const toolsDescription = this.toolEngine.generateDetailedToolsDescription();
+  private async buildSystemPrompt(): Promise<string> {
+    // 使用从外部文件加载的详细工具描述
+    const toolsDescription = await generateToolsDescription();
 
     // 动态环境信息
     const envInfo = [
@@ -525,33 +521,7 @@ ${toolsDescription}
 - 如果遇到错误，尝试分析原因并重新尝试
 - 在完成任务后，向用户提供清晰的总结
 
-现在，请帮助用户完成他们的编程任务。记住：当用户要求你执行操作时，必须使用工具调用格式！`;
-  }
-
-  /**
-   * 格式化工具调用结果用于上下文
-   */
-  private formatToolCallsForContext(calls: ToolCall[], results: ToolResult[]): string {
-    const lines: string[] = ['我执行了以下工具调用：'];
-
-    for (let i = 0; i < calls.length; i++) {
-      const call = calls[i];
-      const result = results[i];
-
-      lines.push(`\n工具: ${call.tool}`);
-      lines.push(`参数: ${JSON.stringify(call.parameters)}`);
-
-      if (result.success) {
-        lines.push(`结果: ${result.output || '成功'}`);
-        if (result.metadata) {
-          lines.push(`元数据: ${JSON.stringify(result.metadata)}`);
-        }
-      } else {
-        lines.push(`错误: ${result.error}`);
-      }
-    }
-
-    return lines.join('\n');
+  现在，请帮助用户完成他们的编程任务。记住：当用户要求你执行操作时，必须使用工具调用格式！`;
   }
 
   /**
@@ -562,7 +532,6 @@ ${toolsDescription}
     const lines: string[] = [];
 
     for (let i = 0; i < calls.length; i++) {
-      const call = calls[i];
       const result = results[i];
 
       if (result.success) {
@@ -577,27 +546,6 @@ ${toolsDescription}
     }
 
     return lines.join('\n\n');
-  }
-
-  /**
-   * 格式化工具错误
-   */
-  private formatToolErrors(results: ToolResult[]): string {
-    const errors = results.filter((r) => !r.success);
-
-    if (errors.length === 0) {
-      return '所有工具调用成功。请继续完成任务。';
-    }
-
-    const lines: string[] = ['以下工具调用失败：'];
-
-    errors.forEach((result, i) => {
-      lines.push(`${i + 1}. ${result.error}`);
-    });
-
-    lines.push('\n请分析错误原因，并尝试修正后重新执行。');
-
-    return lines.join('\n');
   }
 
   /**
@@ -626,7 +574,14 @@ export function createAgentOrchestrator(
   stateManager?: SessionStateManager,
   permissionManager?: PermissionManager
 ): AgentOrchestrator {
-  return new AgentOrchestrator(apiAdapter, toolEngine, contextManager, config, stateManager, permissionManager);
+  return new AgentOrchestrator(
+    apiAdapter,
+    toolEngine,
+    contextManager,
+    config,
+    stateManager,
+    permissionManager
+  );
 }
 
 /**
@@ -710,7 +665,7 @@ export class AgentManager {
    * 获取可显示的 agents（非隐藏）
    */
   getVisibleAgents(): IAgentConfig[] {
-    return this.getAllAgents().filter(agent => !agent.hidden);
+    return this.getAllAgents().filter((agent) => !agent.hidden);
   }
 
   /**

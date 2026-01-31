@@ -1,0 +1,21 @@
+Searches file contents using regex patterns. This is the fastest way to find code or text within files.
+
+Usage:
+- The pattern parameter specifies the regex pattern to search for
+- The path parameter specifies the root directory for the search (defaults to current working directory if not specified)
+- Searches are case-insensitive
+- Returns matching lines with file paths and line numbers
+
+Regex Examples:
+- `function getUserById` - Find function definitions
+- `import.*from.*react` - Find React imports
+- `TODO|FIXME` - Find todo comments
+- `class.*extends.*Component` - Find class definitions
+- `async.*function` - Find async function declarations
+
+Recommendations:
+- Use Grep for searching file contents with regex patterns
+- Prefer Grep over Bash's grep command for better performance and cross-platform compatibility
+- Combine with Glob tool for efficient codebase exploration (Glob to find files, then Grep to search contents)
+- Use simple, specific patterns for better results
+- Test your regex patterns incrementally if you're not getting expected results
