@@ -62,6 +62,7 @@ export class CommandCompleter {
         choices: filteredChoices,
         pageSize: 10,
         default: filteredChoices[0]?.value || '',
+        loop: false,
       },
     ]);
 

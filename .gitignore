@@ -4,14 +4,15 @@ coverage/
 backups/
 *.log
 .env
+.env.*.local
 .DS_Store
 *.tsbuildinfo
-/.idea/
-/.claude/
-/temp/*
-!/temp/opencode/  # 保留 opencode 参考项目
-/.github/
-/.vscode/
+.idea/
+.claude/
+temp/*
+!temp/opencode/  # 保留 opencode 参考项目
+.github/
+.vscode/
 
 # 测试临时文件
 tests/temp/
@@ -22,6 +23,24 @@ tests/temp/
 
 # 项目配置文件（保留在当前目录）
 .ggrc.json
+
+# 操作系统文件
+Thumbs.db
+Desktop.ini
+
+# 编辑器和 IDE
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+
+# 临时文件
+*.tmp
+*.bak
+*.backup
+nul
 
 # 注意: 所有临时文件（会话、历史记录等）现在保存在系统根目录的 ~/.ggcode/
 # 包括:
