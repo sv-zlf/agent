@@ -84,8 +84,15 @@ export class ConfigManager {
    */
   async load(): Promise<void> {
     try {
-      // 只加载用户配置文件（~/.ggcode/config.json）
+      // 尝试加载用户配置文件（~/.ggcode/config.json）
       this.loadUserConfig();
+
+      // 如果配置文件不存在，创建默认配置文件
+      const userConfigPath = getUserConfigPath();
+      if (!fsSync.existsSync(userConfigPath)) {
+        await this.save();
+        console.log(`已创建默认配置文件: ${userConfigPath}`);
+      }
     } catch (error) {
       throw new Error(`配置文件加载失败: ${(error as Error).message}`);
     }

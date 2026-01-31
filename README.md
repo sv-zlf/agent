@@ -66,7 +66,7 @@ ggcode --version        # 查看版本
 ggcode                 # 启动 AI 编程助手
 ```
 
-**详细安装说明请查看**: [INSTALL.md](INSTALL.md)
+**详细安装说明请查看**: [INSTALL.md](docs/INSTALL.md)
 
 ## 🚀 快速开始
 
