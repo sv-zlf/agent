@@ -140,7 +140,7 @@ npm run agent -- -a explore    # 使用 explore agent
 
 ### 快捷键
 
-- **ESC 键**: 中断当前操作（AI思考或工具执行中）
+- **P 键**: 中断当前操作（AI思考或工具执行中）
 - **Ctrl+C**: 退出程序
 
 ### 内置命令

@@ -217,7 +217,7 @@ export const agentCommand = new Command('agent')
       output: process.stdout,
     });
 
-    // 不默认开启 raw mode，只在需要时（如 ESC 键监听）才开启
+    // 不默认开启 raw mode，只在需要时（如 P 键监听）才开启
     // raw mode 会干扰正常的行输入
 
     // 辅助函数：重新创建 readline 接口（在中断后）
@@ -254,7 +254,7 @@ export const agentCommand = new Command('agent')
     let keyListener: any = null;
     let interruptKeyListener: any = null;
 
-    // 设置 ESC 键中断监听
+    // 设置 P 键中断监听
     const setupInterruptKey = () => {
       // 移除旧的中断监听器
       if (interruptKeyListener) {
@@ -274,8 +274,8 @@ export const agentCommand = new Command('agent')
       interruptKeyListener = (data: Buffer) => {
         const key = data.toString('utf8');
 
-        // ESC 键中断操作
-        if (key === '\u001b') {
+        // P 键中断操作
+        if (key === 'p' || key === 'P') {
           if (
             interruptManager.currentState.isAIThinking ||
             interruptManager.currentState.isExecutingTool
@@ -489,7 +489,7 @@ export const agentCommand = new Command('agent')
             // readline 可能已经关闭，忽略错误
           }
 
-          // 移除 ESC 键监听器
+          // 移除 P 键监听器
           if (interruptKeyListener) {
             process.stdin.removeListener('data', interruptKeyListener);
           }
@@ -512,7 +512,7 @@ export const agentCommand = new Command('agent')
               output: process.stdout,
             });
 
-            // 重新设置 ESC 键监听
+            // 重新设置 P 键监听
             setupInterruptKey();
           }
         }
@@ -692,7 +692,7 @@ export const agentCommand = new Command('agent')
               const abortSignal = interruptManager.startOperation();
               interruptManager.setAIThinking(true);
 
-              const spinner = ora('AI思考中... (按 ESC 键可中断)').start();
+              const spinner = ora('AI思考中... (按 P 键可中断)').start();
 
               let response: string | undefined;
               let wasInterrupted = false;
@@ -1033,7 +1033,7 @@ export const agentCommand = new Command('agent')
       return lines.join('\n');
     };
 
-    // 在整个运行期间激活 ESC 键中断监听
+    // 在整个运行期间激活 P 键中断监听
     setupInterruptKey();
 
     chatLoop();

@@ -58,7 +58,7 @@ Core Components:
     ├── ContextCompactor    - Smart context compression
     ├── SessionManager      - Multi-session isolation
     ├── AgentOrchestrator   - AI agent orchestration
-    └── InterruptManager    - ESC-key interrupt handling
+    └── InterruptManager    - P-key interrupt handling
     ↓
 API Layer (ChatAPIAdapter)
     ↓
@@ -101,7 +101,7 @@ Internal Network API (double JSON serialization)
 
 **Interrupt Manager** (`src/core/interrupt.ts`)
 
-- ESC-key interrupt support during AI thinking or tool execution
+- P-key interrupt support during AI thinking or tool execution
 - Graceful cleanup with readline recreation
 - Global singleton pattern
 
