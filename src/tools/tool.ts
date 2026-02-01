@@ -75,11 +75,17 @@ export function defineTool<Parameters extends z.ZodType, M extends ToolMetadata 
     init: async (initCtx) => {
       const toolInfo = init instanceof Function ? await init(initCtx) : init;
 
+      // 保存原始简短描述（在 loadToolPrompt 覆盖之前）
+      const originalDescription = toolInfo.description;
+
       // 尝试从外部文件加载详细描述
       const externalPrompt = await loadToolPrompt(id);
       if (externalPrompt) {
-        // 使用外部文件的详细描述
-        toolInfo.description = externalPrompt;
+        // 使用外部文件的详细描述，但保留原始描述
+        (toolInfo as any).shortDescription = originalDescription;
+        (toolInfo as any).description = externalPrompt;
+      } else {
+        (toolInfo as any).shortDescription = originalDescription;
       }
 
       const originalExecute = toolInfo.execute;

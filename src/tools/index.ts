@@ -146,25 +146,18 @@ export async function getAllToolInfos() {
 
 /**
  * 生成工具描述（用于系统提示词）
- * 从外部文件加载的工具描述已经是完整的使用说明
+ * 简洁格式：每个工具一行，避免过多 token 消耗
  */
 export async function generateToolsDescription(): Promise<string> {
-  const infos = await getAllToolInfos();
   const lines: string[] = [];
 
-  for (const info of infos) {
-    // 检查是否有外部 prompt 文件（包含换行符说明是详细描述）
-    const hasExternalPrompt = info.description.includes('\n');
-
-    if (hasExternalPrompt) {
-      // 外部文件已经包含完整说明（包括格式、示例等）
-      // 直接使用，不添加额外的标题（标题可能包含在描述中）
-      lines.push(info.description);
-      lines.push('');
-    } else {
-      // 简短描述：使用一行格式
-      lines.push(`- **${info.id}**: ${info.description}`);
-    }
+  for (const [id, tool] of Object.entries(tools)) {
+    // 获取工具的原始定义描述（使用 promise 立即解析获取）
+    const initResult = await tool.init();
+    const originalDesc = (initResult as any).shortDescription || initResult.description;
+    // 提取第一句作为简短描述
+    const desc = originalDesc.split('\n')[0].split('.')[0];
+    lines.push(`- **${id}**: ${desc}`);
   }
 
   return lines.join('\n');

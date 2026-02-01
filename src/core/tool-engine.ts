@@ -14,6 +14,50 @@ const TRUNCATE_MAX_BYTES = 50 * 1024; // 最大字节数 (50KB)
 const DEFAULT_TOOL_TIMEOUT = 30000; // 30秒
 const MAX_TOOL_TIMEOUT = 120000; // 2分钟
 
+// 解析结果缓存
+const PARSE_CACHE = new Map<string, { calls: ToolCall[]; timestamp: number }>();
+const PARSE_CACHE_TTL = 5 * 60 * 1000; // 5分钟过期时间
+const PARSE_CACHE_MAX_SIZE = 100;
+
+// 解析统计
+const PARSE_STATS = {
+  totalCalls: 0,
+  cacheHits: 0,
+  cacheMisses: 0,
+  successCount: 0,
+  errorCount: 0,
+  formatCounts: {} as Record<string, number>,
+};
+
+let parseCallCounter = 0;
+const STATS_RESET_INTERVAL = 1000;
+
+// 小写工具名映射缓存（用于快速大小写匹配）
+let lowercaseToolMap: Map<string, string> = new Map();
+
+// 正则表达式缓存
+const REGEX_CACHE: Record<string, RegExp> = {
+  codeBlock: /```(?:json|tool)?\s*\n?([\s\S]*?)```/g,
+  curlyBrace: /\b([A-Z][a-zA-Z0-9]*)\s*\{([\s\S]*?)\}/g,
+  parenthesis: /\b([A-Z][a-zA-Z0-9]*)\s*\(([\s\S]*?)\)/g,
+  xmlToolCall: /<toolcall[^>]*>([\s\S]*?)(?:<\/toolcall>|$)/gi,
+  jsonTool: /\{\s*"tool"\s*:\s*"(\w+)"\s*,\s*"parameters"\s*:\s*\{[\s\S]*?\}\s*\}/g,
+  keyValue: /(\w+)\s*[:=]\s*"([^"]*)"/g,
+  toolcallOpencode: /^(\w+)\s*(\{|\()/,
+};
+
+// 参数名映射表
+const PARAM_MAPPINGS: Record<string, string> = {
+  filepath: 'filePath',
+  file_path: 'filePath',
+  oldstring: 'oldString',
+  old_string: 'oldString',
+  oldtext: 'oldString',
+  newstring: 'newString',
+  new_string: 'newString',
+  newtext: 'newString',
+};
+
 /**
  * 工具执行引擎
  */
@@ -48,6 +92,10 @@ export class ToolEngine {
       throw new Error(`Tool already registered: ${tool.name}`);
     }
     this.tools.set(tool.name, tool);
+    // 更新小写工具名映射
+    lowercaseToolMap.set(tool.name.toLowerCase(), tool.name);
+    // 工具变更时清空缓存
+    this.clearParseCache();
   }
 
   /**
@@ -133,21 +181,30 @@ export class ToolEngine {
     abortSignal?: AbortSignal,
     timeout?: number
   ): Promise<ToolResult> {
-    // Try to get tool by exact name first
+    // 使用小写映射快速查找工具
     let tool = this.tools.get(call.tool);
     let actualToolName = call.tool;
 
-    // If not found, try case-insensitive matching (repair tool name)
+    // 如果没找到，使用小写映射查找
     if (!tool) {
       const lowerToolName = call.tool.toLowerCase();
-      for (const [registeredName, toolDef] of this.tools.entries()) {
-        if (registeredName.toLowerCase() === lowerToolName) {
-          tool = toolDef;
-          actualToolName = registeredName;
-          break;
+      const cachedName = lowercaseToolMap.get(lowerToolName);
+      if (cachedName) {
+        tool = this.tools.get(cachedName);
+        actualToolName = cachedName;
+      }
+      // 如果映射中也没有，尝试遍历查找（兼容性）
+      if (!tool) {
+        for (const [registeredName, toolDef] of this.tools.entries()) {
+          if (registeredName.toLowerCase() === lowerToolName) {
+            tool = toolDef;
+            actualToolName = registeredName;
+            lowercaseToolMap.set(lowerToolName, registeredName); // 更新映射缓存
+            break;
+          }
         }
       }
-      // If tool was found via case-insensitive match, log it
+      // 记录工具名修复
       if (tool) {
         logger.debug(`Repaired tool name from "${call.tool}" to "${actualToolName}"`);
       }
@@ -409,6 +466,33 @@ export class ToolEngine {
    * 2. 代码块格式
    */
   parseToolCallsFromResponse(response: string): ToolCall[] {
+    // 更新统计
+    parseCallCounter++;
+    if (parseCallCounter >= STATS_RESET_INTERVAL) {
+      parseCallCounter = 0;
+      PARSE_STATS.totalCalls = 0;
+      PARSE_STATS.cacheHits = 0;
+      PARSE_STATS.cacheMisses = 0;
+      PARSE_STATS.successCount = 0;
+      PARSE_STATS.errorCount = 0;
+      PARSE_STATS.formatCounts = {};
+    }
+    PARSE_STATS.totalCalls++;
+
+    // 检查缓存（带 TTL 过期）
+    const cacheKey = response.slice(0, 200).replace(/\s+/g, ' ').trim();
+    const now = Date.now();
+    const cached = PARSE_CACHE.get(cacheKey);
+    if (cached && now - cached.timestamp < PARSE_CACHE_TTL) {
+      PARSE_STATS.cacheHits++;
+      return [...cached.calls];
+    }
+    PARSE_STATS.cacheMisses++;
+    // 清理过期缓存
+    if (cached) {
+      PARSE_CACHE.delete(cacheKey);
+    }
+
     const calls: ToolCall[] = [];
     const seen = new Set<string>();
 
@@ -423,8 +507,7 @@ export class ToolEngine {
     const knownTools = new Set(this.tools.keys());
 
     // 首先尝试解析代码块中的工具调用（优先级更高）
-    const codeBlockRegex = /```(?:json|tool)?\s*\n?([\s\S]*?)```/g;
-    let match = codeBlockRegex.exec(response);
+    let match = REGEX_CACHE.codeBlock.exec(response);
     while (match !== null) {
       try {
         const content = match[1].trim();
@@ -449,45 +532,28 @@ export class ToolEngine {
       } catch {
         // 忽略解析失败的JSON
       }
-      match = codeBlockRegex.exec(response);
+      match = REGEX_CACHE.codeBlock.exec(response);
     }
 
     // 预处理：移除代码块内容，避免重复解析
-    const textWithoutCodeBlocks = response.replace(codeBlockRegex, '');
+    const textWithoutCodeBlocks = response.replace(REGEX_CACHE.codeBlock, '');
 
     // 尝试解析花括号格式: ToolName{...}（排除圆括号格式如 Edit(...)）
-    const functionCallRegex = /\b([A-Z][a-zA-Z0-9]*)\s*\{([\s\S]*?)\}/g;
-    match = functionCallRegex.exec(textWithoutCodeBlocks);
-    while (match !== null) {
-      const toolName = match[1];
-      const paramsStr = match[2];
+    let curlyMatch = REGEX_CACHE.curlyBrace.exec(textWithoutCodeBlocks);
+    while (curlyMatch !== null) {
+      const toolName = curlyMatch[1];
+      const paramsStr = curlyMatch[2];
 
       // 排除圆括号格式（如 Edit(file_path=...)）
       if (paramsStr.includes('(') || paramsStr.includes(')')) {
-        match = functionCallRegex.exec(textWithoutCodeBlocks);
+        curlyMatch = REGEX_CACHE.curlyBrace.exec(textWithoutCodeBlocks);
         continue;
       }
 
-      // 只处理已知的工具名称（忽略 AI 计划中的内容如 "TodoWrite(todos=[...])"）
+      // 只处理已知的工具名称
       if (knownTools.has(toolName.toLowerCase()) || knownTools.has(toolName)) {
         try {
-          let parameters: any;
-          try {
-            parameters = JSON.parse(`{${paramsStr}}`);
-          } catch {
-            try {
-              parameters = JSON.parse(paramsStr);
-            } catch {
-              parameters = {};
-              const paramPairs = paramsStr.match(/(\w+)\s*=\s*"([^"]*)"/g) || [];
-              paramPairs.forEach((pair) => {
-                const [key, value] = pair.split('=');
-                parameters[key.trim()] = value.trim().replace(/"/g, '');
-              });
-            }
-          }
-
-          // 只有当解析出有效参数时才添加
+          const parameters = this.parseParameters(paramsStr);
           if (Object.keys(parameters).length > 0) {
             addCall({
               tool: toolName,
@@ -499,15 +565,14 @@ export class ToolEngine {
           // 忽略解析失败的函数调用
         }
       }
-      match = functionCallRegex.exec(textWithoutCodeBlocks);
+      curlyMatch = REGEX_CACHE.curlyBrace.exec(textWithoutCodeBlocks);
     }
 
     // 尝试解析纯JSON格式的工具调用
-    const jsonRegex = /\{\s*"tool"\s*:\s*"(\w+)"\s*,\s*"parameters"\s*:\s*\{[\s\S]*?\}\s*\}/g;
-    match = jsonRegex.exec(textWithoutCodeBlocks);
-    while (match !== null) {
+    let jsonMatch = REGEX_CACHE.jsonTool.exec(textWithoutCodeBlocks);
+    while (jsonMatch !== null) {
       try {
-        const parsed = JSON.parse(match[0]);
+        const parsed = JSON.parse(jsonMatch[0]);
         if (parsed.tool && parsed.parameters) {
           addCall({
             tool: parsed.tool,
@@ -518,9 +583,19 @@ export class ToolEngine {
       } catch {
         // 忽略解析失败的JSON
       }
-      match = jsonRegex.exec(response);
+      jsonMatch = REGEX_CACHE.jsonTool.exec(textWithoutCodeBlocks);
     }
 
+    // 保存到缓存
+    if (calls.length > 0) {
+      if (PARSE_CACHE.size >= PARSE_CACHE_MAX_SIZE) {
+        const keysToDelete = Array.from(PARSE_CACHE.keys()).slice(0, 20);
+        keysToDelete.forEach((key) => PARSE_CACHE.delete(key));
+      }
+      PARSE_CACHE.set(cacheKey, { calls: [...calls], timestamp: Date.now() });
+    }
+
+    PARSE_STATS.successCount++;
     return calls;
   }
 
@@ -535,7 +610,10 @@ export class ToolEngine {
    * 检测响应中是否存在错误格式的工具调用
    * 用于识别 AI 返回的不符合要求的格式，以便进行纠正
    */
-  detectMalformedToolCalls(response: string): {
+  detectMalformedToolCalls(
+    response: string,
+    _parsedCalls?: ToolCall[] // 保留参数以兼容调用，但当前版本不使用
+  ): {
     hasMalformed: boolean;
     detectedFormats: string[];
     examples: string[];
@@ -548,7 +626,7 @@ export class ToolEngine {
     const xmlMatches = response.match(xmlTagRegex);
     if (xmlMatches && xmlMatches.length > 0) {
       formats.push('XML tags (e.g., <ToolName>)');
-      examples.push(...xmlMatches.slice(0, 2).map(m => m.slice(0, 30)));
+      examples.push(...xmlMatches.slice(0, 2).map((m) => m.slice(0, 30)));
     }
 
     // 2. 检测函数调用格式（如 Read{...} 或 Read(...)）
@@ -557,13 +635,13 @@ export class ToolEngine {
     if (funcMatches && funcMatches.length > 0) {
       // 排除已知工具名称的小写形式
       const knownTools = new Set(this.tools.keys());
-      const invalidCalls = funcMatches.filter(match => {
+      const invalidCalls = funcMatches.filter((match) => {
         const toolName = match.match(/\b([A-Z][a-zA-Z0-9]*)/)?.[1];
         return toolName && !knownTools.has(toolName.toLowerCase());
       });
       if (invalidCalls.length > 0) {
         formats.push('Function notation (e.g., ToolName{...})');
-        examples.push(...invalidCalls.slice(0, 2).map(m => m.slice(0, 30)));
+        examples.push(...invalidCalls.slice(0, 2).map((m) => m.slice(0, 30)));
       }
     }
 
@@ -586,7 +664,7 @@ export class ToolEngine {
     return {
       hasMalformed: formats.length > 0,
       detectedFormats: formats,
-      examples: [...new Set(examples)] // 去重
+      examples: [...new Set(examples)], // 去重
     };
   }
 
@@ -595,6 +673,8 @@ export class ToolEngine {
    */
   clear(): void {
     this.tools.clear();
+    lowercaseToolMap.clear();
+    this.clearParseCache();
     logger.debug('All tools cleared');
   }
 
@@ -610,6 +690,100 @@ export class ToolEngine {
    */
   private generateToolCallId(): string {
     return `call_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  }
+
+  /**
+   * 解析参数字符串
+   */
+  private parseParameters(paramsStr: string): Record<string, unknown> {
+    let parameters: Record<string, unknown> = {};
+
+    try {
+      const parsed = JSON.parse(`{${paramsStr}}`);
+      if (parsed.parameters) {
+        parameters = parsed.parameters as Record<string, unknown>;
+      } else if (Object.keys(parsed).length > 0) {
+        parameters = parsed;
+      }
+    } catch {
+      const keyValuePairs = paramsStr.match(REGEX_CACHE.keyValue) || [];
+      for (const pair of keyValuePairs) {
+        const [key, ...valueParts] = pair.split(/[:=]\s*"/);
+        if (key && valueParts.length > 0) {
+          const value = valueParts.join(':').replace(/"$/, '');
+          parameters[key.trim()] = value.trim();
+        }
+      }
+
+      if (Object.keys(parameters).length === 0 && paramsStr.includes(':')) {
+        try {
+          const parsed = JSON.parse(`{${paramsStr}}`);
+          Object.assign(parameters, parsed);
+        } catch {
+          // 忽略
+        }
+      }
+    }
+
+    // 参数名标准化
+    const normalizedParams: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(parameters)) {
+      const normalizedKey = key.toLowerCase();
+      const mappedKey = PARAM_MAPPINGS[normalizedKey] || key;
+      normalizedParams[mappedKey] = value;
+    }
+
+    return normalizedParams;
+  }
+
+  /**
+   * 获取解析统计
+   */
+  getParseStats(): {
+    totalCalls: number;
+    cacheHits: number;
+    cacheMisses: number;
+    cacheSize: number;
+    cacheHitRate: string;
+    formatCounts: Record<string, number>;
+    successCount: number;
+    errorCount: number;
+  } {
+    const total = PARSE_STATS.cacheHits + PARSE_STATS.cacheMisses;
+    const hitRate = total > 0 ? ((PARSE_STATS.cacheHits / total) * 100).toFixed(1) : '0.0';
+
+    return {
+      totalCalls: PARSE_STATS.totalCalls,
+      cacheHits: PARSE_STATS.cacheHits,
+      cacheMisses: PARSE_STATS.cacheMisses,
+      cacheSize: PARSE_CACHE.size,
+      cacheHitRate: `${hitRate}%`,
+      formatCounts: { ...PARSE_STATS.formatCounts },
+      successCount: PARSE_STATS.successCount,
+      errorCount: PARSE_STATS.errorCount,
+    };
+  }
+
+  /**
+   * 清空解析缓存
+   */
+  clearParseCache(): void {
+    PARSE_CACHE.clear();
+    logger.debug('Parse cache cleared');
+  }
+
+  /**
+   * 重置解析统计
+   */
+  resetParseStats(): void {
+    PARSE_STATS.totalCalls = 0;
+    PARSE_STATS.cacheHits = 0;
+    PARSE_STATS.cacheMisses = 0;
+    PARSE_STATS.successCount = 0;
+    PARSE_STATS.errorCount = 0;
+    PARSE_STATS.formatCounts = {};
+    parseCallCounter = 0;
+    logger.debug('Parse stats reset');
   }
 }
 

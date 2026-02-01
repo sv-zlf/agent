@@ -145,8 +145,8 @@ export class AgentOrchestrator {
         // 从响应中提取纯文本内容（移除工具调用 JSON）
         const cleanResponse = this.extractTextFromResponse(response);
 
-        // 检测错误格式的工具调用
-        const malformedDetection = this.toolEngine.detectMalformedToolCalls(response);
+        // 检测错误格式的工具调用（传入已解析的调用，避免重复解析）
+        const malformedDetection = this.toolEngine.detectMalformedToolCalls(response, toolCalls);
 
         // 如果没有解析出有效工具调用，但检测到错误格式，提供纠正反馈
         if (toolCalls.length === 0 && malformedDetection.hasMalformed) {
@@ -409,6 +409,18 @@ export class AgentOrchestrator {
     const standaloneJsonPattern = /\{[\s\S]*?"tool"\s*:\s*"\w+"[\s\S]*?\}/g;
     cleaned = cleaned.replace(standaloneJsonPattern, '[工具调用]');
 
+    // 移除 <toolcall>... 格式
+    const toolcallPattern = /<toolcall[^>]*>[\s\S]*?<\/toolcall>/gi;
+    cleaned = cleaned.replace(toolcallPattern, '[工具调用]');
+
+    // 移除 ToolName{...} 格式
+    const curlyBracePattern = /\b[A-Z][a-zA-Z0-9]*\s*\{[\s\S]*?\}/g;
+    cleaned = cleaned.replace(curlyBracePattern, '[工具调用]');
+
+    // 移除 ToolName(...) 格式
+    const parenthesisPattern = /\b[A-Z][a-zA-Z0-9]*\s*\([\s\S]*?\)/g;
+    cleaned = cleaned.replace(parenthesisPattern, '[工具调用]');
+
     // 清理多余的空行
     cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
 
@@ -522,11 +534,7 @@ ${envInfo}
 
 ## Available Tools
 
-${toolsDescription}
-
----
-
-**Remember**: Always use proper JSON format for tool calls!`;
+${toolsDescription}`;
   }
 
   /**
@@ -573,8 +581,8 @@ ${toolsDescription}
   }): string {
     const lines: string[] = [];
 
-    lines.push('⚠️ **工具调用格式错误**\n');
-    lines.push('你的响应中包含了错误格式的工具调用，系统无法识别。\n');
+    lines.push('⚠️ **工具调用格式无法识别**\n');
+    lines.push('你的响应中包含的格式无法被系统正确解析。\n');
     lines.push('**检测到的问题**:');
     malformedDetection.detectedFormats.forEach((format) => {
       lines.push(`- ${format}`);
@@ -587,23 +595,32 @@ ${toolsDescription}
       });
     }
 
-    lines.push('\n**正确的格式**:');
+    lines.push('\n**支持的格式**:');
     lines.push('```json');
     lines.push('{');
     lines.push('  "tool": "read",');
     lines.push('  "parameters": {');
-    lines.push('    "file_path": "path/to/file"');
+    lines.push('    "filePath": "path/to/file"');
     lines.push('  }');
     lines.push('}');
     lines.push('```');
 
-    lines.push('\n**重要提示**:');
-    lines.push('1. 工具名称必须是**小写**（如 "read", "write", "todowrite"）');
-    lines.push('2. 必须使用 `{"tool": "...", "parameters": {...}}` 结构');
-    lines.push('3. 必须包装在 ```json 代码块中');
-    lines.push('4. 不要使用XML标签（如 <ToolName>）或函数调用格式（如 ToolName{...}）');
+    lines.push('\n**推荐格式**（JSON 代码块）:');
+    lines.push('```json');
+    lines.push('{');
+    lines.push('  "tool": "read",');
+    lines.push('  "parameters": {');
+    lines.push('    "filePath": "path/to/file"');
+    lines.push('  }');
+    lines.push('}');
+    lines.push('```');
 
-    lines.push('\n请使用正确的格式重新调用工具。');
+    lines.push('\n**参数格式说明**:');
+    lines.push('- 支持 `filePath` 或 `file_path` 两种参数名');
+    lines.push('- 工具名称必须是小写（如 "read", "write"）');
+    lines.push('- parameters 是包含参数的对象');
+
+    lines.push('\n请使用上述格式重新调用工具。');
 
     return lines.join('\n');
   }
