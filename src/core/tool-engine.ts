@@ -35,24 +35,6 @@ const STATS_RESET_INTERVAL = 1000;
 // 小写工具名映射缓存（用于快速大小写匹配）
 let lowercaseToolMap: Map<string, string> = new Map();
 
-// 正则表达式缓存
-const REGEX_CACHE: Record<string, RegExp> = {
-  codeBlock: /```(?:json|tool)?\s*\n?([\s\S]*?)```/g,
-  curlyBrace: /\b([A-Z][a-zA-Z0-9]*)\s*\{([\s\S]*?)\}/g,
-  parenthesis: /\b([A-Z][a-zA-Z0-9]*)\s*\(([\s\S]*?)\)/g,
-  xmlToolCall: /<toolcall[^>]*>([\s\S]*?)(?:<\/toolcall>|$)/gi,
-  jsonTool: /\{\s*"tool"\s*:\s*"(\w+)"\s*,\s*"parameters"\s*:\s*\{[\s\S]*?\}\s*\}/g,
-  keyValue: /(\w+)\s*[:=]\s*"([^"]*)"/g,
-  toolcallOpencode: /^(\w+)\s*(\{|\()/,
-  standaloneJson: /\{\s*"parameters"\s*:\s*\{[\s\S]*?\}\s*\}/g,
-};
-
-// 获取正则副本（避免 lastIndex 状态污染）
-function getRegex(key: keyof typeof REGEX_CACHE): RegExp {
-  const original = REGEX_CACHE[key];
-  return new RegExp(original.source, original.flags);
-}
-
 // 参数名映射表
 const PARAM_MAPPINGS: Record<string, string> = {
   filepath: 'filePath',
@@ -473,7 +455,7 @@ export class ToolEngine {
    * 2. 代码块格式
    */
   parseToolCallsFromResponse(response: string): ToolCall[] {
-    // 超时保护：总解析时间超过 5 秒则直接返回空结果
+    // 超时保护
     const parseStartTime = Date.now();
     const PARSE_TIMEOUT = 5000;
 
@@ -490,19 +472,18 @@ export class ToolEngine {
     }
     PARSE_STATS.totalCalls++;
 
-    // 检查是否超时
     if (Date.now() - parseStartTime > PARSE_TIMEOUT) {
       PARSE_STATS.errorCount++;
       return [];
     }
 
-    // 清理响应：移除开头的特殊字符（如零宽字符、控制字符）
+    // 清理响应
     const cleanedResponse = response.replace(
       /^[\u0000-\u001F\u007F-\u009F\u200B-\u200F\uFEFF]+/,
       ''
     );
 
-    // 检查缓存（带 TTL 过期）
+    // 检查缓存
     const cacheKey = cleanedResponse.slice(0, 200).replace(/\s+/g, ' ').trim();
     const now = Date.now();
     const cached = PARSE_CACHE.get(cacheKey);
@@ -511,271 +492,156 @@ export class ToolEngine {
       return [...cached.calls];
     }
     PARSE_STATS.cacheMisses++;
-    // 清理过期缓存
-    if (cached) {
-      PARSE_CACHE.delete(cacheKey);
-    }
+    if (cached) PARSE_CACHE.delete(cacheKey);
 
     const calls: ToolCall[] = [];
     const seen = new Set<string>();
+    const knownTools = new Set(this.tools.keys());
 
-    const addCall = (call: ToolCall, format: string = 'unknown') => {
-      const signature = `${call.tool}:${JSON.stringify(call.parameters)}`;
-      if (!seen.has(signature)) {
+    const addCall = (
+      tool: string,
+      params: Record<string, unknown>,
+      id?: string,
+      format: string = 'unknown'
+    ) => {
+      const signature = `${tool}:${JSON.stringify(params)}`;
+      if (!seen.has(signature) && knownTools.has(tool.toLowerCase())) {
         seen.add(signature);
-        calls.push(call);
+        calls.push({
+          tool: tool.toLowerCase(),
+          parameters: params,
+          id: id || this.generateToolCallId(),
+        });
         PARSE_STATS.formatCounts[format] = (PARSE_STATS.formatCounts[format] || 0) + 1;
       }
     };
 
-    const knownTools = new Set(this.tools.keys());
-
-    // 首先尝试解析代码块中的工具调用（优先级更高）
-    let match = getRegex('codeBlock').exec(cleanedResponse);
-    let matchCount = 0;
-    const MAX_MATCHES = 50; // 最多解析 50 个匹配，防止无限循环
-    while (match !== null && matchCount < MAX_MATCHES) {
-      matchCount++;
-
-      // 超时检查
-      if (Date.now() - parseStartTime > PARSE_TIMEOUT) {
-        break;
+    const fixParamNames = (params: Record<string, unknown>): Record<string, unknown> => {
+      const fixed: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(params)) {
+        const lowerKey = key.toLowerCase();
+        const mappedKey = PARAM_MAPPINGS[lowerKey] || key;
+        fixed[mappedKey] = value;
       }
+      return fixed;
+    };
 
+    // 策略1: 解析代码块中的 JSON
+    const codeBlockRegex = /```(?:json|tool)?\s*\n?([\s\S]*?)```/g;
+    let match;
+    while ((match = codeBlockRegex.exec(cleanedResponse)) !== null && calls.length < 50) {
+      if (Date.now() - parseStartTime > PARSE_TIMEOUT) break;
       try {
         const content = match[1].trim();
         const parsed = JSON.parse(content);
+
         if (parsed.tool && parsed.parameters) {
-          addCall(
-            {
-              tool: parsed.tool.toLowerCase(),
-              parameters: parsed.parameters,
-              id: parsed.id || this.generateToolCallId(),
-            },
-            'codeblock'
-          );
+          addCall(parsed.tool, fixParamNames(parsed.parameters), parsed.id, 'codeblock');
         } else if (Array.isArray(parsed)) {
-          for (const item of parsed) {
+          parsed.forEach((item: any) => {
             if (item.tool && item.parameters) {
-              addCall(
-                {
-                  tool: item.tool.toLowerCase(),
-                  parameters: item.parameters,
-                  id: item.id || this.generateToolCallId(),
-                },
-                'codeblock'
-              );
+              addCall(item.tool, fixParamNames(item.parameters), item.id, 'codeblock');
             }
-          }
-        }
-      } catch {
-        // 忽略解析失败的JSON
-      }
-      match = getRegex('codeBlock').exec(cleanedResponse);
-    }
-
-    // 预处理：移除代码块内容，避免重复解析
-    const codeBlockPattern = new RegExp(REGEX_CACHE.codeBlock.source, 'g');
-    const textWithoutCodeBlocks = cleanedResponse.replace(codeBlockPattern, '');
-
-    // 尝试解析花括号格式: ToolName{...}（排除圆括号格式如 Edit(...)）
-    let curlyMatch = getRegex('curlyBrace').exec(textWithoutCodeBlocks);
-    let curlyMatchCount = 0;
-    while (curlyMatch !== null && curlyMatchCount < MAX_MATCHES) {
-      curlyMatchCount++;
-
-      // 超时检查
-      if (Date.now() - parseStartTime > PARSE_TIMEOUT) {
-        break;
-      }
-
-      try {
-        const toolNameRaw = curlyMatch[1];
-        const toolName = toolNameRaw.toLowerCase();
-        const paramsStr = curlyMatch[2];
-
-        // 排除圆括号格式（如 Edit(file_path=...)）
-        if (paramsStr.includes('(') || paramsStr.includes(')')) {
-          curlyMatch = getRegex('curlyBrace').exec(textWithoutCodeBlocks);
-          continue;
-        }
-
-        // 只处理已知的工具名称（小写）
-        if (knownTools.has(toolName)) {
-          try {
-            const parameters = this.parseParameters(paramsStr);
-            if (Object.keys(parameters).length > 0) {
-              addCall({
-                tool: toolName,
-                parameters,
-                id: this.generateToolCallId(),
-              });
-            }
-          } catch {
-            // 忽略参数解析失败
-          }
-        }
-      } catch (error) {
-        // 保护整个解析循环不崩溃
-        logger.debug(`curly brace parse error: ${error}`);
-      }
-      curlyMatch = getRegex('curlyBrace').exec(textWithoutCodeBlocks);
-    }
-
-    // 尝试解析纯JSON格式的工具调用
-    let jsonMatch = getRegex('jsonTool').exec(textWithoutCodeBlocks);
-    let jsonMatchCount = 0;
-    while (jsonMatch !== null && jsonMatchCount < MAX_MATCHES) {
-      jsonMatchCount++;
-
-      // 超时检查
-      if (Date.now() - parseStartTime > PARSE_TIMEOUT) {
-        break;
-      }
-
-      try {
-        const parsed = JSON.parse(jsonMatch[0]);
-        if (parsed.tool && parsed.parameters) {
-          addCall({
-            tool: parsed.tool.toLowerCase(), // 确保工具名为小写
-            parameters: parsed.parameters,
-            id: parsed.id || this.generateToolCallId(),
           });
         }
       } catch {
-        // 忽略 JSON 解析失败
+        /* 忽略解析失败 */
       }
-      jsonMatch = getRegex('jsonTool').exec(textWithoutCodeBlocks);
     }
 
-    // 尝试解析 <toolcall> 格式
-    let toolcallMatch = getRegex('xmlToolCall').exec(cleanedResponse);
-    let toolcallMatchCount = 0;
-    while (toolcallMatch !== null && toolcallMatchCount < MAX_MATCHES) {
-      toolcallMatchCount++;
-
-      // 超时检查
-      if (Date.now() - parseStartTime > PARSE_TIMEOUT) {
-        break;
-      }
-
+    // 策略2: 解析 <toolcall> 标签
+    const toolcallRegex = /<toolcall[^>]*>([\s\S]*?)<\/toolcall>/gi;
+    while ((match = toolcallRegex.exec(cleanedResponse)) !== null && calls.length < 50) {
+      if (Date.now() - parseStartTime > PARSE_TIMEOUT) break;
       try {
-        const content = toolcallMatch[1].trim();
+        const content = match[1].trim();
 
-        // 尝试提取工具名和参数: <toolcall>read{...}</toolcall>
-        const toolcallStyleMatch = content.match(/^(\w+)\s*\{([\s\S]*)\}$/);
-        if (toolcallStyleMatch) {
-          const toolName = toolcallStyleMatch[1].toLowerCase();
-          const paramsStr = toolcallStyleMatch[2];
-
+        // 格式: <toolcall>toolname{...}</toolcall>
+        const styleMatch = content.match(/^(\w+)\s*\{([\s\S]*)\}$/);
+        if (styleMatch) {
+          const toolName = styleMatch[1].toLowerCase();
           if (knownTools.has(toolName)) {
+            const paramsStr = styleMatch[2];
+            let params: Record<string, unknown> = {};
             try {
-              const parameters = this.parseParameters(paramsStr);
-              if (Object.keys(parameters).length > 0) {
-                addCall({
-                  tool: toolName,
-                  parameters,
-                  id: this.generateToolCallId(),
-                });
-              }
+              params = this.parseParameters(paramsStr);
             } catch {
-              // 忽略参数解析失败
+              /* 忽略 */
+            }
+            if (Object.keys(params).length > 0) {
+              addCall(toolName, params, undefined, 'toolcall-style');
             }
           }
-        } else {
-          // 尝试解析 JSON 格式: <toolcall>{"tool":"read","parameters":{...}}</toolcall>
-          try {
-            const parsed = JSON.parse(content);
-            if (parsed.tool && parsed.parameters) {
-              addCall({
-                tool: parsed.tool.toLowerCase(),
-                parameters: parsed.parameters,
-                id: parsed.id || this.generateToolCallId(),
-              });
-            }
-          } catch {
-            // 忽略 JSON 解析失败
-          }
+          continue;
         }
 
-        // 额外处理：尝试解析 <toolcall>toolname\n{json} 格式（AI 错误格式）
-        // 例如: <toolcall>multiedit>\n{...}
+        // 格式: <toolcall>{"tool":"name","parameters":{...}}</toolcall>
+        const parsed = JSON.parse(content);
+        if (parsed.tool && parsed.parameters) {
+          addCall(parsed.tool, fixParamNames(parsed.parameters), parsed.id, 'toolcall-json');
+        }
+
+        // 格式: <toolcall>toolname\n{...}</toolcall> (AI 错误格式)
         if (calls.length === 0) {
-          const lines = content.split('\n');
+          const lines = content.split('\n').filter((l) => l.trim());
           if (lines.length >= 2) {
-            const possibleToolName = lines[0].trim();
-            const possibleJson = lines.slice(1).join('\n').trim();
-
-            // 检查第一行是否是有效的工具名
-            if (knownTools.has(possibleToolName.toLowerCase())) {
+            const possibleTool = lines[0].trim().toLowerCase();
+            if (knownTools.has(possibleTool)) {
               try {
-                const parsed = JSON.parse(possibleJson);
-                if (parsed.filepath || parsed.filePath || parsed.file_path) {
-                  // 修复参数名映射
-                  const fixedParams = { ...parsed };
-                  if (fixedParams.filepath) {
-                    fixedParams.filePath = fixedParams.filepath;
-                    delete fixedParams.filepath;
-                  }
-                  if (fixedParams.oldText) {
-                    fixedParams.oldString = fixedParams.oldText;
-                    delete fixedParams.oldText;
-                  }
-                  if (fixedParams.newText) {
-                    fixedParams.newString = fixedParams.newText;
-                    delete fixedParams.newText;
-                  }
-
-                  addCall({
-                    tool: possibleToolName.toLowerCase(),
-                    parameters: fixedParams,
-                    id: this.generateToolCallId(),
-                  });
-                  logger.debug(`Recovered tool call from malformed format: ${possibleToolName}`);
-                }
+                const jsonContent = lines.slice(1).join('\n');
+                const parsed2 = JSON.parse(jsonContent);
+                addCall(possibleTool, fixParamNames(parsed2), undefined, 'toolcall-malformed');
               } catch {
-                // 忽略解析失败
+                /* 忽略 */
               }
             }
           }
-        }
-      } catch (error) {
-        // 保护整个解析循环不崩溃
-        logger.debug(`<toolcall> parse error: ${error}`);
-      }
-
-      toolcallMatch = getRegex('xmlToolCall').exec(cleanedResponse);
-    }
-
-    // 尝试解析纯 JSON 格式（不包含 tool 字段的）
-    // 如 {"parameters":{"pattern":"..."}} - 某些 AI 会省略 tool
-    let standaloneMatch = getRegex('standaloneJson').exec(textWithoutCodeBlocks);
-    let standaloneMatchCount = 0;
-    while (standaloneMatch !== null && standaloneMatchCount < MAX_MATCHES) {
-      standaloneMatchCount++;
-
-      // 超时检查
-      if (Date.now() - parseStartTime > PARSE_TIMEOUT) {
-        break;
-      }
-
-      try {
-        const parsed = JSON.parse(standaloneMatch[0]);
-        if (parsed.parameters && Object.keys(parsed.parameters).length > 0) {
-          // 尝试从上下文推断工具类型（如果有其他工具调用）
-          // 这种格式通常是不完整的，需要 AI 重新生成
         }
       } catch {
-        // 忽略
+        /* 忽略 */
       }
-      standaloneMatch = getRegex('standaloneJson').exec(textWithoutCodeBlocks);
     }
 
-    // 保存到缓存
+    // 策略3: 解析 ToolName{...} 格式
+    const curlyRegex = /\b([A-Z][a-zA-Z0-9]*)\s*\{([\s\S]*?)\}/g;
+    while ((match = curlyRegex.exec(cleanedResponse)) !== null && calls.length < 50) {
+      if (Date.now() - parseStartTime > PARSE_TIMEOUT) break;
+      const toolName = match[1].toLowerCase();
+      if (!knownTools.has(toolName)) continue;
+
+      const paramsStr = match[2];
+      if (paramsStr.includes('(') || paramsStr.includes(')')) continue;
+
+      try {
+        const params = this.parseParameters(paramsStr);
+        if (Object.keys(params).length > 0) {
+          addCall(toolName, params, undefined, 'curly-style');
+        }
+      } catch {
+        /* 忽略 */
+      }
+    }
+
+    // 策略4: 解析 JSON 对象
+    const jsonRegex = /\{\s*"tool"\s*:\s*"(\w+)"\s*,\s*"parameters"\s*:\s*\{[\s\S]*?\}\s*\}/g;
+    while ((match = jsonRegex.exec(cleanedResponse)) !== null && calls.length < 50) {
+      if (Date.now() - parseStartTime > PARSE_TIMEOUT) break;
+      try {
+        const parsed = JSON.parse(match[0]);
+        if (parsed.tool && parsed.parameters) {
+          addCall(parsed.tool, fixParamNames(parsed.parameters), parsed.id, 'json-obj');
+        }
+      } catch {
+        /* 忽略 */
+      }
+    }
+
+    // 保存缓存
     if (calls.length > 0) {
       if (PARSE_CACHE.size >= PARSE_CACHE_MAX_SIZE) {
-        const keysToDelete = Array.from(PARSE_CACHE.keys()).slice(0, 20);
-        keysToDelete.forEach((key) => PARSE_CACHE.delete(key));
+        Array.from(PARSE_CACHE.keys())
+          .slice(0, 20)
+          .forEach((k) => PARSE_CACHE.delete(k));
       }
       PARSE_CACHE.set(cacheKey, { calls: [...calls], timestamp: Date.now() });
     }
