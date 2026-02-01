@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import * as path from 'path';
 import chalk from 'chalk';
 import ora = require('ora');
+
 import { getConfig } from '../config';
 import { createAPIAdapterFactory } from '../api';
 import {
@@ -12,6 +13,7 @@ import {
   getInterruptManager,
   getAgentManager,
 } from '../core';
+
 import { executeAPIRequest, API_PRIORITY } from '../core/api-concurrency';
 import { getBuiltinTools } from '../tools';
 import { PermissionManager, PermissionAction } from '../core/permissions';
@@ -91,6 +93,48 @@ function cleanResponse(response: string): string {
   cleaned = cleaned.trim();
 
   return cleaned;
+}
+
+/**
+ * 检测工具结果中的文件修改信息
+ * 返回修改的文件列表和代码行数变化
+ */
+function detectFileChanges(
+  toolName: string,
+  result: any
+): { modifiedFiles: string[]; additions: number; deletions: number } {
+  const modifiedFiles: string[] = [];
+  let additions = 0;
+  let deletions = 0;
+
+  // 只检测编辑类工具
+  if (toolName === 'edit' || toolName === 'multiedit' || toolName === 'write') {
+    const params = result.input?.parameters || {};
+
+    // 获取修改的文件路径
+    if (params.filePath) {
+      modifiedFiles.push(params.filePath);
+    }
+
+    // 简单估算行数变化（基于 oldString 和 newString 的长度差）
+    // 这是一个近似值，OpenCode 使用实际的 git diff
+    if (params.oldString && params.newString) {
+      const oldLines = params.oldString.split('\n').length;
+      const newLines = params.newString.split('\n').length;
+      const diff = newLines - oldLines;
+
+      if (diff > 0) {
+        additions += diff;
+      } else {
+        deletions -= diff;
+      }
+    } else if (params.content && toolName === 'write') {
+      // 写入文件，估算所有行都是新增的
+      additions += params.content.split('\n').length;
+    }
+  }
+
+  return { modifiedFiles, additions, deletions };
 }
 
 function printAssistantMessage(message: string): void {
@@ -211,14 +255,11 @@ export const agentCommand = new Command('agent')
     });
     await sessionManager.initialize();
 
-    // 如果指定了 agent，更新会话类型
-    if (options.agent) {
-      await sessionManager.createSession(`Agent: ${options.agent}`, options.agent);
-      await sessionManager.updateSessionActivity();
-    }
-
     // 始终创建新会话（用户需求：每次启动新会话，旧会话通过切换选择）
     const currentSession = await sessionManager.createSession('New Session', 'default');
+
+    // 跟踪是否是第一条用户消息（用于生成标题）
+    let isFirstUserMessage = true;
 
     const agentConfig = config.getAgentConfig();
     const contextManager = createContextManager(
@@ -369,72 +410,31 @@ export const agentCommand = new Command('agent')
       }
       try {
         rl.input.setRawMode(false);
-      } catch (e) {
+      } catch {
         // 忽略错误
       }
 
-      // 异步保存历史和生成摘要，不阻塞退出
+      // 立即保存历史和会话（同步操作）
       if (options.history) {
-        // 立即关闭 readline
         try {
-          rl.close();
-        } catch (e) {
-          // readline 可能已经关闭
+          await contextManager.saveHistory();
+          // 保存成功后，更新会话的消息数量
+          const messageCount = contextManager.getMessageCount();
+          await sessionManager.updateSessionActivity(messageCount);
+        } catch {
+          // 历史保存失败不影响退出
         }
-
-        // 异步执行后台任务
-        (async () => {
-          try {
-            await contextManager.saveHistory();
-
-            const messageHistory = contextManager.getContext();
-            const userMessages = messageHistory.filter((m: any) => m.role === 'user');
-
-            if (userMessages.length >= 1) {
-              try {
-                const firstUserMessage = userMessages[0]?.content || '';
-
-                // 生成标题
-                const titleResult = await functionalAgentManager.generateTitle(firstUserMessage);
-                if (titleResult.success && titleResult.output) {
-                  const title = titleResult.output.trim();
-                  await sessionManager.setCurrentSessionTitle(title);
-                }
-
-                // 生成摘要
-                const summaryResult = await functionalAgentManager.summarize(messageHistory);
-                if (summaryResult.success && summaryResult.output) {
-                  const lines = summaryResult.output.trim().split('\n');
-                  const summaryTitle = lines[0]?.trim() || '会话摘要';
-                  const summaryContent = lines.slice(1).join('\n').trim() || '';
-
-                  await sessionManager.updateSessionSummary(currentSession.id, {
-                    title: summaryTitle,
-                    content: summaryContent,
-                  });
-                }
-              } catch {
-                // 静默失败
-              }
-            }
-          } catch {
-            // 静默失败
-          }
-        })();
-
-        // 立即退出，不等待后台任务
-        logger.info('再见！');
-        process.exit(0);
-      } else {
-        // 不保存历史，直接退出
-        try {
-          rl.close();
-        } catch (e) {
-          // readline 可能已经关闭
-        }
-        logger.info('再见！');
-        process.exit(0);
       }
+
+      // 关闭 readline
+      try {
+        rl.close();
+      } catch (e) {
+        // readline 可能已经关闭
+      }
+
+      logger.info('再见！');
+      process.exit(0);
     };
 
     // 添加工具批准的按键监听
@@ -660,6 +660,26 @@ export const agentCommand = new Command('agent')
           // 添加用户消息到上下文
           contextManager.addMessage('user', input);
 
+          // 如果是第一条用户消息，异步生成会话标题
+          if (isFirstUserMessage && options.history) {
+            isFirstUserMessage = false;
+
+            // 异步生成标题（不阻塞对话）
+            (async () => {
+              try {
+                const titleResult = await functionalAgentManager.generateTitle(input);
+                if (titleResult.success && titleResult.output) {
+                  const newTitle = titleResult.output.trim();
+                  await sessionManager.setCurrentSessionTitle(newTitle);
+                  console.log(chalk.gray(`\n📝 会话标题: ${newTitle}\n`));
+                }
+              } catch (error) {
+                // 静默失败，不影响对话
+                logger.debug(`生成标题失败: ${(error as Error).message}`);
+              }
+            })();
+          }
+
           // 每次新的用户输入时，重置所有状态
           autoApproveAll = options.yes || agentConfig.auto_approve || false;
 
@@ -711,10 +731,26 @@ export const agentCommand = new Command('agent')
 
                     // 优先使用已保存的会话摘要
                     const existingSummary = sessionManager.getSessionSummary(currentSession.id);
-                    if (existingSummary) {
-                      summaryContent = `${existingSummary.title}\n\n${existingSummary.content}`;
+                    if (existingSummary && existingSummary.files > 0) {
+                      // 使用代码统计摘要
+                      const parts = [];
+                      if (existingSummary.title) {
+                        parts.push(`标题: ${existingSummary.title}`);
+                      }
+                      parts.push(`修改了 ${existingSummary.files} 个文件`);
+                      parts.push(
+                        `新增 ${existingSummary.additions} 行，删除 ${existingSummary.deletions} 行`
+                      );
+                      if (existingSummary.modifiedFiles.length > 0) {
+                        parts.push(
+                          `修改的文件: ${existingSummary.modifiedFiles.slice(0, 5).join(', ')}${existingSummary.modifiedFiles.length > 5 ? '...' : ''}`
+                        );
+                      }
+                      summaryContent = parts.join('\n');
                       console.log(
-                        chalk.blue(`📋 使用已保存的会话摘要: ${existingSummary.title}\n`)
+                        chalk.blue(
+                          `📋 使用已保存的代码统计摘要 (+${existingSummary.additions}/-${existingSummary.deletions}, ${existingSummary.files} 文件)\n`
+                        )
                       );
                     } else {
                       // 没有已保存摘要，则生成新的压缩摘要
@@ -978,6 +1014,26 @@ export const agentCommand = new Command('agent')
                   const duration = Date.now() - startTime;
 
                   toolResults.push(result);
+
+                  // 检测文件修改并更新会话摘要（如果工具成功）
+                  if (result.success && options.history) {
+                    const changes = detectFileChanges(call.tool, result);
+                    if (
+                      changes.modifiedFiles.length > 0 ||
+                      changes.additions > 0 ||
+                      changes.deletions > 0
+                    ) {
+                      // 异步更新摘要（不阻塞工具执行）
+                      (async () => {
+                        try {
+                          await sessionManager.updateSessionSummary(currentSession.id, changes);
+                        } catch (error) {
+                          // 静默失败，不影响对话
+                          logger.debug(`更新会话摘要失败: ${(error as Error).message}`);
+                        }
+                      })();
+                    }
+                  }
 
                   // 更新同一行显示结果
                   const timeStr = `${duration}ms`;

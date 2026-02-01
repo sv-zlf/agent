@@ -924,16 +924,27 @@ export class CommandManager {
 
         // 显示摘要信息
         if (currentSession?.summary) {
-          console.log(chalk.blue(`\n📝 会话摘要:`));
-          console.log(chalk.blue(`  标题: ${currentSession.summary.title}`));
-          const summaryContent =
-            currentSession.summary.content.length > 100
-              ? currentSession.summary.content.substring(0, 100) + '...'
-              : currentSession.summary.content;
-          console.log(chalk.gray(`  内容: ${summaryContent}`));
+          console.log(chalk.blue(`\n📝 代码统计:`));
+          if (currentSession.summary.title) {
+            console.log(chalk.blue(`  标题: ${currentSession.summary.title}`));
+          }
+          console.log(chalk.gray(`  修改文件: ${currentSession.summary.files} 个`));
+          console.log(chalk.gray(`  新增: +${currentSession.summary.additions} 行`));
+          console.log(chalk.gray(`  删除: -${currentSession.summary.deletions} 行`));
+          if (currentSession.summary.modifiedFiles.length > 0) {
+            console.log(chalk.gray(`  文件列表:`));
+            currentSession.summary.modifiedFiles.slice(0, 5).forEach((file: string) => {
+              console.log(chalk.gray(`    • ${file}`));
+            });
+            if (currentSession.summary.modifiedFiles.length > 5) {
+              console.log(
+                chalk.gray(`    ... 还有 ${currentSession.summary.modifiedFiles.length - 5} 个文件`)
+              );
+            }
+          }
           console.log(
             chalk.gray(
-              `  生成时间: ${new Date(currentSession.summary.generatedAt).toLocaleString('zh-CN')}`
+              `  更新时间: ${new Date(currentSession.summary.generatedAt).toLocaleString('zh-CN')}`
             )
           );
         }
@@ -981,12 +992,16 @@ export class CommandManager {
 
           // 显示摘要信息
           if (session.summary) {
-            console.log(chalk.blue(`   📝 ${session.summary.title}`));
-            const summaryPreview =
-              session.summary.content.length > 50
-                ? session.summary.content.substring(0, 50) + '...'
-                : session.summary.content;
-            console.log(chalk.gray(`      ${summaryPreview}`));
+            if (session.summary.title) {
+              console.log(chalk.blue(`   📝 ${session.summary.title}`));
+            }
+            if (session.summary.files > 0) {
+              console.log(
+                chalk.gray(
+                  `   代码: +${session.summary.additions}/-${session.summary.deletions}, ${session.summary.files} 文件`
+                )
+              );
+            }
           }
 
           if (session.parentID) {

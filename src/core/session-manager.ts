@@ -46,13 +46,15 @@ export interface SessionStats {
 }
 
 /**
- * 会话摘要信息
+ * 会话摘要信息（基于代码变化统计）
  */
 export interface SessionSummary {
-  title: string; // 摘要标题
-  content: string; // 摘要内容
-  generatedAt: number; // 生成时间
-  messageCount: number; // 生成时的消息数量
+  title?: string; // 会话标题（AI生成）
+  additions: number; // 新增行数
+  deletions: number; // 删除行数
+  files: number; // 修改的文件数
+  modifiedFiles: string[]; // 修改的文件列表
+  generatedAt: number; // 最后更新时间
 }
 
 /**
@@ -230,13 +232,19 @@ export class SessionManager {
   }
 
   /**
-   * 更新会话活跃时间
+   * 更新会话活跃时间和消息数量
    */
-  async updateSessionActivity(): Promise<void> {
+  async updateSessionActivity(messageCount?: number): Promise<void> {
     const session = this.getCurrentSession();
     if (session) {
       session.lastActiveAt = Date.now();
       session.updatedAt = Date.now();
+
+      // 更新消息数量
+      if (messageCount !== undefined) {
+        session.messageCount = messageCount;
+      }
+
       await this.saveSession(session);
     }
   }
@@ -266,6 +274,19 @@ export class SessionManager {
     const session = this.sessions.get(sessionId);
     if (session) {
       session.title = title;
+
+      // 同时更新摘要中的标题
+      if (!session.summary) {
+        session.summary = {
+          additions: 0,
+          deletions: 0,
+          files: 0,
+          modifiedFiles: [],
+          generatedAt: Date.now(),
+        };
+      }
+      session.summary.title = title;
+
       session.updatedAt = Date.now();
       await this.saveSession(session);
     }
@@ -278,6 +299,19 @@ export class SessionManager {
     const session = this.getCurrentSession();
     if (session) {
       session.title = title;
+
+      // 同时更新摘要中的标题
+      if (!session.summary) {
+        session.summary = {
+          additions: 0,
+          deletions: 0,
+          files: 0,
+          modifiedFiles: [],
+          generatedAt: Date.now(),
+        };
+      }
+      session.summary.title = title;
+
       session.updatedAt = Date.now();
       await this.saveSession(session);
     }
@@ -462,11 +496,15 @@ export class SessionManager {
   }
 
   /**
-   * 更新会话摘要
+   * 更新会话摘要（基于代码变化）
    */
   async updateSessionSummary(
     sessionId: string,
-    summary: { title: string; content: string }
+    changes: {
+      additions?: number;
+      deletions?: number;
+      modifiedFiles?: string[];
+    }
   ): Promise<void> {
     const session = this.sessions.get(sessionId);
     if (!session) {
@@ -474,18 +512,43 @@ export class SessionManager {
       return;
     }
 
-    // 更新摘要信息
-    session.summary = {
-      title: summary.title,
-      content: summary.content,
-      generatedAt: Date.now(),
-      messageCount: session.messageCount || 0,
-    };
+    // 初始化摘要
+    if (!session.summary) {
+      session.summary = {
+        additions: 0,
+        deletions: 0,
+        files: 0,
+        modifiedFiles: [],
+        generatedAt: Date.now(),
+      };
+    }
 
     // 更新统计信息
-    if (session.stats) {
-      session.stats.summariesGenerated = (session.stats.summariesGenerated || 0) + 1;
-      session.stats.lastSummaryAt = Date.now();
+    if (changes.additions !== undefined) {
+      session.summary.additions += changes.additions;
+    }
+    if (changes.deletions !== undefined) {
+      session.summary.deletions += changes.deletions;
+    }
+    if (changes.modifiedFiles) {
+      // 合并修改的文件列表（去重）
+      const newFiles = changes.modifiedFiles.filter(
+        (f) => !session.summary!.modifiedFiles.includes(f)
+      );
+      session.summary.modifiedFiles.push(...newFiles);
+      session.summary.files = session.summary.modifiedFiles.length;
+    }
+
+    // 更新时间
+    session.summary.generatedAt = Date.now();
+
+    // 同时更新 stats.modifiedFiles
+    if (session.stats && changes.modifiedFiles) {
+      changes.modifiedFiles.forEach((file) => {
+        if (!session.stats!.modifiedFiles.includes(file)) {
+          session.stats!.modifiedFiles.push(file);
+        }
+      });
     }
 
     // 更新会话的修改时间
@@ -494,7 +557,43 @@ export class SessionManager {
     // 保存会话信息
     await this.saveSession(session);
 
-    logger.debug(`已更新会话摘要: ${session.name} - ${summary.title}`);
+    logger.debug(
+      `已更新会话统计: ${session.name} (+${changes.additions || 0}, -${changes.deletions || 0}, ${session.summary.files} files)`
+    );
+  }
+
+  /**
+   * 设置会话标题（同时更新 session.title 和 session.summary.title）
+   */
+  async setSessionTitle(sessionId: string, title: string): Promise<void> {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      logger.debug(`尝试更新不存在会话的标题: ${sessionId}`);
+      return;
+    }
+
+    // 更新会话标题（用于会话列表显示）
+    session.title = title;
+
+    // 初始化摘要（如果不存在）
+    if (!session.summary) {
+      session.summary = {
+        additions: 0,
+        deletions: 0,
+        files: 0,
+        modifiedFiles: [],
+        generatedAt: Date.now(),
+      };
+    }
+
+    // 更新摘要中的标题
+    session.summary.title = title;
+    session.updatedAt = Date.now();
+
+    // 保存会话信息
+    await this.saveSession(session);
+
+    logger.debug(`已更新会话标题: ${session.name} - ${title}`);
   }
 
   /**

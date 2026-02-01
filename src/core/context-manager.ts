@@ -475,6 +475,13 @@ export class ContextManager {
   }
 
   /**
+   * 获取当前消息数量
+   */
+  getMessageCount(): number {
+    return this.messages.length;
+  }
+
+  /**
    * 从文件加载历史
    */
   async loadHistory(): Promise<void> {

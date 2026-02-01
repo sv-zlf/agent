@@ -19,6 +19,7 @@ export interface AgentExecutionConfig extends AgentRuntimeConfig {
   onToolCall?: (call: ToolCall) => Promise<boolean>; // 返回true表示批准
   onStatusChange?: (status: AgentStatus, message?: string) => void;
   onStreamChunk?: (chunk: string) => void; // 流式响应回调
+  onToolComplete?: (result: ToolResult) => void; // 工具执行完成回调
 }
 
 /**
@@ -406,6 +407,11 @@ export class AgentOrchestrator {
           duration,
         };
         this.toolCallStartTime.delete(callId);
+      }
+
+      // 触发工具完成回调（用于更新会话摘要）
+      if (this.config.onToolComplete) {
+        this.config.onToolComplete(result);
       }
 
       results.push(result);

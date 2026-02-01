@@ -159,7 +159,7 @@ try {
 
 // 所有提示词已内嵌到可执行文件中，无需外部资源
 console.log('📄 提示词已内嵌到可执行文件\n');
-const copiedFiles = 0;
+let copiedFiles = 0;
 
 // 生成安装脚本
 console.log('\n📝 生成安装脚本...');
@@ -196,10 +196,33 @@ echo       ✓ 可执行文件已复制
 
 echo.
 echo [3/3] 添加到系统 PATH...
-set PATH_ADD=%INSTALL_DIR%\\bin
 
-:: 使用 PowerShell 添加到用户 PATH
-powershell -NoProfile -Command "$oldPath = [Environment]::GetEnvironmentVariable('Path', 'User'); if ($oldPath -notlike '*%PATH_ADD%*') { [Environment]::SetEnvironmentVariable('Path', $oldPath + ';%PATH_ADD%', 'User'); Write-Host '       ✓ 已添加到用户 PATH'; } else { Write-Host '       ✓ 已在 PATH 中'; }"
+:: 检测 Windows 版本
+ver | findstr /i "6\.1\.7601" >nul
+if %errorlevel%==0 goto WIN7_PATH
+
+ver | findstr /i "6\.1\." >nul
+if %errorlevel%==0 goto WIN7_PATH
+
+:: Windows 8+ 使用 PowerShell
+set "PS_CMD=$p='%INSTALL_DIR%\\\\bin';$u=[Environment]::GetEnvironmentVariable('Path','User');if($u-notlike(\"*;$p;*\")-and$u-notlike(\"*;$p\")-and$u-notlike(\"$p;*\")){[Environment]::SetEnvironmentVariable('Path',$u+';'+$p,'User');Write-Host '       ✓ 已添加到用户 PATH'}else{Write-Host '       ✓ 已在 PATH 中'}"
+powershell -NoProfile -Command "%PS_CMD%" 2>nul
+if errorlevel 1 (
+    echo       ⚠ 自动添加 PATH 失败，请手动添加
+)
+goto PATH_DONE
+
+:WIN7_PATH
+echo       检测到 Windows 7
+echo.
+echo       需要手动添加以下路径到系统 PATH:
+echo.
+echo       %INSTALL_DIR%\\bin
+echo.
+echo       按任意键继续...
+pause >nul
+
+:PATH_DONE
 
 echo.
 echo =========================================
@@ -251,6 +274,17 @@ const readmeContent = `# GG CODE v${version} - Windows 可执行文件
 3. 重命名文件为 \`ggcode.exe\`
 4. 重新打开终端即可使用
 
+## Windows 7 用户注意
+
+Windows 7 及早期版本需要手动添加 PATH 环境变量：
+
+1. 右键点击"计算机"，选择"属性"
+2. 点击"高级系统设置"
+3. 点击"环境变量"
+4. 在"用户变量"中找到"Path"，点击"编辑"
+5. 在变量值末尾添加：\`;C:\\\\Users\\\\你的用户名\\\\.ggcode\\\\bin\`
+6. 点击"确定"保存
+
 ## 使用说明
 
 ### 基本命令
@@ -275,6 +309,10 @@ ggcode --help
 
 ### 无需 Node.js
 本可执行文件已内置 Node.js 运行时，无需单独安装。
+
+## 系统要求
+- **Windows 7/8/10/11** (x64)
+- **管理员权限**（安装时需要）
 
 ## 版本信息
 - 版本: ${version}
