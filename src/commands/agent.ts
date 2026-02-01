@@ -192,13 +192,6 @@ export const agentCommand = new Command('agent')
       currentSession.historyFile
     );
 
-    // 根据配置启用自动压缩（默认启用）
-    const autoCompress = agentConfig.auto_compress !== false;
-    if (autoCompress) {
-      contextManager.enableAutoCompress();
-      console.log(chalk.gray('✓ 已启用自动上下文压缩'));
-    }
-
     // 加载历史记录（可选）
     if (options.history) {
       await contextManager.loadHistory();
@@ -661,56 +654,58 @@ export const agentCommand = new Command('agent')
               let messages = contextManager.getContext();
 
               // 检查上下文大小，如果过大则触发压缩（仅在启用自动压缩时）
+              // 优化：只在特定轮次检查，避免每次都调用 estimateTokens() 影响性能
               const agentConfig = config.getAgentConfig();
-              const maxTokens = agentConfig.max_context_tokens;
-              const compressThreshold = agentConfig.compress_threshold || 0.85; // 默认 85%
-              const estimatedTokens = contextManager.estimateTokens();
-
-              // 根据配置决定是否启用自动压缩
               const autoCompressEnabled = agentConfig.auto_compress !== false;
 
-              // 如果上下文超过阈值且自动压缩已启用，触发压缩
-              if (autoCompressEnabled && estimatedTokens > maxTokens * compressThreshold) {
-                console.log(
-                  chalk.yellow(
-                    `\n⚠️  上下文过大 (${estimatedTokens}/${maxTokens} tokens)，触发压缩...\n`
-                  )
-                );
+              if (autoCompressEnabled && currentRound % 3 === 0) {
+                const maxTokens = agentConfig.max_context_tokens;
+                const compressThreshold = agentConfig.compress_threshold || 0.85; // 默认 85%
+                const estimatedTokens = contextManager.estimateTokens();
 
-                try {
-                  let summaryContent = '';
-
-                  // 优先使用已保存的会话摘要
-                  const existingSummary = sessionManager.getSessionSummary(currentSession.id);
-                  if (existingSummary) {
-                    summaryContent = `${existingSummary.title}\n\n${existingSummary.content}`;
-                    console.log(chalk.blue(`📋 使用已保存的会话摘要: ${existingSummary.title}\n`));
-                  } else {
-                    // 没有已保存摘要，则生成新的压缩摘要
-                    const compactResult = await functionalAgentManager.compact(messages);
-                    if (compactResult.success && compactResult.output) {
-                      summaryContent = compactResult.output;
-                    }
-                  }
-
-                  if (summaryContent) {
-                    // 清空上下文并添加摘要
-                    contextManager.clearContext();
-
-                    // 将摘要添加到系统提示词
-                    const currentSystemPrompt = systemPrompt || '你是一个 AI 编程助手。';
-                    const newSystemPrompt = `${currentSystemPrompt}\n\n## 对话摘要\n${summaryContent}`;
-                    contextManager.setSystemPrompt(newSystemPrompt);
-
-                    console.log(chalk.green(`✓ 上下文已压缩\n`));
-
-                    // 重新获取消息
-                    messages = contextManager.getContext();
-                  }
-                } catch (compactError) {
+                // 如果上下文超过阈值，触发压缩
+                if (estimatedTokens > maxTokens * compressThreshold) {
                   console.log(
-                    chalk.yellow(`压缩失败，继续使用原上下文: ${(compactError as Error).message}\n`)
+                    chalk.yellow(
+                      `\n⚠️  上下文过大 (${estimatedTokens}/${maxTokens} tokens)，触发压缩...\n`
+                    )
                   );
+
+                  try {
+                    let summaryContent = '';
+
+                    // 优先使用已保存的会话摘要
+                    const existingSummary = sessionManager.getSessionSummary(currentSession.id);
+                    if (existingSummary) {
+                      summaryContent = `${existingSummary.title}\n\n${existingSummary.content}`;
+                      console.log(chalk.blue(`📋 使用已保存的会话摘要: ${existingSummary.title}\n`));
+                    } else {
+                      // 没有已保存摘要，则生成新的压缩摘要
+                      const compactResult = await functionalAgentManager.compact(messages);
+                      if (compactResult.success && compactResult.output) {
+                        summaryContent = compactResult.output;
+                      }
+                    }
+
+                    if (summaryContent) {
+                      // 清空上下文并添加摘要
+                      contextManager.clearContext();
+
+                      // 将摘要添加到系统提示词
+                      const currentSystemPrompt = systemPrompt || '你是一个 AI 编程助手。';
+                      const newSystemPrompt = `${currentSystemPrompt}\n\n## 对话摘要\n${summaryContent}`;
+                      contextManager.setSystemPrompt(newSystemPrompt);
+
+                      console.log(chalk.green(`✓ 上下文已压缩\n`));
+
+                      // 重新获取消息
+                      messages = contextManager.getContext();
+                    }
+                  } catch (compactError) {
+                    console.log(
+                      chalk.yellow(`压缩失败，继续使用原上下文: ${(compactError as Error).message}\n`)
+                    );
+                  }
                 }
               }
 

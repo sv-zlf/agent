@@ -327,6 +327,10 @@ export interface AgentRuntimeConfig {
   autoApprove: boolean;
   dangerousCommands: string[];
   workingDirectory: string;
+  // 自动压缩配置
+  autoCompress?: boolean;
+  maxContextTokens?: number;
+  compressThreshold?: number;
 }
 
 /**

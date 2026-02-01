@@ -183,12 +183,6 @@ export const TaskTool = defineTool('task', {
       },
     });
 
-    // 根据配置启用自动压缩（子 agent 默认也启用）
-    const autoCompress = agentConfig.auto_compress !== false;
-    if (autoCompress) {
-      subagentContextManager.enableAutoCompress();
-    }
-
     const parentContext = subagentContextManager.getRawMessages();
     const lastMessages = parentContext.slice(-20);
     const systemPrompt = await agentManager.loadAgentPrompt(subagent_type);

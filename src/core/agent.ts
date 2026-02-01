@@ -127,16 +127,59 @@ export class AgentOrchestrator {
         // 获取当前上下文
         const messages = this.contextManager.getContext();
 
+        // 检查上下文大小（仅在配置启用且达到一定迭代次数后自动压缩）
+        // 避免每次循环都检查，提升性能
+        if (this.config.autoCompress && context.iteration % 3 === 0) {
+          const estimatedTokens = this.contextManager.estimateTokens();
+          const maxTokens = this.config.maxContextTokens || 8000;
+          const compressThreshold = this.config.compressThreshold || 0.85;
+
+          // 如果启用自动压缩且上下文超过阈值，触发压缩
+          if (estimatedTokens > maxTokens * compressThreshold) {
+            logger.info(`上下文过大 (${estimatedTokens}/${maxTokens} tokens)，触发压缩...`);
+            try {
+              const compactResult = await this.contextManager.quickCompact();
+              if (compactResult.compressed) {
+                logger.info(`上下文已压缩: 节省 ${compactResult.savedTokens} tokens`);
+              }
+            } catch (error) {
+              logger.warning(`压缩失败: ${(error as Error).message}`);
+            }
+          }
+        }
+
         // AI 思考阶段
         this.stateManager.setState(SessionState.THINKING, 'AI 思考中...');
-        const response = await this.apiAdapter.chat(messages);
 
-        // 验证响应非空
-        if (!response || response.trim().length === 0) {
-          throw new APIError(
-            'AI 模型返回了空响应，请检查 API 配置或重试',
-            ErrorCode.API_EMPTY_RESPONSE
-          );
+        // 添加超时控制（默认 60 秒）
+        const apiTimeout = (this.config as any).timeout || 60000;
+        const abortController = new AbortController();
+        const timeoutId = setTimeout(() => abortController.abort(), apiTimeout);
+
+        let response = '';
+        try {
+          response = await this.apiAdapter.chat(messages, {
+            abortSignal: abortController.signal,
+          });
+          clearTimeout(timeoutId);
+
+          // 验证响应非空
+          if (!response || response.trim().length === 0) {
+            throw new APIError(
+              'AI 模型返回了空响应，请检查 API 配置或重试',
+              ErrorCode.API_EMPTY_RESPONSE
+            );
+          }
+        } catch (error) {
+          clearTimeout(timeoutId);
+
+          // 检查是否是超时错误
+          if (abortController.signal.aborted) {
+            throw new APIError('AI API 请求超时，请稍后重试', ErrorCode.API_TIMEOUT);
+          }
+
+          // 其他错误直接抛出
+          throw error;
         }
 
         // 解析工具调用
@@ -359,32 +402,38 @@ export class AgentOrchestrator {
       return false;
     }
 
-    // 2. 检测完成关键词
-    const completionPatterns = [
-      /任务完成/g,
-      /已完成/g,
-      /完成/g,
-      /done/gi,
-      /finished/gi,
-      /completed/gi,
-      /没有问题了/g,
-      /就这样/g,
+    // 2. 检测完成关键词（不使用 g 标志避免 lastIndex 问题）
+    const responseLower = response.toLowerCase();
+    const completionKeywords = [
+      '任务完成',
+      '已完成',
+      '完成',
+      'done',
+      'finished',
+      'completed',
+      '没有问题了',
+      '就这样',
     ];
 
-    const hasCompletionSignal = completionPatterns.some((pattern) => pattern.test(response));
+    const hasCompletionSignal = completionKeywords.some((keyword) =>
+      responseLower.includes(keyword.toLowerCase())
+    );
     if (hasCompletionSignal) {
       return true;
     }
 
     // 3. 检测明确的结束信号（如总结性陈述）
-    const endingPatterns = [/总结：?/g, /综上所述/g, /以上就是/g, /简而言之/g];
+    const endingPatterns = ['总结', '综上所述', '以上就是', '简而言之'];
 
-    const hasEndingSignal = endingPatterns.some((pattern) => pattern.test(response));
+    const hasEndingSignal = endingPatterns.some((pattern) =>
+      responseLower.includes(pattern.toLowerCase())
+    );
 
     // 4. 检测是否在等待用户输入
-    const waitingPatterns = [/需要.*信息/g, /请提供/g, /需要.*确认/g, /是否.*继续/g];
-
-    const hasWaitingSignal = waitingPatterns.some((pattern) => pattern.test(response));
+    const waitingPatterns = ['需要', '信息', '请提供', '确认', '是否'];
+    const hasWaitingSignal = waitingPatterns.some((pattern) =>
+      responseLower.includes(pattern.toLowerCase())
+    );
 
     // 如果有等待信号，说明还没完成
     if (hasWaitingSignal) {

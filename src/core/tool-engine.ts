@@ -44,6 +44,7 @@ const REGEX_CACHE: Record<string, RegExp> = {
   jsonTool: /\{\s*"tool"\s*:\s*"(\w+)"\s*,\s*"parameters"\s*:\s*\{[\s\S]*?\}\s*\}/g,
   keyValue: /(\w+)\s*[:=]\s*"([^"]*)"/g,
   toolcallOpencode: /^(\w+)\s*(\{|\()/,
+  standaloneJson: /\{\s*"parameters"\s*:\s*\{[\s\S]*?\}\s*\}/g,
 };
 
 // 获取正则副本（避免 lastIndex 状态污染）
@@ -647,8 +648,7 @@ export class ToolEngine {
 
     // 尝试解析纯 JSON 格式（不包含 tool 字段的）
     // 如 {"parameters":{"pattern":"..."}} - 某些 AI 会省略 tool
-    const standaloneJsonRegex = /\{\s*"parameters"\s*:\s*\{[\s\S]*?\}\s*\}/g;
-    let standaloneMatch = standaloneJsonRegex.exec(textWithoutCodeBlocks);
+    let standaloneMatch = getRegex('standaloneJson').exec(textWithoutCodeBlocks);
     while (standaloneMatch !== null) {
       try {
         const parsed = JSON.parse(standaloneMatch[0]);
@@ -659,7 +659,7 @@ export class ToolEngine {
       } catch {
         // 忽略
       }
-      standaloneMatch = standaloneJsonRegex.exec(textWithoutCodeBlocks);
+      standaloneMatch = getRegex('standaloneJson').exec(textWithoutCodeBlocks);
     }
 
     // 保存到缓存
@@ -773,6 +773,7 @@ export class ToolEngine {
    */
   private parseParameters(paramsStr: string): Record<string, unknown> {
     let parameters: Record<string, unknown> = {};
+    const startTime = Date.now();
 
     try {
       const parsed = JSON.parse(`{${paramsStr}}`);
@@ -782,13 +783,23 @@ export class ToolEngine {
         parameters = parsed;
       }
     } catch {
-      const keyValuePairs = paramsStr.match(getRegex('keyValue')) || [];
+      // 超时保护：解析时间超过 10ms 则跳过
+      if (Date.now() - startTime > 10) {
+        return {};
+      }
+
+      const keyValuePairs = paramsStr.match(/(\w+)\s*[:=]\s*"([^"]*)"/g) || [];
       for (const pair of keyValuePairs) {
         const [key, ...valueParts] = pair.split(/[:=]\s*"/);
         if (key && valueParts.length > 0) {
           const value = valueParts.join(':').replace(/"$/, '');
           parameters[key.trim()] = value.trim();
         }
+      }
+
+      // 再次检查超时
+      if (Date.now() - startTime > 10) {
+        return {};
       }
 
       if (Object.keys(parameters).length === 0 && paramsStr.includes(':')) {
@@ -799,6 +810,11 @@ export class ToolEngine {
           // 忽略
         }
       }
+    }
+
+    // 超时保护
+    if (Date.now() - startTime > 10) {
+      return {};
     }
 
     // 参数名标准化
