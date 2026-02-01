@@ -373,54 +373,56 @@ export const agentCommand = new Command('agent')
         // 忽略错误
       }
 
+      // 异步保存历史和生成摘要，不阻塞退出
       if (options.history) {
-        // 先保存对话历史
-        await contextManager.saveHistory();
-
-        // 在对话结束后生成标题和摘要
-        const messageHistory = contextManager.getContext();
-        const userMessages = messageHistory.filter((m: any) => m.role === 'user');
-
-        // 只有在有足够的对话内容时才生成标题和摘要
-        if (userMessages.length >= 1) {
-          try {
-            // 获取第一个用户消息作为标题生成的上下文
-            const firstUserMessage = userMessages[0]?.content || '';
-
-            // 1. 生成标题（只使用第一个用户消息）
-            const titleResult = await functionalAgentManager.generateTitle(firstUserMessage);
-            if (titleResult.success && titleResult.output) {
-              const title = titleResult.output.trim();
-              await sessionManager.setCurrentSessionTitle(title);
-            }
-
-            // 2. 生成摘要（使用完整对话历史）
-            const summaryResult = await functionalAgentManager.summarize(messageHistory);
-            if (summaryResult.success && summaryResult.output) {
-              try {
-                const lines = summaryResult.output.trim().split('\n');
-                const summaryTitle = lines[0]?.trim() || '会话摘要';
-                const summaryContent = lines.slice(1).join('\n').trim() || '';
-
-                await sessionManager.updateSessionSummary(currentSession.id, {
-                  title: summaryTitle,
-                  content: summaryContent,
-                });
-              } catch (saveError) {
-                // 静默失败
-              }
-            }
-          } catch (error) {
-            // 静默失败
-          }
-        }
-
-        // 退出程序
+        // 立即关闭 readline
         try {
           rl.close();
         } catch (e) {
           // readline 可能已经关闭
         }
+
+        // 异步执行后台任务
+        (async () => {
+          try {
+            await contextManager.saveHistory();
+
+            const messageHistory = contextManager.getContext();
+            const userMessages = messageHistory.filter((m: any) => m.role === 'user');
+
+            if (userMessages.length >= 1) {
+              try {
+                const firstUserMessage = userMessages[0]?.content || '';
+
+                // 生成标题
+                const titleResult = await functionalAgentManager.generateTitle(firstUserMessage);
+                if (titleResult.success && titleResult.output) {
+                  const title = titleResult.output.trim();
+                  await sessionManager.setCurrentSessionTitle(title);
+                }
+
+                // 生成摘要
+                const summaryResult = await functionalAgentManager.summarize(messageHistory);
+                if (summaryResult.success && summaryResult.output) {
+                  const lines = summaryResult.output.trim().split('\n');
+                  const summaryTitle = lines[0]?.trim() || '会话摘要';
+                  const summaryContent = lines.slice(1).join('\n').trim() || '';
+
+                  await sessionManager.updateSessionSummary(currentSession.id, {
+                    title: summaryTitle,
+                    content: summaryContent,
+                  });
+                }
+              } catch {
+                // 静默失败
+              }
+            }
+          } catch {
+            // 静默失败
+          }
+        })();
+
+        // 立即退出，不等待后台任务
         logger.info('再见！');
         process.exit(0);
       } else {
