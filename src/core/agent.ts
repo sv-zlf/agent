@@ -644,46 +644,38 @@ ${toolsDescription}`;
   }): string {
     const lines: string[] = [];
 
-    lines.push('⚠️ **工具调用格式无法识别**\n');
-    lines.push('你的响应中包含的格式无法被系统正确解析。\n');
-    lines.push('**检测到的问题**:');
-    malformedDetection.detectedFormats.forEach((format) => {
-      lines.push(`- ${format}`);
-    });
+    lines.push('# ⚠️ CRITICAL: Tool Call Format Error\n');
+    lines.push('Your tool calls could not be parsed. You MUST use the exact JSON format below.\n');
 
     if (malformedDetection.examples.length > 0) {
-      lines.push('\n**检测到的示例**:');
-      malformedDetection.examples.slice(0, 3).forEach((ex) => {
-        lines.push(`  ${ex}`);
+      lines.push('**❌ Wrong Formats You Used:**');
+      malformedDetection.examples.slice(0, 2).forEach((ex) => {
+        lines.push(`  ${ex.substring(0, 100)}${ex.length > 100 ? '...' : ''}`);
       });
+      lines.push('');
     }
 
-    lines.push('\n**支持的格式**:');
+    lines.push('**✅ CORRECT FORMAT (Use This Exactly):**\n');
     lines.push('```json');
-    lines.push('{');
-    lines.push('  "tool": "read",');
-    lines.push('  "parameters": {');
-    lines.push('    "filePath": "path/to/file"');
+    lines.push('[');
+    lines.push('  {');
+    lines.push('    "tool": "read",');
+    lines.push('    "parameters": {');
+    lines.push('      "filePath": "H:/Project/agent/src/index.ts"');
+    lines.push('    }');
     lines.push('  }');
-    lines.push('}');
-    lines.push('```');
+    lines.push(']');
+    lines.push('```\n');
 
-    lines.push('\n**推荐格式**（JSON 代码块）:');
-    lines.push('```json');
-    lines.push('{');
-    lines.push('  "tool": "read",');
-    lines.push('  "parameters": {');
-    lines.push('    "filePath": "path/to/file"');
-    lines.push('  }');
-    lines.push('}');
-    lines.push('```');
+    lines.push('**Critical Rules:**');
+    lines.push('1. EVERY tool call must be a JSON code block (```json ... ```)');
+    lines.push('2. Tool names must be lowercase: "read", "write", "edit", etc.');
+    lines.push('3. Parameters must be camelCase: "filePath", "oldString", "newString"');
+    lines.push('4. Multiple tools: use array format as shown above');
+    lines.push('5. NO text before/after the JSON code block');
+    lines.push('6. NO alternative formats like Read{...} or <toolcall>...</toolcall>\n');
 
-    lines.push('\n**参数格式说明**:');
-    lines.push('- 支持 `filePath` 或 `file_path` 两种参数名');
-    lines.push('- 工具名称必须是小写（如 "read", "write"）');
-    lines.push('- parameters 是包含参数的对象');
-
-    lines.push('\n请使用上述格式重新调用工具。');
+    lines.push('**Please retry with the correct format.**');
 
     return lines.join('\n');
   }
