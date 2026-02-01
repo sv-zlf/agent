@@ -105,6 +105,8 @@ export class MockAPIAdapter {
       topK?: number;
       repetitionPenalty?: number;
       abortSignal?: AbortSignal;
+      stream?: boolean;
+      onChunk?: (chunk: string) => void;
     }
   ): Promise<string> {
     // 检查是否已中断
@@ -137,8 +139,13 @@ export class MockAPIAdapter {
   private async executeResponse(
     response: MockResponse,
     _messages: Message[],
-    _options?: any
+    options?: any
   ): Promise<string> {
+    // 检查是否需要流式响应
+    if (options?.stream && options?.onChunk) {
+      return this.executeStreamResponse(response, options);
+    }
+
     // 模拟网络延迟
     if (response.delay) {
       await new Promise((resolve) => setTimeout(resolve, response.delay));
@@ -156,6 +163,39 @@ export class MockAPIAdapter {
     }
 
     return response.output;
+  }
+
+  /**
+   * 执行流式响应（模拟 token 逐个输出）
+   */
+  private async executeStreamResponse(
+    response: MockResponse,
+    options: { onChunk: (chunk: string) => void }
+  ): Promise<string> {
+    const output = response.output;
+    const chunkSize = 10; // 每次输出 10 个字符
+    let fullContent = '';
+
+    // 模拟网络延迟
+    if (response.delay) {
+      await new Promise((resolve) => setTimeout(resolve, response.delay));
+    }
+
+    // 检查是否需要返回错误
+    if (response.error) {
+      throw new APIError(response.error.message, response.error.code as ErrorCode);
+    }
+
+    // 模拟流式输出
+    for (let i = 0; i < output.length; i += chunkSize) {
+      const chunk = output.slice(i, i + chunkSize);
+      fullContent += chunk;
+      options.onChunk(chunk);
+      // 模拟网络延迟
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    }
+
+    return fullContent;
   }
 
   /**

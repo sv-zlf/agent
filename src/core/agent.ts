@@ -18,6 +18,7 @@ const logger = createLogger(true);
 export interface AgentExecutionConfig extends AgentRuntimeConfig {
   onToolCall?: (call: ToolCall) => Promise<boolean>; // 返回true表示批准
   onStatusChange?: (status: AgentStatus, message?: string) => void;
+  onStreamChunk?: (chunk: string) => void; // 流式响应回调
 }
 
 /**

@@ -43,7 +43,20 @@ export interface AdapterOptions {
  * 所有适配器都必须实现 chat 方法
  */
 export interface IAPIAdapter {
-  chat(messages: any[], options?: any): Promise<string>;
+  chat(
+    messages: any[],
+    options?: {
+      userId?: string;
+      temperature?: number;
+      topP?: number;
+      topK?: number;
+      repetitionPenalty?: number;
+      abortSignal?: AbortSignal;
+      stream?: boolean;
+      onChunk?: (chunk: string) => void;
+      onToken?: (token: string) => void;
+    }
+  ): Promise<string>;
 }
 
 /**

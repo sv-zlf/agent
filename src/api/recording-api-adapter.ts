@@ -22,11 +22,13 @@ export interface RecordedInteraction {
       topP?: number;
       topK?: number;
       repetitionPenalty?: number;
+      stream?: boolean;
     };
   };
   response: {
     output: string;
     duration: number; // 请求耗时（毫秒）
+    chunks?: string[]; // 流式响应的分块（可选）
   };
   error?: {
     message: string;
@@ -157,6 +159,8 @@ export class RecordingAPIAdapter implements IAPIAdapter {
       topK?: number;
       repetitionPenalty?: number;
       abortSignal?: AbortSignal;
+      stream?: boolean;
+      onChunk?: (chunk: string) => void;
     }
   ): Promise<string> {
     if (this.recordingMode === 'record') {
@@ -176,31 +180,73 @@ export class RecordingAPIAdapter implements IAPIAdapter {
     const startTime = Date.now();
 
     try {
-      const output = await this.createLiveAdapter().chat(messages, options);
-      const duration = Date.now() - startTime;
-
-      // 记录成功的交互
-      if (this.currentSession) {
-        this.currentSession.interactions.push({
-          timestamp: Date.now(),
-          request: {
-            messages,
-            options: {
-              userId: options?.userId,
-              temperature: options?.temperature,
-              topP: options?.topP,
-              topK: options?.topK,
-              repetitionPenalty: options?.repetitionPenalty,
-            },
-          },
-          response: {
-            output,
-            duration,
+      // 如果是流式响应，需要收集所有 chunks
+      if (options?.stream) {
+        const chunks: string[] = [];
+        const output = await this.createLiveAdapter().chat(messages, {
+          ...options,
+          onChunk: (chunk: string) => {
+            chunks.push(chunk);
+            if (options.onChunk) {
+              options.onChunk(chunk);
+            }
           },
         });
-      }
+        const duration = Date.now() - startTime;
 
-      return output;
+        // 记录成功的交互（包含 chunks）
+        if (this.currentSession) {
+          this.currentSession.interactions.push({
+            timestamp: Date.now(),
+            request: {
+              messages,
+              options: {
+                userId: options?.userId,
+                temperature: options?.temperature,
+                topP: options?.topP,
+                topK: options?.topK,
+                repetitionPenalty: options?.repetitionPenalty,
+                stream: true,
+              },
+            },
+            response: {
+              output,
+              duration,
+              chunks,
+            },
+          });
+        }
+
+        return output;
+      } else {
+        // 非流式响应
+        const output = await this.createLiveAdapter().chat(messages, options);
+        const duration = Date.now() - startTime;
+
+        // 记录成功的交互
+        if (this.currentSession) {
+          this.currentSession.interactions.push({
+            timestamp: Date.now(),
+            request: {
+              messages,
+              options: {
+                userId: options?.userId,
+                temperature: options?.temperature,
+                topP: options?.topP,
+                topK: options?.topK,
+                repetitionPenalty: options?.repetitionPenalty,
+                stream: false,
+              },
+            },
+            response: {
+              output,
+              duration,
+            },
+          });
+        }
+
+        return output;
+      }
     } catch (error: unknown) {
       // 记录失败的交互
       if (this.currentSession && error instanceof APIError) {
@@ -224,7 +270,7 @@ export class RecordingAPIAdapter implements IAPIAdapter {
   /**
    * 回放模式：返回录制的响应
    */
-  private async chatWithPlayback(_messages: Message[], _options?: any): Promise<string> {
+  private async chatWithPlayback(_messages: Message[], options?: any): Promise<string> {
     if (!this.currentSession) {
       throw new Error('未加载录制会话');
     }
@@ -250,6 +296,17 @@ export class RecordingAPIAdapter implements IAPIAdapter {
     // this.validatePlaybackInput(messages, options, interaction.request);
 
     console.log(`\n[回放 ${this.playbackIndex}/${this.currentSession.interactions.length}]`);
+
+    // 如果是流式响应且有 chunks，模拟流式输出
+    if (interaction.response.chunks && interaction.response.chunks.length > 0) {
+      if (options?.onChunk) {
+        for (const chunk of interaction.response.chunks) {
+          options.onChunk(chunk);
+          // 模拟网络延迟（可选）
+          await new Promise((resolve) => setTimeout(resolve, 30));
+        }
+      }
+    }
 
     return interaction.response.output;
   }

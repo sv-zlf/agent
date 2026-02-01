@@ -772,22 +772,6 @@ export const agentCommand = new Command('agent')
               // 解析工具调用
               const toolCalls = toolEngine.parseToolCallsFromResponse(response);
 
-              // 调试：显示解析结果
-              if (toolCalls.length === 0) {
-                console.log(chalk.gray('⚠️  未检测到工具调用'));
-                // 显示响应的前 200 个字符用于调试
-                const preview = response.substring(0, 200).replace(/\n/g, '\\n');
-                console.log(chalk.gray(`响应预览: ${preview}...`));
-
-                // 检测错误格式
-                const malformedDetection = toolEngine.detectMalformedToolCalls(response, toolCalls);
-                if (malformedDetection.hasMalformed) {
-                  console.log(chalk.yellow('检测到错误格式:', malformedDetection.detectedFormats.join(', ')));
-                }
-              } else {
-                console.log(chalk.green(`✓ 检测到 ${toolCalls.length} 个工具调用`));
-              }
-
               if (toolCalls.length === 0) {
                 // 没有工具调用，这是最终答案
                 const cleanedResponse = cleanResponse(response);

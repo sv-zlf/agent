@@ -39,6 +39,11 @@ export class OpenAPIAdapter {
       throw new APIError('请求已被用户中断', ErrorCode.API_ABORTED);
     }
 
+    // 如果启用了流式响应
+    if (options?.stream) {
+      return this.chatStream(messages, options);
+    }
+
     const chatFn = async (): Promise<string> => {
       const requestBody: OpenAPIRequest = {
         model: this.config.model,
@@ -151,6 +156,161 @@ export class OpenAPIAdapter {
       }
       throw error;
     }
+  }
+
+  /**
+   * 流式聊天方法
+   * @param messages 消息数组
+   * @param options 额外选项
+   * @returns AI回复内容
+   */
+  private async chatStream(
+    messages: Message[],
+    options: {
+      temperature?: number;
+      topP?: number;
+      abortSignal?: AbortSignal;
+      stream?: boolean;
+      onToken?: (token: string) => void;
+    }
+  ): Promise<string> {
+    const requestBody: OpenAPIRequest = {
+      model: this.config.model,
+      messages,
+      temperature: options?.temperature ?? 0.7,
+      top_p: options?.topP ?? 0.8,
+      stream: true,
+    };
+
+    if (options?.abortSignal?.aborted) {
+      throw new APIError('请求已被用户中断', ErrorCode.API_ABORTED);
+    }
+
+    let fullContent = '';
+
+    try {
+      const response = await axios.post(
+        `${this.config.base_url}/chat/completions`,
+        requestBody,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${this.config.api_key}`,
+          },
+          responseType: 'stream',
+          timeout: this.config.timeout ?? 60000,
+          signal: options?.abortSignal,
+        }
+      );
+
+      return new Promise<string>((resolve, reject) => {
+        let buffer = '';
+
+        response.data.on('data', (chunk: Buffer) => {
+          if (options?.abortSignal?.aborted) {
+            response.data.destroy();
+            reject(new APIError('请求已被用户中断', ErrorCode.API_ABORTED));
+            return;
+          }
+
+          buffer += chunk.toString();
+
+          // 尝试解析 SSE 格式
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            const content = this.parseSSEChunk(line);
+            if (content) {
+              fullContent += content;
+              if (options?.onToken) {
+                options.onToken(content);
+              }
+            }
+          }
+        });
+
+        response.data.on('end', () => {
+          // 处理剩余的 buffer
+          if (buffer) {
+            const content = this.parseSSEChunk(buffer);
+            if (content) {
+              fullContent += content;
+              if (options?.onToken) {
+                options.onToken(content);
+              }
+            }
+          }
+
+          if (!fullContent || fullContent.trim().length === 0) {
+            reject(new APIError('AI 模型返回了空白内容', ErrorCode.API_BLANK_CONTENT));
+          } else {
+            resolve(fullContent);
+          }
+        });
+
+        response.data.on('error', (error: Error) => {
+          reject(new APIError(`流式响应错误: ${error.message}`, ErrorCode.API_NETWORK_ERROR));
+        });
+      });
+    } catch (error) {
+      if (error instanceof APIError) {
+        throw error;
+      }
+      if (error instanceof AxiosError) {
+        if (error.code === 'ECONNABORTED' || error.code === 'ERR_CANCELED') {
+          throw new APIError('请求已被用户中断', ErrorCode.API_ABORTED);
+        }
+        if (error.response) {
+          const status = error.response.status;
+          const data = error.response.data as any;
+          throw new APIError(
+            `API调用失败: ${JSON.stringify(data)}`,
+            ErrorCode.API_NETWORK_ERROR,
+            status,
+            { responseData: data }
+          );
+        }
+        if (error.request) {
+          throw new APIError(
+            `网络错误: 无法连接到API服务器 (${this.config.base_url}): ${error.code || 'unknown'}`,
+            ErrorCode.API_NETWORK_ERROR,
+            undefined,
+            { axiosCode: error.code }
+          );
+        }
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * 解析 SSE 格式的数据块
+   * OpenAPI 使用标准的 SSE 格式: data: {...}
+   */
+  private parseSSEChunk(line: string): string | null {
+    if (!line || line.trim() === '' || line === '[DONE]') {
+      return null;
+    }
+
+    // SSE 格式: data: {...}
+    if (line.startsWith('data: ')) {
+      const data = line.slice(6).trim();
+      if (data === '[DONE]') {
+        return null;
+      }
+
+      try {
+        const parsed = JSON.parse(data);
+        if (parsed.choices && parsed.choices[0]?.delta?.content) {
+          return parsed.choices[0].delta.content;
+        }
+      } catch (e) {
+        // 忽略解析错误
+      }
+    }
+
+    return null;
   }
 }
 
