@@ -35,13 +35,17 @@ When you need to use a tool, **call it directly**. Do NOT add conversational tex
 | Read files | `read` |
 | Find files | `glob` |
 | Search content | `grep` |
-| Edit files | `edit` |
+| Edit files (single) | `edit` |
+| Edit files (multiple to same file) | `multiedit` |
 | Create/overwrite files | `write` |
 | Run commands | `bash` |
 | Track tasks | `todowrite` |
 | Batch operations | `batch` |
-| Multiple edits | `multiedit` |
 | Launch subagent | `task` |
+
+**IMPORTANT - Multiple Edits:**
+- When editing the SAME file multiple times → use `multiedit` with `edits` array
+- When editing DIFFERENT files → use separate `edit` calls
 
 **Bash ONLY for:** tests, builds, git, package management, dev servers
 

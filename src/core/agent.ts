@@ -284,20 +284,37 @@ export class AgentOrchestrator {
         ];
 
         // 进行最后一次 API 调用，让 AI 生成总结
-        const response = await this.apiAdapter.chat(messagesWithWarning);
+        const finalTimeout = (this.config as any).timeout || 60000;
+        const finalAbortController = new AbortController();
+        const finalTimeoutId = setTimeout(() => finalAbortController.abort(), finalTimeout);
 
-        // 验证响应
-        if (!response || response.trim().length === 0) {
-          this.contextManager.addMessage('assistant', '达到最大迭代次数，已完成所有工具调用。');
-        } else {
-          this.contextManager.addMessage('assistant', response);
+        let finalResponse = '';
+        try {
+          finalResponse = await this.apiAdapter.chat(messagesWithWarning, {
+            abortSignal: finalAbortController.signal,
+          });
+          clearTimeout(finalTimeoutId);
+
+          // 验证响应
+          if (!finalResponse || finalResponse.trim().length === 0) {
+            this.contextManager.addMessage('assistant', '达到最大迭代次数，已完成所有工具调用。');
+          } else {
+            this.contextManager.addMessage('assistant', finalResponse);
+          }
+        } catch (error) {
+          clearTimeout(finalTimeoutId);
+          if (finalAbortController.signal.aborted) {
+            this.contextManager.addMessage('assistant', '达到最大迭代次数，生成总结时请求超时。');
+          } else {
+            this.contextManager.addMessage('assistant', '达到最大迭代次数，生成总结时出错。');
+          }
         }
 
         return {
           success: true,
           iterations: context.iteration,
           toolCallsExecuted: context.toolCalls.length,
-          finalAnswer: response,
+          finalAnswer: finalResponse || '达到最大迭代次数，生成总结时出错。',
         };
       }
 
