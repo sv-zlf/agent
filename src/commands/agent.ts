@@ -463,13 +463,18 @@ export const agentCommand = new Command('agent')
       // 每次调用 chatLoop 时都重新获取 rl
       const currentRl = getReadline();
 
-      // 确保 raw mode 开启以支持 P 键中断
-      if (!currentRl.input.isRaw) {
-        currentRl.input.setRawMode(true);
+      // 关键修复：等待用户输入时需要关闭 raw mode
+      // raw mode 会阻止 readline 的 line 事件正常触发
+      // 只在 AI 思考或工具执行时才开启 raw mode 以支持 P 键中断
+      if (currentRl.input.isRaw) {
+        currentRl.input.setRawMode(false);
       }
 
-      // 重新设置 P 键监听器
-      setupInterruptKey();
+      // 移除 P 键监听器（等待用户输入时不需要）
+      if (interruptKeyListener) {
+        currentRl.input.removeListener('data', interruptKeyListener);
+        interruptKeyListener = null;
+      }
 
       // 显示提示符
       process.stdout.write(chalk.cyan('> '));
@@ -478,12 +483,6 @@ export const agentCommand = new Command('agent')
       const onLine = async (input: string) => {
         // 移除监听器，避免重复触发
         currentRl.removeListener('line', onLine);
-
-        // 重新设置 raw mode 和 P 键监听器
-        if (!currentRl.input.isRaw) {
-          currentRl.input.setRawMode(true);
-          setupInterruptKey();
-        }
 
         if (!input.trim()) {
           setImmediate(() => chatLoop());
@@ -709,6 +708,12 @@ export const agentCommand = new Command('agent')
                 }
               }
 
+              // 开启 raw mode 以支持 P 键中断
+              if (!currentRl.input.isRaw) {
+                currentRl.input.setRawMode(true);
+              }
+              setupInterruptKey();
+
               // 开始新操作，获取 abort signal
               const abortSignal = interruptManager.startOperation();
               interruptManager.setAIThinking(true);
@@ -770,6 +775,12 @@ export const agentCommand = new Command('agent')
                 printAssistantMessage(cleanedResponse);
                 break; // 退出工具调用循环，等待用户输入
               }
+
+              // 开启 raw mode 以支持 P 键中断（工具执行期间）
+              if (!currentRl.input.isRaw) {
+                currentRl.input.setRawMode(true);
+              }
+              setupInterruptKey();
 
               // 有工具调用，使用紧凑格式显示
               printCompactAssistant(response);

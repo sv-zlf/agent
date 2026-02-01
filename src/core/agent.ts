@@ -449,26 +449,23 @@ export class AgentOrchestrator {
    * 移除工具调用的 JSON 代码块，只保留文本说明
    */
   private extractTextFromResponse(response: string): string {
-    // 移除代码块中的工具调用 JSON
-    // 匹配 ```json 或 ```tool 后跟 JSON 对象的代码块
-    const toolCallPattern = /```(?:json|tool)?\s*\n?\s*\{[\s\S]*?"tool"[\s\S]*?\}\s*```/g;
-    let cleaned = response.replace(toolCallPattern, '[工具调用]');
+    // 使用简单的字符串操作替代复杂的正则，提高性能和稳定性
+    let cleaned = response;
 
-    // 移除独立的 JSON 对象（不在代码块中的）
-    const standaloneJsonPattern = /\{[\s\S]*?"tool"\s*:\s*"\w+"[\s\S]*?\}/g;
-    cleaned = cleaned.replace(standaloneJsonPattern, '[工具调用]');
+    // 移除代码块中的工具调用 JSON
+    cleaned = cleaned.replace(/```(?:json|tool)?\s*\n?[\s\S]*?```/g, '[工具调用]');
+
+    // 移除独立的 JSON 对象
+    cleaned = cleaned.replace(/\{[\s\S]*?"tool"\s*:\s*"\w+"[\s\S]*?\}/g, '[工具调用]');
 
     // 移除 <toolcall>... 格式
-    const toolcallPattern = /<toolcall[^>]*>[\s\S]*?<\/toolcall>/gi;
-    cleaned = cleaned.replace(toolcallPattern, '[工具调用]');
+    cleaned = cleaned.replace(/<toolcall[^>]*>[\s\S]*?<\/toolcall>/gi, '[工具调用]');
 
     // 移除 ToolName{...} 格式
-    const curlyBracePattern = /\b[A-Z][a-zA-Z0-9]*\s*\{[\s\S]*?\}/g;
-    cleaned = cleaned.replace(curlyBracePattern, '[工具调用]');
+    cleaned = cleaned.replace(/\b[A-Z][a-zA-Z0-9]*\s*\{[\s\S]*?\}/g, '[工具调用]');
 
     // 移除 ToolName(...) 格式
-    const parenthesisPattern = /\b[A-Z][a-zA-Z0-9]*\s*\([\s\S]*?\)/g;
-    cleaned = cleaned.replace(parenthesisPattern, '[工具调用]');
+    cleaned = cleaned.replace(/\b[A-Z][a-zA-Z0-9]*\s*\([\s\S]*?\)/g, '[工具调用]');
 
     // 清理多余的空行
     cleaned = cleaned.replace(/\n{3,}/g, '\n\n');

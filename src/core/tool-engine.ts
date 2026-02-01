@@ -473,6 +473,10 @@ export class ToolEngine {
    * 2. 代码块格式
    */
   parseToolCallsFromResponse(response: string): ToolCall[] {
+    // 超时保护：总解析时间超过 5 秒则直接返回空结果
+    const parseStartTime = Date.now();
+    const PARSE_TIMEOUT = 5000;
+
     // 更新统计
     parseCallCounter++;
     if (parseCallCounter >= STATS_RESET_INTERVAL) {
@@ -485,6 +489,12 @@ export class ToolEngine {
       PARSE_STATS.formatCounts = {};
     }
     PARSE_STATS.totalCalls++;
+
+    // 检查是否超时
+    if (Date.now() - parseStartTime > PARSE_TIMEOUT) {
+      PARSE_STATS.errorCount++;
+      return [];
+    }
 
     // 检查缓存（带 TTL 过期）
     const cacheKey = response.slice(0, 200).replace(/\s+/g, ' ').trim();
@@ -516,7 +526,16 @@ export class ToolEngine {
 
     // 首先尝试解析代码块中的工具调用（优先级更高）
     let match = getRegex('codeBlock').exec(response);
-    while (match !== null) {
+    let matchCount = 0;
+    const MAX_MATCHES = 50; // 最多解析 50 个匹配，防止无限循环
+    while (match !== null && matchCount < MAX_MATCHES) {
+      matchCount++;
+
+      // 超时检查
+      if (Date.now() - parseStartTime > PARSE_TIMEOUT) {
+        break;
+      }
+
       try {
         const content = match[1].trim();
         const parsed = JSON.parse(content);
@@ -555,7 +574,15 @@ export class ToolEngine {
 
     // 尝试解析花括号格式: ToolName{...}（排除圆括号格式如 Edit(...)）
     let curlyMatch = getRegex('curlyBrace').exec(textWithoutCodeBlocks);
-    while (curlyMatch !== null) {
+    let curlyMatchCount = 0;
+    while (curlyMatch !== null && curlyMatchCount < MAX_MATCHES) {
+      curlyMatchCount++;
+
+      // 超时检查
+      if (Date.now() - parseStartTime > PARSE_TIMEOUT) {
+        break;
+      }
+
       const toolNameRaw = curlyMatch[1];
       const toolName = toolNameRaw.toLowerCase();
       const paramsStr = curlyMatch[2];
@@ -586,7 +613,15 @@ export class ToolEngine {
 
     // 尝试解析纯JSON格式的工具调用
     let jsonMatch = getRegex('jsonTool').exec(textWithoutCodeBlocks);
-    while (jsonMatch !== null) {
+    let jsonMatchCount = 0;
+    while (jsonMatch !== null && jsonMatchCount < MAX_MATCHES) {
+      jsonMatchCount++;
+
+      // 超时检查
+      if (Date.now() - parseStartTime > PARSE_TIMEOUT) {
+        break;
+      }
+
       try {
         const parsed = JSON.parse(jsonMatch[0]);
         if (parsed.tool && parsed.parameters) {
@@ -604,7 +639,15 @@ export class ToolEngine {
 
     // 尝试解析 <toolcall> 格式
     let toolcallMatch = getRegex('xmlToolCall').exec(response);
-    while (toolcallMatch !== null) {
+    let toolcallMatchCount = 0;
+    while (toolcallMatch !== null && toolcallMatchCount < MAX_MATCHES) {
+      toolcallMatchCount++;
+
+      // 超时检查
+      if (Date.now() - parseStartTime > PARSE_TIMEOUT) {
+        break;
+      }
+
       const content = toolcallMatch[1].trim();
 
       // 尝试提取工具名和参数: <toolcall>read{...}</toolcall>
@@ -649,7 +692,15 @@ export class ToolEngine {
     // 尝试解析纯 JSON 格式（不包含 tool 字段的）
     // 如 {"parameters":{"pattern":"..."}} - 某些 AI 会省略 tool
     let standaloneMatch = getRegex('standaloneJson').exec(textWithoutCodeBlocks);
-    while (standaloneMatch !== null) {
+    let standaloneMatchCount = 0;
+    while (standaloneMatch !== null && standaloneMatchCount < MAX_MATCHES) {
+      standaloneMatchCount++;
+
+      // 超时检查
+      if (Date.now() - parseStartTime > PARSE_TIMEOUT) {
+        break;
+      }
+
       try {
         const parsed = JSON.parse(standaloneMatch[0]);
         if (parsed.parameters && Object.keys(parsed.parameters).length > 0) {
