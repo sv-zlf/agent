@@ -163,7 +163,6 @@ export class AgentOrchestrator {
             abortSignal: abortController.signal,
             stream: true,
             onChunk: this.config.onStreamChunk,
-            onToken: this.config.onStreamChunk,
           });
           clearTimeout(timeoutId);
 
@@ -298,7 +297,6 @@ export class AgentOrchestrator {
             abortSignal: finalAbortController.signal,
             stream: true,
             onChunk: this.config.onStreamChunk,
-            onToken: this.config.onStreamChunk,
           });
           clearTimeout(finalTimeoutId);
 

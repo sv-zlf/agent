@@ -32,7 +32,6 @@ export class OpenAPIAdapter {
       topP?: number;
       abortSignal?: AbortSignal;
       stream?: boolean;
-      onToken?: (token: string) => void;
       onChunk?: (chunk: string) => void;
     }
   ): Promise<string> {
@@ -172,7 +171,6 @@ export class OpenAPIAdapter {
       topP?: number;
       abortSignal?: AbortSignal;
       stream?: boolean;
-      onToken?: (token: string) => void;
       onChunk?: (chunk: string) => void;
     }
   ): Promise<string> {
@@ -221,10 +219,6 @@ export class OpenAPIAdapter {
             const content = this.parseSSEChunk(line);
             if (content) {
               fullContent += content;
-              // 同时触发 onChunk 和 onToken 回调，确保兼容性
-              if (options?.onToken) {
-                options.onToken(content);
-              }
               if (options?.onChunk) {
                 options.onChunk(content);
               }
@@ -238,10 +232,6 @@ export class OpenAPIAdapter {
             const content = this.parseSSEChunk(buffer);
             if (content) {
               fullContent += content;
-              // 同时触发 onChunk 和 onToken 回调，确保兼容性
-              if (options?.onToken) {
-                options.onToken(content);
-              }
               if (options?.onChunk) {
                 options.onChunk(content);
               }

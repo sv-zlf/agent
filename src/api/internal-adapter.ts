@@ -41,7 +41,6 @@ export class InternalAPIAdapter {
       abortSignal?: AbortSignal;
       stream?: boolean;
       onChunk?: (chunk: string) => void;
-      onToken?: (token: string) => void;
     }
   ): Promise<string> {
     // 如果启用了流式响应
@@ -196,7 +195,6 @@ export class InternalAPIAdapter {
       repetitionPenalty?: number;
       abortSignal?: AbortSignal;
       onChunk?: (chunk: string) => void;
-      onToken?: (token: string) => void;
     }
   ): Promise<string> {
     const traceId = this.generateTraceId();
@@ -268,9 +266,6 @@ export class InternalAPIAdapter {
               if (options?.onChunk) {
                 options.onChunk(content);
               }
-              if (options?.onToken) {
-                options.onToken(content);
-              }
             }
           }
         });
@@ -283,9 +278,6 @@ export class InternalAPIAdapter {
               fullContent += content;
               if (options?.onChunk) {
                 options.onChunk(content);
-              }
-              if (options?.onToken) {
-                options.onToken(content);
               }
             }
           }

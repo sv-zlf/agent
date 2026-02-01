@@ -25,6 +25,89 @@ import { ToolParameterHelper } from '../utils/tool-params';
 const logger = createLogger();
 
 /**
+ * 过滤流式输出中的工具调用 JSON 代码块
+ * 用于实时输出，避免显示工具调用的原始 JSON
+ */
+interface StreamFilterState {
+  inCodeBlock: boolean;
+  codeBlockType: string | null;
+  pendingContent: string;
+}
+
+function createStreamFilter(): {
+  filter: (chunk: string) => string;
+  flush: () => string;
+} {
+  const state: StreamFilterState = {
+    inCodeBlock: false,
+    codeBlockType: null,
+    pendingContent: '', // 待处理的非代码块内容
+  };
+
+  return {
+    filter: (chunk: string): string => {
+      let result = '';
+      let remaining = chunk;
+
+      while (remaining.length > 0) {
+        if (!state.inCodeBlock) {
+          // 检测代码块开始
+          const codeBlockStart = remaining.match(/```(json|tool)?\s*\n?/);
+          if (codeBlockStart) {
+            // 先输出之前的待处理内容
+            if (state.pendingContent) {
+              result += state.pendingContent;
+              state.pendingContent = '';
+            }
+            const index = codeBlockStart.index!;
+            result += remaining.slice(0, index);
+            state.inCodeBlock = true;
+            state.codeBlockType = codeBlockStart[1] || '';
+            remaining = remaining.slice(index + codeBlockStart[0].length);
+          } else {
+            // 没有代码块，累积到待处理内容
+            state.pendingContent += remaining;
+            remaining = '';
+          }
+        } else {
+          // 在代码块中，查找结束标记
+          const codeBlockEnd = remaining.indexOf('```');
+          if (codeBlockEnd !== -1) {
+            // 找到结束标记，跳过代码块内容
+            state.inCodeBlock = false;
+            state.codeBlockType = null;
+            // 加上代码块结束标记
+            result += '```\n';
+            remaining = remaining.slice(codeBlockEnd + 3);
+            // 清空待处理内容（不应该有）
+            state.pendingContent = '';
+          } else {
+            // 没有结束标记，跳过整个 chunk
+            remaining = '';
+          }
+        }
+      }
+
+      // 如果不在代码块中，输出待处理内容
+      if (!state.inCodeBlock && state.pendingContent) {
+        result += state.pendingContent;
+        state.pendingContent = '';
+      }
+
+      return result;
+    },
+    flush: (): string => {
+      // 返回待处理内容并清空状态
+      const pending = state.pendingContent;
+      state.inCodeBlock = false;
+      state.codeBlockType = null;
+      state.pendingContent = '';
+      return pending;
+    },
+  };
+}
+
+/**
  * 清理 AI 响应文本，移除工具调用的 JSON 代码块
  * 只保留有意义的对话内容
  */
@@ -484,10 +567,6 @@ export const agentCommand = new Command('agent')
         // 移除监听器，避免重复触发
         currentRl.removeListener('line', onLine);
 
-        // 清除用户输入的回显，避免在下一行重复显示
-        // 使用 ANSI 转义码清除当前行：\r 回到行首，\x1b[2K 清除整行
-        process.stdout.write('\r\x1b[2K');
-
         if (!input.trim()) {
           setImmediate(() => chatLoop());
           return;
@@ -681,7 +760,9 @@ export const agentCommand = new Command('agent')
                     const existingSummary = sessionManager.getSessionSummary(currentSession.id);
                     if (existingSummary) {
                       summaryContent = `${existingSummary.title}\n\n${existingSummary.content}`;
-                      console.log(chalk.blue(`📋 使用已保存的会话摘要: ${existingSummary.title}\n`));
+                      console.log(
+                        chalk.blue(`📋 使用已保存的会话摘要: ${existingSummary.title}\n`)
+                      );
                     } else {
                       // 没有已保存摘要，则生成新的压缩摘要
                       const compactResult = await functionalAgentManager.compact(messages);
@@ -706,7 +787,9 @@ export const agentCommand = new Command('agent')
                     }
                   } catch (compactError) {
                     console.log(
-                      chalk.yellow(`压缩失败，继续使用原上下文: ${(compactError as Error).message}\n`)
+                      chalk.yellow(
+                        `压缩失败，继续使用原上下文: ${(compactError as Error).message}\n`
+                      )
                     );
                   }
                 }
@@ -728,6 +811,8 @@ export const agentCommand = new Command('agent')
               let wasInterrupted = false;
               let fullResponse = ''; // 累积流式响应
               let isFirstChunk = true; // 标记是否是第一个 chunk
+              let streamBuffer = ''; // 流式输出缓冲区，用于过滤工具调用
+              const { filter: streamFilter } = createStreamFilter(); // 创建流式过滤器
 
               try {
                 // API 调用（使用中断管理器的 signal，通过并发控制）
@@ -737,15 +822,28 @@ export const agentCommand = new Command('agent')
                       abortSignal: abortSignal,
                       stream: true, // 启用流式输出
                       onChunk: (chunk: string) => {
-                        // 第一个 chunk 到达时，停止 spinner
-                        if (isFirstChunk) {
-                          spinner.stop();
-                          isFirstChunk = false;
-                        }
-                        // 实时输出流式内容（不换行）
-                        process.stdout.write(chunk);
-                        // 累积完整响应
+                        // 累积完整响应（包含所有内容）
                         fullResponse += chunk;
+
+                        // 添加到缓冲区
+                        streamBuffer += chunk;
+
+                        // 过滤工具调用代码块，只输出纯文本内容
+                        const filteredContent = streamFilter(streamBuffer);
+
+                        // 如果有可输出的内容
+                        if (filteredContent) {
+                          // 第一个有效 chunk 到达时，停止 spinner
+                          if (isFirstChunk) {
+                            spinner.stop();
+                            isFirstChunk = false;
+                          }
+                          // 渲染 markdown 内容
+                          const rendered = renderMarkdown(filteredContent, { colors: true });
+                          process.stdout.write(rendered);
+                          // 清空已输出的部分
+                          streamBuffer = '';
+                        }
                       },
                     });
                   },
@@ -1001,25 +1099,26 @@ export const agentCommand = new Command('agent')
               let isFirstFinalChunk = true;
               const finalSpinner = ora('正在生成总结...').start();
 
-              const finalResponse = await executeAPIRequest(
-                async () => {
-                  return apiAdapter.chat(finalMessages, {
-                    stream: true, // 启用流式输出
-                    onChunk: (chunk: string) => {
-                      // 第一个 chunk 到达时，停止 spinner
-                      if (isFirstFinalChunk) {
-                        finalSpinner.stop();
-                        isFirstFinalChunk = false;
-                      }
+              const finalResponse = await executeAPIRequest(async () => {
+                return apiAdapter.chat(finalMessages, {
+                  stream: true, // 启用流式输出
+                  onChunk: (chunk: string) => {
+                    // 第一个 chunk 到达时，停止 spinner
+                    if (isFirstFinalChunk) {
+                      finalSpinner.stop();
+                      isFirstFinalChunk = false;
+                    }
+                    // 过滤工具调用JSON代码块，只输出文本内容
+                    const cleanedChunk = cleanResponse(chunk);
+                    if (cleanedChunk) {
                       // 实时输出流式内容
-                      process.stdout.write(chunk);
-                      // 累积完整响应
-                      fullFinalResponse += chunk;
-                    },
-                  });
-                },
-                API_PRIORITY.HIGH
-              );
+                      process.stdout.write(cleanedChunk);
+                    }
+                    // 累积完整响应（包含工具调用）
+                    fullFinalResponse += chunk;
+                  },
+                });
+              }, API_PRIORITY.HIGH);
 
               // 如果没有流式输出，停止 spinner
               if (isFirstFinalChunk) {

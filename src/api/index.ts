@@ -54,7 +54,6 @@ export interface IAPIAdapter {
       abortSignal?: AbortSignal;
       stream?: boolean;
       onChunk?: (chunk: string) => void;
-      onToken?: (token: string) => void;
     }
   ): Promise<string>;
 }
