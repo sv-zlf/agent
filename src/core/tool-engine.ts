@@ -688,13 +688,55 @@ export class ToolEngine {
             const parsed = JSON.parse(content);
             if (parsed.tool && parsed.parameters) {
               addCall({
-                tool: parsed.tool.toLowerCase(), // 确保工具名为小写
+                tool: parsed.tool.toLowerCase(),
                 parameters: parsed.parameters,
                 id: parsed.id || this.generateToolCallId(),
               });
             }
           } catch {
             // 忽略 JSON 解析失败
+          }
+        }
+
+        // 额外处理：尝试解析 <toolcall>toolname\n{json} 格式（AI 错误格式）
+        // 例如: <toolcall>multiedit>\n{...}
+        if (calls.length === 0) {
+          const lines = content.split('\n');
+          if (lines.length >= 2) {
+            const possibleToolName = lines[0].trim();
+            const possibleJson = lines.slice(1).join('\n').trim();
+
+            // 检查第一行是否是有效的工具名
+            if (knownTools.has(possibleToolName.toLowerCase())) {
+              try {
+                const parsed = JSON.parse(possibleJson);
+                if (parsed.filepath || parsed.filePath || parsed.file_path) {
+                  // 修复参数名映射
+                  const fixedParams = { ...parsed };
+                  if (fixedParams.filepath) {
+                    fixedParams.filePath = fixedParams.filepath;
+                    delete fixedParams.filepath;
+                  }
+                  if (fixedParams.oldText) {
+                    fixedParams.oldString = fixedParams.oldText;
+                    delete fixedParams.oldText;
+                  }
+                  if (fixedParams.newText) {
+                    fixedParams.newString = fixedParams.newText;
+                    delete fixedParams.newText;
+                  }
+
+                  addCall({
+                    tool: possibleToolName.toLowerCase(),
+                    parameters: fixedParams,
+                    id: this.generateToolCallId(),
+                  });
+                  logger.debug(`Recovered tool call from malformed format: ${possibleToolName}`);
+                }
+              } catch {
+                // 忽略解析失败
+              }
+            }
           }
         }
       } catch (error) {
