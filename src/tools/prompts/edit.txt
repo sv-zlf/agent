@@ -1,39 +1,23 @@
 Performs precise string replacement in a file.
 
-**Usage:**
-- Requires reading the file first with `read` tool
-- Exact string matching - case-sensitive, including all whitespace
-- Must match the exact content including indentation and newlines
+**When to use edit vs multiedit:**
+- Edit ONE location in ONE file → use `edit`
+- Edit MULTIPLE locations in the SAME file → use `multiedit`
 
-**Format:**
+**REQUIRED Format:**
 ```json
 {
   "tool": "edit",
   "parameters": {
-    "file_path": "H:/Project/agent/src/utils.ts",
+    "filePath": "H:/Project/agent/src/utils.ts",
     "oldString": "const VERSION = '1.0.0';",
     "newString": "const VERSION = '2.0.0';"
   }
 }
 ```
 
-**Multi-line edit:**
-```json
-{
-  "tool": "edit",
-  "parameters": {
-    "file_path": "H:/Project/agent/src/utils.ts",
-    "oldString": "function hello() {\n  console.log('Hello');\n}",
-    "newString": "function hello() {\n  console.log('Hello, World!');\n}"
-  }
-}
-```
-
-**Recommendations:**
-- Make oldString as unique as possible to avoid wrong matches
-- For large changes, use write tool instead
-- If edit fails, re-read the file - content may have changed
-- Use replaceAll parameter to replace all occurrences
-- **For multiple edits to the SAME file → use `multiedit` tool instead**
-
-**exact string matching** is required - the oldString must match file content exactly
+**Important Notes:**
+- Use `filePath` (NOT `filepath`)
+- Use `oldString` (NOT `oldtext`)
+- Use `newString` (NOT `newtext`)
+- exact string matching required - oldString must match file content exactly

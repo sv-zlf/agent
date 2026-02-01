@@ -1,21 +1,15 @@
 Performs multiple edit operations on a single file. All edits are executed sequentially as atomic operations.
 
-**IMPORTANT - When to use:**
+**When to use multiedit:**
 - When you need to edit the SAME file multiple times → use `multiedit`
 - When editing DIFFERENT files → use separate `edit` calls
 
-**Usage:**
-- All edits are applied sequentially in the order they appear
-- If any edit fails, all changes are rolled back and the file is not modified
-- For creating new files, use empty oldString
-- Maximum 50 edit operations allowed per call
-
-**Format:**
+**REQUIRED Format:**
 ```json
 {
   "tool": "multiedit",
   "parameters": {
-    "file_path": "H:/Project/agent/src/utils/config.ts",
+    "filePath": "H:/Project/agent/src/utils/config.ts",
     "edits": [
       {
         "oldString": "export const API_URL = 'old'",
@@ -30,18 +24,8 @@ Performs multiple edit operations on a single file. All edits are executed seque
 }
 ```
 
-**Parameters:**
-- filePath (required): The absolute path to the file
-- edits (required): List of edit operations
-  - oldString (required): The string to replace
-  - newString (required): The replacement string
-  - replaceAll (optional): Replace all occurrences (default: false)
-
-**Recommendations:**
-- Use MultiEdit when you need to make multiple changes to the SAME file
-- Break large refactorings into multiple MultiEdit calls if needed
-- Test oldStrings carefully to ensure they match exactly
-- Use Read tool first to verify the file content before editing
-- For single edits to a file, use Edit tool instead
-
-**exact string matching** is required for each oldString
+**Important Notes:**
+- All edits are applied sequentially
+- If any edit fails, ALL changes are rolled back
+- Use `oldString` (NOT `oldtext`) and `newString` (NOT `newtext`)
+- Maximum 50 edit operations per call

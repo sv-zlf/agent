@@ -562,7 +562,6 @@ export class ToolEngine {
           const toolName = malformedToolMatch[1].toLowerCase();
           if (knownTools.has(toolName)) {
             try {
-              // 解析参数 JSON（移除末尾的 }）
               const paramsContent = malformedToolMatch[2].replace(/\}\s*$/, '').trim();
               const parsed = JSON.parse(`{${paramsContent}}`);
               const params = parsed.parameters || parsed;
@@ -607,7 +606,55 @@ export class ToolEngine {
             addCall(parsed.tool, fixParamNames(parsed.parameters), parsed.id, 'toolcall-json');
           }
         } catch {
-          // 忽略 JSON 解析失败
+          // 尝试解析多个独立 JSON 对象（如 multiedit 分开传入 edits 和 filePath）
+          try {
+            // 使用更智能的方式提取 JSON 对象：匹配 { 开头到对应的 } 结尾
+            const jsonObjects: string[] = [];
+            let i = 0;
+            const str = content;
+            while (i < str.length) {
+              if (str[i] === '{') {
+                let depth = 0;
+                let j = i;
+                for (; j < str.length; j++) {
+                  if (str[j] === '{') depth++;
+                  else if (str[j] === '}') {
+                    depth--;
+                    if (depth === 0) {
+                      jsonObjects.push(str.substring(i, j + 1));
+                      break;
+                    }
+                  }
+                }
+                i = j + 1;
+              } else {
+                i++;
+              }
+            }
+
+            if (jsonObjects.length > 0) {
+              const mergedParams: Record<string, unknown> = {};
+              for (const jsonStr of jsonObjects) {
+                try {
+                  const obj = JSON.parse(jsonStr);
+                  Object.assign(mergedParams, obj);
+                } catch {
+                  /* 忽略 */
+                }
+              }
+
+              // 尝试从内容中提取工具名
+              const toolNameMatch = content.match(/^(\w+)/);
+              if (toolNameMatch && knownTools.has(toolNameMatch[1].toLowerCase())) {
+                const toolName = toolNameMatch[1].toLowerCase();
+                if (Object.keys(mergedParams).length > 0) {
+                  addCall(toolName, fixParamNames(mergedParams), undefined, 'toolcall-multi-json');
+                }
+              }
+            }
+          } catch {
+            /* 忽略 */
+          }
         }
       } catch {
         /* 忽略 */
