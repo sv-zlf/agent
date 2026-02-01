@@ -31,7 +31,7 @@ const logger = createLogger();
 interface StreamFilterState {
   inCodeBlock: boolean;
   codeBlockType: string | null;
-  pendingContent: string;
+  processedLength: number; // 已处理并输出的字符数
 }
 
 function createStreamFilter(): {
@@ -41,7 +41,7 @@ function createStreamFilter(): {
   const state: StreamFilterState = {
     inCodeBlock: false,
     codeBlockType: null,
-    pendingContent: '', // 待处理的非代码块内容
+    processedLength: 0,
   };
 
   return {
@@ -49,24 +49,20 @@ function createStreamFilter(): {
       let result = '';
       let remaining = chunk;
 
+      // 处理整个 chunk 以保持代码块状态正确
       while (remaining.length > 0) {
         if (!state.inCodeBlock) {
           // 检测代码块开始
           const codeBlockStart = remaining.match(/```(json|tool)?\s*\n?/);
           if (codeBlockStart) {
-            // 先输出之前的待处理内容
-            if (state.pendingContent) {
-              result += state.pendingContent;
-              state.pendingContent = '';
-            }
             const index = codeBlockStart.index!;
             result += remaining.slice(0, index);
             state.inCodeBlock = true;
             state.codeBlockType = codeBlockStart[1] || '';
             remaining = remaining.slice(index + codeBlockStart[0].length);
           } else {
-            // 没有代码块，累积到待处理内容
-            state.pendingContent += remaining;
+            // 没有代码块，全部输出
+            result += remaining;
             remaining = '';
           }
         } else {
@@ -79,8 +75,6 @@ function createStreamFilter(): {
             // 加上代码块结束标记
             result += '```\n';
             remaining = remaining.slice(codeBlockEnd + 3);
-            // 清空待处理内容（不应该有）
-            state.pendingContent = '';
           } else {
             // 没有结束标记，跳过整个 chunk
             remaining = '';
@@ -88,21 +82,17 @@ function createStreamFilter(): {
         }
       }
 
-      // 如果不在代码块中，输出待处理内容
-      if (!state.inCodeBlock && state.pendingContent) {
-        result += state.pendingContent;
-        state.pendingContent = '';
-      }
-
-      return result;
+      // 只返回从 processedLength 开始的新增内容
+      const newResult = result.slice(state.processedLength);
+      state.processedLength = result.length;
+      return newResult;
     },
     flush: (): string => {
-      // 返回待处理内容并清空状态
-      const pending = state.pendingContent;
+      // 如果还在代码块中，清空状态
       state.inCodeBlock = false;
       state.codeBlockType = null;
-      state.pendingContent = '';
-      return pending;
+      state.processedLength = 0;
+      return '';
     },
   };
 }
@@ -147,7 +137,7 @@ function printAssistantMessage(message: string): void {
   }
   // 渲染 Markdown 格式
   const rendered = renderMarkdown(message, { colors: true });
-  console.log(chalk.magenta('● ') + rendered);
+  console.log(chalk.cyan('● ') + rendered);
 }
 
 function printCompactAssistant(response: string): void {
@@ -155,12 +145,12 @@ function printCompactAssistant(response: string): void {
 
   // 如果清理后为空（只有工具调用），显示默认提示
   if (!cleaned || cleaned.trim().length === 0) {
-    console.log(chalk.magenta('● 准备执行操作...'));
+    console.log(chalk.cyan('● 准备执行操作...'));
     return;
   }
 
   const brief = cleaned.split('\n')[0].substring(0, 80) + (cleaned.length > 80 ? '...' : '');
-  console.log(chalk.magenta('● ') + brief);
+  console.log(chalk.cyan('● ') + brief);
 }
 
 /**
@@ -813,6 +803,7 @@ export const agentCommand = new Command('agent')
               let isFirstChunk = true; // 标记是否是第一个 chunk
               let streamBuffer = ''; // 流式输出缓冲区，用于过滤工具调用
               const { filter: streamFilter } = createStreamFilter(); // 创建流式过滤器
+              let hasStreamed = false; // 标记是否已经流式输出过
 
               try {
                 // API 调用（使用中断管理器的 signal，通过并发控制）
@@ -833,16 +824,15 @@ export const agentCommand = new Command('agent')
 
                         // 如果有可输出的内容
                         if (filteredContent) {
-                          // 第一个有效 chunk 到达时，停止 spinner
+                          // 第一个有效 chunk 到达时，停止 spinner 并输出 emoji 前缀
                           if (isFirstChunk) {
                             spinner.stop();
+                            process.stdout.write(chalk.cyan('● '));
                             isFirstChunk = false;
                           }
                           // 渲染 markdown 内容
                           const rendered = renderMarkdown(filteredContent, { colors: true });
                           process.stdout.write(rendered);
-                          // 清空已输出的部分
-                          streamBuffer = '';
                         }
                       },
                     });
@@ -857,6 +847,13 @@ export const agentCommand = new Command('agent')
 
                 // 使用累积的完整响应
                 response = fullResponse || response;
+
+                // 标记是否已经流式输出过（用于避免重复输出）
+                hasStreamed = !isFirstChunk;
+                if (hasStreamed) {
+                  // 流式输出已完成，打印换行
+                  console.log();
+                }
               } catch (apiError: any) {
                 spinner.stop();
 
@@ -893,7 +890,11 @@ export const agentCommand = new Command('agent')
                 // 没有工具调用，这是最终答案
                 const cleanedResponse = cleanResponse(response);
                 contextManager.addMessage('assistant', cleanedResponse);
-                printAssistantMessage(cleanedResponse);
+
+                // 只有在没有流式输出的情况下才重新输出
+                if (!hasStreamed) {
+                  printAssistantMessage(cleanedResponse);
+                }
                 break; // 退出工具调用循环，等待用户输入
               }
 
