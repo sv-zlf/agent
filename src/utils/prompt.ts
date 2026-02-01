@@ -360,6 +360,104 @@ function renderMultiOptions(
 }
 
 /**
+ * 输入配置
+ */
+export interface InputConfig {
+  message: string;
+  default?: string;
+  validate?: (value: string) => boolean | string;
+}
+
+/**
+ * 创建交互式输入
+ * 回车确认，Ctrl+C 取消
+ */
+export async function input(config: InputConfig): Promise<string> {
+  const { message, default: defaultValue, validate } = config;
+
+  const stdin = process.stdin as tty.ReadStream;
+  const wasRawMode = stdin.isRaw;
+
+  return new Promise<string>((resolve) => {
+    let value = '';
+    let resolved = false;
+    let errorMessage = '';
+
+    const cleanup = () => {
+      resolved = true;
+      stdin.removeListener('data', onKeyPress);
+      if (!wasRawMode) {
+        stdin.setRawMode(false);
+      }
+    };
+
+    const onKeyPress = (buffer: Buffer) => {
+      if (resolved) return;
+
+      const str = buffer.toString('utf8');
+      const code = buffer[0];
+
+      // 回车确认
+      if (code === 13) {
+        // 验证输入
+        if (validate) {
+          const result = validate(value);
+          if (result === true || (typeof result === 'string' && result === '')) {
+            cleanup();
+            resolve(value);
+            return;
+          } else {
+            errorMessage = typeof result === 'string' ? result : '验证失败';
+            // 显示错误并清空输入
+            value = '';
+            process.stdout.write(
+              '\r\x1b[K' + message + defaultValue + ': ' + `\x1b[31m${errorMessage}\x1b[0m\n`
+            );
+            process.stdout.write(
+              `\x1b[36m${message}\x1b[0m${defaultValue ? ` (默认: ${defaultValue})` : ''}: `
+            );
+            return;
+          }
+        }
+        cleanup();
+        resolve(value);
+        return;
+      }
+
+      // 退格键
+      if (code === 127 || (code === 8 && str.length === 1)) {
+        value = value.slice(0, -1);
+        process.stdout.write('\r\x1b[K' + message + (value || defaultValue || '') + ' \x1b[0m');
+        return;
+      }
+
+      // ESC 或 Ctrl+C 取消
+      if (code === 27 || (code === 3 && str.length === 1)) {
+        cleanup();
+        const error = new Error('User force closed');
+        error.name = 'UserCancelled';
+        throw error;
+        return;
+      }
+
+      // 常规字符
+      if (str.length === 1 && str >= ' ' && str <= '~') {
+        value += str;
+        process.stdout.write(str);
+      }
+    };
+
+    const displayText = value || defaultValue || '';
+    const defaultText = defaultValue && !value ? ` (默认: ${defaultValue})` : '';
+    process.stdout.write(`\x1b[36m${message}\x1b[0m${defaultText}: ${displayText}`);
+
+    stdin.setRawMode(true);
+    stdin.resume();
+    stdin.on('data', onKeyPress);
+  });
+}
+
+/**
  * 获取配置文件路径
  */
 export function getConfigPath(workingDir: string): string {

@@ -1331,36 +1331,124 @@ export class CommandManager {
     args: string,
     context: CommandContext
   ): Promise<CommandResult> {
-    const { config } = context;
+    const { config, pauseKeyListener } = context;
     const parts = args.trim().split(/\s+/);
-    const subCommand = parts[0] || 'list';
+    const subCommand = parts[0] || '';
 
-    switch (subCommand) {
+    // 如果没有参数或参数不是 set/reset，启用交互式配置
+    if (!subCommand || (subCommand !== 'set' && subCommand !== 'reset')) {
+      return this.interactiveSettings(config, pauseKeyListener);
+    }
+
+    const validCommands = ['set', 'reset', 'list', 'show'] as const;
+    type ValidCommand = (typeof validCommands)[number];
+
+    switch (subCommand as ValidCommand) {
       case 'list':
-      case 'show':
+      case 'show': {
         return this.listCurrentSettings(config);
-
-      case 'set':
+      }
+      case 'set': {
         if (parts.length < 3) {
-          console.log(chalk.yellow('\n📋 API 参数设置\n'));
-          console.log(chalk.gray('用法: /setting set <参数名> <值>\n'));
-          console.log(chalk.gray('可设置的参数:'));
-          console.log(chalk.gray('  temperature       - 温度 (0.0-2.0, 默认 0.7)'));
-          console.log(chalk.gray('  top_p             - Top-P 采样 (0.0-1.0, 默认 0.9)'));
-          console.log(chalk.gray('  top_k             - Top-K 采样 (1-100, 默认 -1)'));
-          console.log(chalk.gray('  repetition_penalty - 重复惩罚 (1.0-2.0, 默认 1.0)'));
-          console.log(chalk.gray('\n示例:'));
-          console.log(chalk.gray('  /setting set temperature 0.8'));
-          console.log(chalk.gray('  /setting set top_p 0.95'));
-          return { shouldContinue: false };
+          return this.interactiveSettings(config, pauseKeyListener);
         }
         return this.updateSetting(parts[1], parts.slice(2).join(' '), config);
-
-      case 'reset':
+      }
+      case 'reset': {
         return this.resetSettings(config);
+      }
+      default: {
+        return this.interactiveSettings(config, pauseKeyListener);
+      }
+    }
+  }
 
-      default:
-        return this.listCurrentSettings(config);
+  /**
+   * 交互式设置
+   */
+  private async interactiveSettings(
+    config: any,
+    pauseKeyListener?: () => () => void
+  ): Promise<CommandResult> {
+    const { select, input } = await import('../utils/prompt');
+
+    // 暂停按键监听器
+    const resumeKeyListener = pauseKeyListener ? pauseKeyListener() : () => {};
+
+    try {
+      const settingOptions = [
+        { label: 'temperature', description: '温度 (0.0-2.0, 默认 0.7)' },
+        { label: 'top_p', description: 'Top-P 采样 (0.0-1.0, 默认 0.9)' },
+        { label: 'top_k', description: 'Top-K 采样 (1-100, 默认 -1)' },
+        { label: 'repetition_penalty', description: '重复惩罚 (1.0-2.0, 默认 1.0)' },
+        { label: 'reset', description: '重置所有参数为默认值' },
+        { label: 'cancel', description: '取消' },
+      ];
+
+      const selected = await select({
+        message: '选择要配置的参数:',
+        options: settingOptions.map((opt) => ({
+          label: `/${opt.label}`,
+          value: opt.label,
+          description: opt.description,
+        })),
+      });
+
+      if (selected.value === 'cancel') {
+        console.log(chalk.gray('\n已取消\n'));
+        return { shouldContinue: false };
+      }
+
+      if (selected.value === 'reset') {
+        return this.resetSettings(config);
+      }
+
+      // 交互式输入值
+      const paramName = selected.value;
+      const validation: Record<
+        string,
+        { min: number; max: number; description: string; default: number }
+      > = {
+        temperature: { min: 0, max: 2, description: '温度', default: 0.7 },
+        top_p: { min: 0, max: 1, description: 'Top-P', default: 0.9 },
+        top_k: { min: -1, max: 100, description: 'Top-K', default: -1 },
+        repetition_penalty: { min: 1, max: 2, description: '重复惩罚', default: 1.0 },
+      };
+
+      const rule = validation[paramName];
+
+      const value = await input({
+        message: `请输入 ${rule.description} 的值 (${rule.min}-${rule.max}, 默认 ${rule.default}):`,
+        validate: (val: string) => {
+          if (!val.trim()) {
+            return true; // 空值使用默认值
+          }
+          const num = parseFloat(val);
+          if (isNaN(num)) {
+            return '请输入有效数字';
+          }
+          if (num < rule.min || num > rule.max) {
+            return `值超出范围 (${rule.min}-${rule.max})`;
+          }
+          return true;
+        },
+      });
+
+      if (!value.trim()) {
+        console.log(chalk.gray('\n使用默认值，取消设置\n'));
+        return { shouldContinue: false };
+      }
+
+      return this.updateSetting(paramName, value, config);
+    } catch (error: any) {
+      if (error.name === 'UserCancelled' || error.message?.includes('User force closed')) {
+        console.log(chalk.gray('\n已取消\n'));
+      } else {
+        console.log(chalk.red(`\n✗ 设置失败: ${error.message}\n`));
+      }
+      return { shouldContinue: false };
+    } finally {
+      resumeKeyListener();
     }
   }
 
@@ -1414,9 +1502,10 @@ export class CommandManager {
     );
 
     console.log(chalk.gray('💡 提示:'));
-    console.log(chalk.gray('  /models <模型名称>      # 切换模型'));
-    console.log(chalk.gray('  /setting set <参数> <值>  # 设置 temperature、top_p 等参数'));
-    console.log(chalk.gray('  /setting reset            # 重置为默认值'));
+    console.log(chalk.gray('  /models <模型名称>    # 切换模型'));
+    console.log(chalk.gray('  /setting             # 交互式设置参数'));
+    console.log(chalk.gray('  /setting set <参数> <值>  # 命令式设置参数'));
+    console.log(chalk.gray('  /setting reset       # 重置为默认值'));
 
     return { shouldContinue: false };
   }
