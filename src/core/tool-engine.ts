@@ -557,7 +557,7 @@ export class ToolEngine {
         const content = match[1].trim();
 
         // 格式: <toolcall>toolname{...}</toolcall>
-        const styleMatch = content.match(/^(\w+)\s*\{([\s\S]*)\}$/);
+        const styleMatch = content.match(/^(\w+)\s*\{([\s\S]*?)\}$/);
         if (styleMatch) {
           const toolName = styleMatch[1].toLowerCase();
           if (knownTools.has(toolName)) {
