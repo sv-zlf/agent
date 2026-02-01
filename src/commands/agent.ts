@@ -261,6 +261,14 @@ export const agentCommand = new Command('agent')
     // 跟踪是否是第一条用户消息（用于生成标题）
     let isFirstUserMessage = true;
 
+    // 跟踪会话统计
+    let stats = {
+      userMessages: 0,
+      assistantMessages: 0,
+      toolCalls: 0,
+      tokensUsed: 0,
+    };
+
     const agentConfig = config.getAgentConfig();
     const contextManager = createContextManager(
       agentConfig.max_history,
@@ -418,9 +426,9 @@ export const agentCommand = new Command('agent')
       if (options.history) {
         try {
           await contextManager.saveHistory();
-          // 保存成功后，更新会话的消息数量
-          const messageCount = contextManager.getMessageCount();
-          await sessionManager.updateSessionActivity(messageCount);
+          // 保存成功后，更新会话的统计信息
+          await sessionManager.updateSessionActivity(contextManager.getMessageCount());
+          await sessionManager.updateSessionStats(stats);
         } catch {
           // 历史保存失败不影响退出
         }
@@ -660,24 +668,25 @@ export const agentCommand = new Command('agent')
           // 添加用户消息到上下文
           contextManager.addMessage('user', input);
 
-          // 如果是第一条用户消息，异步生成会话标题
+          // 更新统计
+          stats.userMessages++;
+
+          // 第一条用户消息后，串行生成会话标题（等待完成后才继续）
           if (isFirstUserMessage && options.history) {
             isFirstUserMessage = false;
 
-            // 异步生成标题（不阻塞对话）
-            (async () => {
-              try {
-                const titleResult = await functionalAgentManager.generateTitle(input);
-                if (titleResult.success && titleResult.output) {
-                  const newTitle = titleResult.output.trim();
-                  await sessionManager.setCurrentSessionTitle(newTitle);
-                  console.log(chalk.gray(`\n📝 会话标题: ${newTitle}\n`));
-                }
-              } catch (error) {
-                // 静默失败，不影响对话
-                logger.debug(`生成标题失败: ${(error as Error).message}`);
+            // 串行等待标题生成完成
+            try {
+              const titleResult = await functionalAgentManager.generateTitle(input);
+
+              if (titleResult.success && titleResult.output) {
+                const newTitle = titleResult.output.trim();
+                await sessionManager.setCurrentSessionTitle(newTitle);
               }
-            })();
+            } catch (error) {
+              // 静默失败，只记录到日志
+              logger.debug(`生成标题失败: ${(error as Error).message}`);
+            }
           }
 
           // 每次新的用户输入时，重置所有状态
@@ -897,6 +906,9 @@ export const agentCommand = new Command('agent')
                 const cleanedResponse = cleanResponse(response);
                 contextManager.addMessage('assistant', cleanedResponse);
 
+                // 更新统计
+                stats.assistantMessages++;
+
                 // 只有在没有流式输出的情况下才重新输出
                 if (!hasStreamed) {
                   printAssistantMessage(cleanedResponse);
@@ -1035,6 +1047,11 @@ export const agentCommand = new Command('agent')
                     }
                   }
 
+                  // 更新统计（工具调用成功）
+                  if (result.success) {
+                    stats.toolCalls++;
+                  }
+
                   // 更新同一行显示结果
                   const timeStr = `${duration}ms`;
                   if (result.success) {
@@ -1084,6 +1101,9 @@ export const agentCommand = new Command('agent')
               // 将AI的响应添加到上下文（清理后的版本）
               const cleanedResponse = cleanResponse(response);
               contextManager.addMessage('assistant', cleanedResponse);
+
+              // 更新统计
+              stats.assistantMessages++;
 
               // 将工具执行结果作为用户反馈添加到上下文
               const toolResultMessage = formatToolResults(toolCalls, toolResults);

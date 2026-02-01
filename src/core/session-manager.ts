@@ -17,8 +17,7 @@ const logger = createLogger(false);
  */
 export interface Session {
   id: string;
-  name: string;
-  title: string; // 用户友好的标题
+  title: string; // 会话标题（初始为 "New Session"，AI 生成后更新）
   createdAt: number;
   updatedAt: number;
   lastActiveAt: number;
@@ -104,7 +103,7 @@ export class SessionManager {
    * 创建新会话
    */
   async createSession(
-    name: string,
+    title: string = 'New Session',
     agentType: string = 'default',
     parentID?: string
   ): Promise<Session> {
@@ -124,8 +123,7 @@ export class SessionManager {
 
     const session: Session = {
       id: sessionId,
-      name: name || `会话 ${sessionId.substring(0, 8)}`,
-      title: name || `会话 ${new Date().toLocaleString('zh-CN')}`,
+      title: title,
       createdAt: Date.now(),
       updatedAt: Date.now(),
       lastActiveAt: Date.now(),
@@ -153,7 +151,7 @@ export class SessionManager {
     // 设置为当前会话
     await this.setCurrentSession(sessionId);
 
-    logger.debug(`创建会话: ${session.name}`);
+    logger.debug(`创建会话: ${session.title}`);
     return session;
   }
 
@@ -243,8 +241,47 @@ export class SessionManager {
       // 更新消息数量
       if (messageCount !== undefined) {
         session.messageCount = messageCount;
+
+        // 同步更新 stats
+        if (session.stats) {
+          session.stats.totalMessages = messageCount;
+        }
       }
 
+      await this.saveSession(session);
+    }
+  }
+
+  /**
+   * 更新会话统计信息
+   */
+  async updateSessionStats(updates: {
+    userMessages?: number;
+    assistantMessages?: number;
+    toolCalls?: number;
+    tokensUsed?: number;
+  }): Promise<void> {
+    const session = this.getCurrentSession();
+    if (session && session.stats) {
+      if (updates.userMessages !== undefined) {
+        session.stats.userMessages = updates.userMessages;
+      }
+      if (updates.assistantMessages !== undefined) {
+        session.stats.assistantMessages = updates.assistantMessages;
+      }
+      if (updates.toolCalls !== undefined) {
+        session.stats.toolCalls = updates.toolCalls;
+      }
+      if (updates.tokensUsed !== undefined) {
+        session.stats.tokensUsed = updates.tokensUsed;
+      }
+
+      // 同时更新 totalMessages
+      session.stats.totalMessages =
+        (session.stats.userMessages || 0) + (session.stats.assistantMessages || 0);
+      session.messageCount = session.stats.totalMessages;
+
+      session.updatedAt = Date.now();
       await this.saveSession(session);
     }
   }
@@ -341,13 +378,9 @@ export class SessionManager {
           if (
             sessionData &&
             sessionData.id &&
-            sessionData.name &&
+            sessionData.title &&
             sessionData.agentType !== undefined
           ) {
-            // 确保 title 字段存在
-            if (!sessionData.title) {
-              sessionData.title = sessionData.name;
-            }
             this.sessions.set(sessionData.id, sessionData);
           } else {
             logger.warning(`无效的会话数据: ${file}`);
@@ -558,7 +591,7 @@ export class SessionManager {
     await this.saveSession(session);
 
     logger.debug(
-      `已更新会话统计: ${session.name} (+${changes.additions || 0}, -${changes.deletions || 0}, ${session.summary.files} files)`
+      `已更新会话统计: ${session.title} (+${changes.additions || 0}, -${changes.deletions || 0}, ${session.summary.files} files)`
     );
   }
 
@@ -593,7 +626,7 @@ export class SessionManager {
     // 保存会话信息
     await this.saveSession(session);
 
-    logger.debug(`已更新会话标题: ${session.name} - ${title}`);
+    logger.debug(`已更新会话标题: ${session.title} - ${title}`);
   }
 
   /**
@@ -649,7 +682,7 @@ export class SessionManager {
         newSession.stats = currentSession.stats ? { ...currentSession.stats } : undefined;
         await this.saveSession(newSession);
 
-        logger.debug(`Fork 会话: ${currentSession.name} -> ${newSession.name}`);
+        logger.debug(`Fork 会话: ${currentSession.title} -> ${newSession.title}`);
       } catch (error) {
         logger.error(`Fork 会话失败: ${(error as Error).message}`);
       }
@@ -669,7 +702,6 @@ export class SessionManager {
       });
     }
 
-    session.name = newName;
     session.title = newName;
     session.updatedAt = Date.now();
     await this.saveSession(session);
@@ -692,7 +724,6 @@ export class SessionManager {
     const exportData = {
       info: {
         id: session.id,
-        name: session.name,
         title: session.title,
         agentType: session.agentType,
         parentID: session.parentID,
@@ -730,9 +761,7 @@ export class SessionManager {
 
     const session: Session = {
       id: sessionId,
-      name: data.info?.name || `导入会话 ${sessionId.substring(0, 8)}`,
-      title:
-        data.info?.title || data.info?.name || `导入会话 ${new Date().toLocaleString('zh-CN')}`,
+      title: data.info?.title || `导入会话 ${new Date().toLocaleString('zh-CN')}`,
       createdAt: data.info?.createdAt || Date.now(),
       updatedAt: Date.now(),
       lastActiveAt: Date.now(),
@@ -761,7 +790,7 @@ export class SessionManager {
     await this.saveSession(session);
     this.sessions.set(sessionId, session);
 
-    logger.debug(`导入会话: ${session.name}`);
+    logger.debug(`导入会话: ${session.title}`);
     return session;
   }
 

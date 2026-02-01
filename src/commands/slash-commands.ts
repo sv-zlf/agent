@@ -785,7 +785,7 @@ export class CommandManager {
       const selected = await select({
         message: '选择要切换的会话 (或按 Esc 取消):',
         options: sessions.map((session: Session) => ({
-          label: `${session.title || session.name}${session.id === currentSessionId ? ' ✅' : ''}`,
+          label: `${session.title}${session.id === currentSessionId ? ' ✅' : ''}`,
           value: session.id,
           description: `${new Date(session.lastActiveAt).toLocaleString('zh-CN')} | ${session.agentType || 'default'}`,
         })),
@@ -983,7 +983,7 @@ export class CommandManager {
         sessions.forEach((session: Session, index: number) => {
           const isCurrent = session.id === sessionManager.getCurrentSession()?.id;
           const marker = isCurrent ? chalk.cyan('→') : ' ';
-          const title = session.title || session.name;
+          const title = session.title;
           const date = new Date(session.lastActiveAt).toLocaleString('zh-CN');
 
           console.log(marker + ' ' + (index + 1) + '. ' + title);
