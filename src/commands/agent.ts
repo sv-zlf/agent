@@ -726,6 +726,8 @@ export const agentCommand = new Command('agent')
 
               let response: string | undefined;
               let wasInterrupted = false;
+              let fullResponse = ''; // 累积流式响应
+              let isFirstChunk = true; // 标记是否是第一个 chunk
 
               try {
                 // API 调用（使用中断管理器的 signal，通过并发控制）
@@ -733,13 +735,30 @@ export const agentCommand = new Command('agent')
                   async () => {
                     return apiAdapter.chat(messages, {
                       abortSignal: abortSignal,
+                      stream: true, // 启用流式输出
+                      onChunk: (chunk: string) => {
+                        // 第一个 chunk 到达时，停止 spinner
+                        if (isFirstChunk) {
+                          spinner.stop();
+                          isFirstChunk = false;
+                        }
+                        // 实时输出流式内容（不换行）
+                        process.stdout.write(chunk);
+                        // 累积完整响应
+                        fullResponse += chunk;
+                      },
                     });
                   },
                   API_PRIORITY.HIGH // 用户直接对话使用高优先级
                 );
 
-                // 正常完成，停止 spinner
-                spinner.stop();
+                // 如果没有流式输出（空响应），停止 spinner
+                if (isFirstChunk) {
+                  spinner.stop();
+                }
+
+                // 使用累积的完整响应
+                response = fullResponse || response;
               } catch (apiError: any) {
                 spinner.stop();
 
@@ -978,12 +997,38 @@ export const agentCommand = new Command('agent')
               console.log(chalk.gray('📝 正在生成任务总结...\n'));
 
               const finalMessages = contextManager.getContext();
+              let fullFinalResponse = '';
+              let isFirstFinalChunk = true;
+              const finalSpinner = ora('正在生成总结...').start();
+
               const finalResponse = await executeAPIRequest(
-                async () => apiAdapter.chat(finalMessages),
+                async () => {
+                  return apiAdapter.chat(finalMessages, {
+                    stream: true, // 启用流式输出
+                    onChunk: (chunk: string) => {
+                      // 第一个 chunk 到达时，停止 spinner
+                      if (isFirstFinalChunk) {
+                        finalSpinner.stop();
+                        isFirstFinalChunk = false;
+                      }
+                      // 实时输出流式内容
+                      process.stdout.write(chunk);
+                      // 累积完整响应
+                      fullFinalResponse += chunk;
+                    },
+                  });
+                },
                 API_PRIORITY.HIGH
               );
 
-              const cleanedFinalResponse = cleanResponse(finalResponse);
+              // 如果没有流式输出，停止 spinner
+              if (isFirstFinalChunk) {
+                finalSpinner.stop();
+              }
+
+              // 使用累积的完整响应
+              const finalResponseContent = fullFinalResponse || finalResponse;
+              const cleanedFinalResponse = cleanResponse(finalResponseContent);
               contextManager.addMessage('assistant', cleanedFinalResponse);
               printAssistantMessage(cleanedFinalResponse);
             } catch (error) {

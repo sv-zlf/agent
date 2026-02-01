@@ -33,6 +33,7 @@ export class OpenAPIAdapter {
       abortSignal?: AbortSignal;
       stream?: boolean;
       onToken?: (token: string) => void;
+      onChunk?: (chunk: string) => void;
     }
   ): Promise<string> {
     if (options?.abortSignal?.aborted) {
@@ -172,6 +173,7 @@ export class OpenAPIAdapter {
       abortSignal?: AbortSignal;
       stream?: boolean;
       onToken?: (token: string) => void;
+      onChunk?: (chunk: string) => void;
     }
   ): Promise<string> {
     const requestBody: OpenAPIRequest = {
@@ -189,19 +191,15 @@ export class OpenAPIAdapter {
     let fullContent = '';
 
     try {
-      const response = await axios.post(
-        `${this.config.base_url}/chat/completions`,
-        requestBody,
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${this.config.api_key}`,
-          },
-          responseType: 'stream',
-          timeout: this.config.timeout ?? 60000,
-          signal: options?.abortSignal,
-        }
-      );
+      const response = await axios.post(`${this.config.base_url}/chat/completions`, requestBody, {
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.config.api_key}`,
+        },
+        responseType: 'stream',
+        timeout: this.config.timeout ?? 60000,
+        signal: options?.abortSignal,
+      });
 
       return new Promise<string>((resolve, reject) => {
         let buffer = '';
@@ -223,8 +221,12 @@ export class OpenAPIAdapter {
             const content = this.parseSSEChunk(line);
             if (content) {
               fullContent += content;
+              // 同时触发 onChunk 和 onToken 回调，确保兼容性
               if (options?.onToken) {
                 options.onToken(content);
+              }
+              if (options?.onChunk) {
+                options.onChunk(content);
               }
             }
           }
@@ -236,8 +238,12 @@ export class OpenAPIAdapter {
             const content = this.parseSSEChunk(buffer);
             if (content) {
               fullContent += content;
+              // 同时触发 onChunk 和 onToken 回调，确保兼容性
               if (options?.onToken) {
                 options.onToken(content);
+              }
+              if (options?.onChunk) {
+                options.onChunk(content);
               }
             }
           }
