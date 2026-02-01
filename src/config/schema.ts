@@ -186,6 +186,7 @@ export class ConfigManager {
     return {
       api: { ...base.api, ...override.api },
       agent: { ...base.agent, ...override.agent },
+      sessions: override.sessions ? { ...base.sessions, ...override.sessions } : base.sessions,
     };
   }
 

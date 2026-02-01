@@ -161,11 +161,9 @@ export class SessionManager {
   async switchSession(sessionId: string): Promise<Session> {
     const session = this.sessions.get(sessionId);
     if (!session) {
-      throw new SessionError(
-  `会话不存在: ${sessionId}`,
-  ErrorCode.SESSION_NOT_FOUND,
-  { sessionId }
-);
+      throw new SessionError(`会话不存在: ${sessionId}`, ErrorCode.SESSION_NOT_FOUND, {
+        sessionId,
+      });
     }
 
     // 更新会话的最后活跃时间
@@ -184,11 +182,9 @@ export class SessionManager {
   async deleteSession(sessionId: string): Promise<void> {
     const session = this.sessions.get(sessionId);
     if (!session) {
-      throw new SessionError(
-  `会话不存在: ${sessionId}`,
-  ErrorCode.SESSION_NOT_FOUND,
-  { sessionId }
-);
+      throw new SessionError(`会话不存在: ${sessionId}`, ErrorCode.SESSION_NOT_FOUND, {
+        sessionId,
+      });
     }
 
     // 删除会话文件
@@ -411,10 +407,6 @@ export class SessionManager {
       for (const sessionId of toDelete) {
         await this.deleteSession(sessionId);
       }
-
-      if (toDelete.length > 0) {
-        logger.info(`清理了 ${toDelete.length} 个旧会话以保持数量限制`);
-      }
     }
   }
 
@@ -464,12 +456,6 @@ export class SessionManager {
 
     for (const id of toDelete) {
       await this.deleteSession(id);
-    }
-
-    if (toDelete.length > 0) {
-      logger.info(
-        `清理了 ${toDelete.length} 个超过 ${Math.round(maxInactiveAge / (24 * 60 * 60 * 1000))} 天未活跃的会话`
-      );
     }
 
     return toDelete.length;
@@ -527,10 +513,7 @@ export class SessionManager {
   async forkSession(messageIndex?: number): Promise<Session> {
     const currentSession = this.getCurrentSession();
     if (!currentSession) {
-      throw new SessionError(
-        '没有当前会话',
-        ErrorCode.SESSION_NOT_FOUND
-      );
+      throw new SessionError('没有当前会话', ErrorCode.SESSION_NOT_FOUND);
     }
 
     // 生成 fork 后的标题
@@ -582,11 +565,9 @@ export class SessionManager {
   async renameSession(sessionId: string, newName: string): Promise<Session> {
     const session = this.sessions.get(sessionId);
     if (!session) {
-      throw new SessionError(
-  `会话不存在: ${sessionId}`,
-  ErrorCode.SESSION_NOT_FOUND,
-  { sessionId }
-);
+      throw new SessionError(`会话不存在: ${sessionId}`, ErrorCode.SESSION_NOT_FOUND, {
+        sessionId,
+      });
     }
 
     session.name = newName;
@@ -604,11 +585,9 @@ export class SessionManager {
   async exportSession(sessionId: string): Promise<string> {
     const session = this.sessions.get(sessionId);
     if (!session) {
-      throw new SessionError(
-  `会话不存在: ${sessionId}`,
-  ErrorCode.SESSION_NOT_FOUND,
-  { sessionId }
-);
+      throw new SessionError(`会话不存在: ${sessionId}`, ErrorCode.SESSION_NOT_FOUND, {
+        sessionId,
+      });
     }
 
     const exportData = {
@@ -710,14 +689,8 @@ export class SessionManager {
 
     // 检查是否需要进行清理
     if (now - this.lastCleanupTime >= cleanupInterval) {
-      logger.debug('执行自动会话清理');
-
-      const cleanedCount = await this.cleanupInactiveSessions();
+      await this.cleanupInactiveSessions();
       this.lastCleanupTime = now;
-
-      if (cleanedCount > 0) {
-        logger.info(`自动清理完成，删除了 ${cleanedCount} 个会话`);
-      }
     }
   }
 

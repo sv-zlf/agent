@@ -891,7 +891,6 @@ export class ToolEngine {
    */
   clearParseCache(): void {
     PARSE_CACHE.clear();
-    logger.debug('Parse cache cleared');
   }
 
   /**
