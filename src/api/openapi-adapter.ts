@@ -33,6 +33,7 @@ export class OpenAPIAdapter {
       abortSignal?: AbortSignal;
       stream?: boolean;
       onChunk?: (chunk: string) => void;
+      timeout?: number; // 支持动态超时
     }
   ): Promise<string> {
     if (options?.abortSignal?.aborted) {
@@ -62,7 +63,8 @@ export class OpenAPIAdapter {
               'Content-Type': 'application/json',
               Authorization: `Bearer ${this.config.api_key}`,
             },
-            timeout: this.config.timeout ?? 30000,
+            // 支持动态超时，如果未指定则使用配置的默认值
+            timeout: options?.timeout ?? this.config.timeout ?? 30000,
             signal: options?.abortSignal,
           }
         );

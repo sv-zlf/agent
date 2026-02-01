@@ -1,56 +1,92 @@
-Analyze the current codebase and create/update AGENTS.md file with the following content:
+You are analyzing a codebase to create/update AGENTS.md. Generate ONLY a valid Markdown document.
 
-## Required Content
+## Output Format Requirements
 
-1. **Project Overview**
-   - Extract project name and description from README.md
-   - Explain main functionality and tech stack
+CRITICAL: Your response must be a valid Markdown document that can be directly saved as AGENTS.md.
 
-2. **Build and Test Commands**
-   - Extract available npm scripts from package.json
-   - Focus on:
-     - How to run individual tests
-     - How to build the project
-     - How to run linter
-     - How to start dev server
+DO NOT include:
+- Conversational filler ("Here is the document...", "I'll create...", "Let me analyze...")
+- Markdown code blocks around the entire document
+- Explanations of what you're going to do
+- Any text outside the actual document content
 
-3. **Code Style Guide**
-   - Import order (built-in, 3rd party, internal modules)
-   - Naming conventions (files, classes, functions, variables, constants)
-   - TypeScript type usage standards
-   - Error handling patterns
-   - Comment and documentation standards
+DO include:
+- A clear document title: `# AGENTS.md`
+- Well-structured sections with proper headers (##, ###)
+- Specific code examples in fenced code blocks
+- Tables for structured information
+- Concise, practical content (~150-200 lines)
 
-4. **Project Structure**
-   - Purpose of main directories and files
-   - Responsibilities of key modules
+## Document Structure
 
-5. **Development Workflow**
-   - Daily development process
-   - Code review standards
-   - Commit conventions
+```markdown
+# AGENTS.md
 
-## Additional Sources
+> Auto-generated documentation for AI coding assistants
+> Generated: [timestamp]
 
-If these files exist, integrate their content into AGENTS.md:
-- `.cursor/rules/` or `.cursorrules` (Cursor IDE rules)
-- `.github/copilot-instructions.md` (GitHub Copilot instructions)
-- `CONTRIBUTING.md` (Contributing guidelines)
-- Existing `AGENTS.md` (improve it)
+## 1. Project Overview
 
-## Output Requirements
+[Project name, description, main functionality]
 
-1. Document length: ~150-200 lines
-2. Use clear Markdown format
-3. Include specific code examples
-4. Use tables for naming conventions
-5. Highlight important info (commands, notes)
+**Tech Stack:**
+- [List main technologies]
 
-## Notes
+## 2. Build and Test Commands
 
-- Generated document will be used by AI coding assistants
-- Ensure information is accurate, concise, easy to understand
-- Prioritize practicality over completeness
-- Use reasonable defaults if information is missing
+| Command | Description |
+|---------|-------------|
+| npm run build | Build the project |
+| npm test | Run tests |
+| ... | ... |
+
+## 3. Code Style Guide
+
+### Import Order
+1. Node.js built-in modules
+2. Third-party libraries
+3. Project internal modules
+
+### Naming Conventions
+
+| Type | Convention | Example |
+|------|------------|---------|
+| Files | kebab-case | `user-service.ts` |
+| Classes | PascalCase | `UserService` |
+| Functions/Variables | camelCase | `getUserById` |
+| Constants | UPPER_SNAKE_CASE | `MAX_RETRY` |
+
+### TypeScript Standards
+- [Key type usage rules]
+
+### Error Handling
+- [Error handling patterns]
+
+## 4. Project Structure
+
+```
+src/
+├── core/          # Core business logic
+├── commands/      # CLI commands
+├── utils/         # Utility functions
+└── types/         # Type definitions
+```
+
+## 5. Development Workflow
+
+[Daily development process, code review standards, etc.]
+```
+
+## Input Context
 
 Project path: ${path}
+
+The following context is provided to help you generate accurate documentation:
+
+## Project Context Information
+
+${project_context}
+
+IMPORTANT: Integrate information from the provided context (README, package.json, existing AGENTS.md, etc.) to create a comprehensive and accurate document.
+
+Generate the AGENTS.md document now. Remember: ONLY output the Markdown document itself, no conversational text.

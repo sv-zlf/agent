@@ -1,125 +1,99 @@
-# AGENTS.md - Guidelines for AI Coding Agents
+# AGENTS.md
 
-This file provides guidance for AI coding agents operating in this repository.
+> Auto-generated documentation for AI coding assistants
+> Generated: 2024-05-21
 
-## Project Overview
+## 1. Project Overview
 
-**GG CODE** - A TypeScript CLI AI-powered code editing assistant. Connects to internal network chat API with autonomous code editing capabilities.
+**GG CODE** - AI-Powered Code Editor CLI Tool
 
-## Build/Lint/Test Commands
+An AI-driven command-line interface tool based on an internal network chat API. It supports autonomous programming (similar to Claude Code), interactive dialogue, file context analysis, intelligent code editing, and code search capabilities.
 
-```bash
-# Build and Compile
-npm run build              # Compile TypeScript to dist/ (includes prompt packing)
-npm run typecheck          # Type check without emitting files
-npm run dev                # Run with ts-node
+**Tech Stack:**
+- **Runtime:** Node.js >= 16.0.0
+- **Language:** TypeScript (Target: ES2020, Module: CommonJS)
+- **Testing:** Jest
+- **Linting/Formatting:** ESLint, Prettier
+- **Build Tool:** TypeScript Compiler (tsc)
 
-# Testing
-npm test                   # Run all Jest tests
-npm run test:watch         # Watch mode for development
-npm run test:coverage      # Coverage report
-npm run test:tools         # Quick tool system test
-npm run test:validation    # Run specific validation tests: jest tests/tools-validation.test.ts
+## 2. Build and Test Commands
 
-# Code Quality
-npm run lint               # ESLint check
-npm run lint:fix           # ESLint auto-fix
-npm run format             # Prettier format all files
-npm run format:check       # Check format without modifying
+| Command | Description |
+|---------|-------------|
+| `npm run build` | Compile TypeScript to `dist/` and pack prompts |
+| `npm run typecheck` | Type check without emitting files |
+| `npm run dev` | Run directly with ts-node (Development mode) |
+| `npm test` | Run all Jest tests |
+| `npm run test:watch` | Run tests in watch mode |
+| `npm run test:coverage` | Generate test coverage report |
+| `npm run test:tools` | Quick tool system test |
+| `npm run test:validation` | Run specific validation tests |
+| `npm run lint` | Check code style with ESLint |
+| `npm run lint:fix` | Auto-fix ESLint errors |
+| `npm run format` | Format code with Prettier |
+| `npm run clean` | Clean all temporary files and dist/ |
+| `npm run link` | Build and link command globally (`ggcode`) |
 
-# Cleanup
-npm run clean              # Clean all temp files
-npm run clean:dist         # Clean only dist/ folder
-```
+## 3. Code Style Guide
 
-## Code Style Guidelines
-
-### TypeScript Configuration
-
-- Target: ES2020
-- Module: CommonJS
-- Strict mode enabled
-- Node.js >= 16.0.0
-
-### Imports
-
-- Use named imports: `import { func } from './utils'`
-- Group imports: external → internal → relative
-- No barrel exports from index files unless necessary
+### Import Order
+1. Node.js built-in modules (e.g., `fs`, `path`)
+2. Third-party libraries (e.g., `commander`, `chalk`)
+3. Project internal modules (e.g., `./core`, `./utils`)
 
 ### Naming Conventions
 
-- **Files**: camelCase for source files (e.g., `context-manager.ts`)
-- **Classes/Interfaces**: PascalCase (e.g., `ContextManager`)
-- **Functions/Variables**: camelCase (e.g., `getContext()`, `maxTokens`)
-- **Constants**: SCREAMING_SNAKE_CASE (e.g., `DEFAULT_TIMEOUT`)
-- **Types/Enums**: PascalCase
+| Type | Convention | Example |
+|------|------------|---------|
+| Files | kebab-case | `user-service.ts` |
+| Classes | PascalCase | `AgentManager` |
+| Interfaces/Types | PascalCase | `ConfigOptions` |
+| Functions/Variables | camelCase | `executeCommand` |
+| Constants | UPPER_SNAKE_CASE | `MAX_RETRIES` |
+| Private Members | camelCase with `_` prefix | `_internalState` |
 
-### Types
-
-- Use interfaces for object shapes, types for unions/primitives
-- Avoid `any`; use `unknown` for truly unknown types
-- Use Zod for runtime validation in tools
-- Export types from `src/types/index.ts`
+### TypeScript Standards
+- **Strict Mode:** Enabled
+- **Module System:** CommonJS
+- **Imports:** Prefer named imports (`import { func } from 'module'`) over default imports where possible.
+- **Types:** Explicitly define return types for public functions. Avoid `any`.
 
 ### Error Handling
+- Use custom error classes located in the `src/errors/` directory.
+- Always wrap async operations in try-catch blocks.
+- Propagate errors with meaningful context messages.
 
-- Use custom error classes extending `GGCodeError` from `src/errors/`
-- Include error codes from `ErrorCode` enum
-- API errors: `APIError` with status codes and response data
-- Propagate errors to caller, don't silently catch
-
-### Async/Await
-
-- All I/O operations must be async
-- Handle promise rejections with try/catch
-- Use `AbortSignal` for cancellable operations
-
-### File Organization
+## 4. Project Structure
 
 ```
 src/
-├── core/         # Core business logic
-├── commands commands
-├── tools//     # CLI        # Tool definitions
-├── types/        # TypeScript types
-├── utils/        # Utilities
-└── api/          # API adapters
+├── api/           # API client implementations (A4011LM01, OpenApi)
+├── commands/      # CLI command definitions and handlers
+├── config/        # Configuration loading and validation logic
+├── core/          # Core business logic (Agent orchestration, loops)
+├── errors/        # Custom error classes
+├── index.ts       # Main application entry point
+├── prompts/       # System prompts and prompt templates
+├── tools/         # Tool implementations (file ops, search, edit)
+├── types/         # Shared TypeScript type definitions
+└── utils/         # Utility functions and helpers
 ```
 
-### Tool System
+## 5. Development Workflow
 
-- Tools defined using `defineTool()` with Zod schemas
-- Parameter names: snake_case in API, converted to camelCase internally
-- Support both `file_path` and `filePath` formats
-- Tools must return `{ success, output, metadata? }`
-
-### Context Management
-
-- Support both `Message` and `EnhancedMessage` formats
-- Use `ContextManager` for conversation history
-- Token estimation: Chinese (2 chars/token), English (4 chars/token)
-
-### API Patterns
-
-- Internal API uses double JSON serialization
-- Request format:
-
-```typescript
-{
-  Data_cntnt: JSON.stringify({ user_id, messages, model_config }),
-  Fst_Attr_Rmrk: access_key_id
-}
-```
-
-### Security
-
-- Tools classified by permission: `safe`, `local-modify`, `network`, `dangerous`
-- Dangerous operations require user confirmation
-- Never log secrets or API keys
-
-### Testing
-
-- Place tests in `tests/` directory
-- Use Jest with ts-jest preset
-- Match pattern: `**/?(*.)+(spec|test).ts`
+1. **Setup:** Run `npm install` to install dependencies.
+2. **Development:**
+   - Use `npm run dev` to run the CLI directly without building.
+   - Make changes to source files in `src/`.
+3. **Code Quality:**
+   - Run `npm run lint:fix` and `npm run format` before committing.
+   - Ensure `npm run typecheck` passes.
+4. **Building:**
+   - Run `npm run build`. This triggers `scripts/pack-prompts.js` then compiles TypeScript.
+   - Verify output in the `dist/` directory.
+5. **Local Testing:**
+   - Run `npm run link` to test the `ggcode` command globally.
+   - Execute `ggcode` in a separate terminal to verify functionality.
+6. **Testing:**
+   - Run `npm test` to ensure unit tests pass.
+   - Use `npm run test:tools` for quick tool validation.

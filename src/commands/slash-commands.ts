@@ -223,7 +223,6 @@ export class CommandManager {
 
     // 检查是否需要使用 AI 生成（有 API adapter）
     if (!context.apiAdapter) {
-      console.log(chalk.yellow('⚠️  未提供 API 适配器，将使用基础模板生成文档\n'));
       console.log(chalk.gray(`context.apiAdapter = ${context.apiAdapter}`));
       return await this.generateBasicAgentsDocument(context.workingDirectory, agentsFilePath);
     }
@@ -232,7 +231,6 @@ export class CommandManager {
 
     // 调试信息：检查API配置
     const apiConfig = context.config.getAPIConfig();
-    console.log(chalk.gray(`API模式: ${apiConfig.mode}`));
     console.log(chalk.gray(`API base_url: ${apiConfig.base_url}`));
     if (apiConfig.mode === 'OpenApi') {
       console.log(chalk.gray(`API model: ${apiConfig.model}`));
@@ -313,8 +311,10 @@ export class CommandManager {
 
         while (retryCount < maxRetries) {
           try {
+            // 为文档生成任务设置更长的超时时间（90秒）
             generatedDoc = await context.apiAdapter.chat(messages, {
               temperature: 0.3, // 较低温度以确保稳定性
+              timeout: 90000, // 90秒超时（文档生成任务）
             });
             console.log(chalk.green(`API调用成功！（尝试 ${retryCount + 1}/${maxRetries})`));
             break; // 成功则跳出重试循环
@@ -401,103 +401,227 @@ export class CommandManager {
    * 收集项目上下文信息
    */
   private async collectProjectContext(workingDir: string): Promise<string> {
-    const contextParts: string[] = [];
+    const contextParts: Array<{ priority: number; name: string; content: string }> = [];
 
-    // 1. README.md
+    // 优先级定义：1=最高，5=最低
+    // 高优先级：核心配置和文档
+    // 中优先级：现有文档
+    // 低优先级：补充信息
+
+    // 1. README.md (优先级 1 - 项目核心信息)
     const readmePath = path.join(workingDir, 'README.md');
     try {
       const readme = await fs.readFile(readmePath, 'utf-8');
-      contextParts.push(`### README.md\n\`\`\`\n${readme.substring(0, 3000)}\n\`\`\`\n`);
+      const readmeSnippet = readme.substring(0, 2000); // 减少到 2000 字符
+      contextParts.push({
+        priority: 1,
+        name: 'README.md',
+        content: `### README.md\n\`\`\`\n${readmeSnippet}\n\`\`\`\n`,
+      });
     } catch {}
 
-    // 2. package.json (scripts 部分)
+    // 2. package.json (优先级 1 - 构建命令)
     const packageJsonPath = path.join(workingDir, 'package.json');
     try {
       const pkgJson = JSON.parse(await fs.readFile(packageJsonPath, 'utf-8'));
       if (pkgJson.scripts) {
-        contextParts.push(
-          `### package.json scripts\n\`\`\`json\n${JSON.stringify(pkgJson.scripts, null, 2)}\n\`\`\`\n`
-        );
+        contextParts.push({
+          priority: 1,
+          name: 'package.json scripts',
+          content: `### package.json scripts\n\`\`\`json\n${JSON.stringify(pkgJson.scripts, null, 2)}\n\`\`\`\n`,
+        });
+      }
+      // 添加项目名称和描述
+      if (pkgJson.name || pkgJson.description) {
+        const projectInfo = [
+          pkgJson.name ? `**项目名称**: ${pkgJson.name}` : '',
+          pkgJson.description ? `**描述**: ${pkgJson.description}` : '',
+        ].filter(Boolean).join('\n');
+        if (projectInfo) {
+          contextParts.push({
+            priority: 1,
+            name: '项目信息',
+            content: `### 项目信息\n${projectInfo}\n`,
+          });
+        }
       }
     } catch {}
 
-    // 3. 现有的 AGENTS.md (如果存在)
+    // 3. 现有的 AGENTS.md (优先级 2 - 用于改进)
     const agentsPath = path.join(workingDir, 'AGENTS.md');
     try {
       const existingAgents = await fs.readFile(agentsPath, 'utf-8');
-      contextParts.push(
-        `### 现有的 AGENTS.md\n\`\`\`\n${existingAgents.substring(0, 2000)}\n\`\`\`\n`
-      );
+      // 只取前 1500 字符用于参考
+      const agentsSnippet = existingAgents.substring(0, 1500);
+      contextParts.push({
+        priority: 2,
+        name: '现有 AGENTS.md',
+        content: `### 现有的 AGENTS.md（用于参考）\n\`\`\`\n${agentsSnippet}\n\`\`\`\n`,
+      });
     } catch {}
 
-    // 4. Cursor/Copilot 规则
+    // 4. .cursorrules (优先级 3 - 代码风格)
     const cursorRulesPath = path.join(workingDir, '.cursorrules');
     try {
       const cursorRules = await fs.readFile(cursorRulesPath, 'utf-8');
-      contextParts.push(`### .cursorrules\n\`\`\`\n${cursorRules}\n\`\`\`\n`);
+      // 限制在 1000 字符
+      const rulesSnippet = cursorRules.substring(0, 1000);
+      contextParts.push({
+        priority: 3,
+        name: '.cursorrules',
+        content: `### .cursorrules（代码风格）\n\`\`\`\n${rulesSnippet}\n\`\`\`\n`,
+      });
     } catch {}
 
-    const cursorRulesDir = path.join(workingDir, '.cursor', 'rules');
-    try {
-      const files = await fs.readdir(cursorRulesDir);
-      for (const file of files) {
-        const content = await fs.readFile(path.join(cursorRulesDir, file), 'utf-8');
-        contextParts.push(`### .cursor/rules/${file}\n\`\`\`\n${content}\n\`\`\`\n`);
-      }
-    } catch {}
-
-    const copilotInstructionsPath = path.join(workingDir, '.github', 'copilot-instructions.md');
-    try {
-      const copilotInstructions = await fs.readFile(copilotInstructionsPath, 'utf-8');
-      contextParts.push(
-        `### .github/copilot-instructions.md\n\`\`\`\n${copilotInstructions}\n\`\`\`\n`
-      );
-    } catch {}
-
-    // 5. CONTRIBUTING.md
+    // 5. CONTRIBUTING.md (优先级 3 - 开发规范)
     const contributingPath = path.join(workingDir, 'CONTRIBUTING.md');
     try {
       const contributing = await fs.readFile(contributingPath, 'utf-8');
-      contextParts.push(
-        `### CONTRIBUTING.md\n\`\`\`\n${contributing.substring(0, 2000)}\n\`\`\`\n`
-      );
+      // 限制在 1500 字符
+      const contribSnippet = contributing.substring(0, 1500);
+      contextParts.push({
+        priority: 3,
+        name: 'CONTRIBUTING.md',
+        content: `### CONTRIBUTING.md（开发规范）\n\`\`\`\n${contribSnippet}\n\`\`\`\n`,
+      });
     } catch {}
 
-    // 6. 项目结构（简要）
+    // 6. src/ 目录结构（优先级 4 - 结构信息）
     try {
       const srcPath = path.join(workingDir, 'src');
       const items = await fs.readdir(srcPath, { withFileTypes: true });
       const structure = items
-        .slice(0, 15)
+        .slice(0, 20) // 增加到 20 个
         .map((item) => `${item.isDirectory() ? '📁' : '📄'} ${item.name}`)
         .join('\n');
-      contextParts.push(`### src/ 目录结构\n\`\`\`\n${structure}\n\`\`\`\n`);
+      contextParts.push({
+        priority: 4,
+        name: 'src/ 目录结构',
+        content: `### src/ 目录结构\n\`\`\`\n${structure}\n\`\`\`\n`,
+      });
     } catch {}
 
-    return contextParts.join('\n');
+    // 7. .cursor/rules/ (优先级 5 - 低优先级，可能很长)
+    const cursorRulesDir = path.join(workingDir, '.cursor', 'rules');
+    try {
+      const files = await fs.readdir(cursorRulesDir);
+      // 只取前 3 个文件，每个最多 500 字符
+      for (const file of files.slice(0, 3)) {
+        try {
+          const content = await fs.readFile(path.join(cursorRulesDir, file), 'utf-8');
+          const snippet = content.substring(0, 500);
+          contextParts.push({
+            priority: 5,
+            name: `.cursor/rules/${file}`,
+            content: `### .cursor/rules/${file}\n\`\`\`\n${snippet}\n\`\`\`\n`,
+          });
+        } catch {}
+      }
+    } catch {}
+
+    // 8. .github/copilot-instructions.md (优先级 5 - 低优先级)
+    const copilotInstructionsPath = path.join(workingDir, '.github', 'copilot-instructions.md');
+    try {
+      const copilotInstructions = await fs.readFile(copilotInstructionsPath, 'utf-8');
+      // 限制在 800 字符
+      const snippet = copilotInstructions.substring(0, 800);
+      contextParts.push({
+        priority: 5,
+        name: 'copilot-instructions.md',
+        content: `### .github/copilot-instructions.md\n\`\`\`\n${snippet}\n\`\`\`\n`,
+      });
+    } catch {}
+
+    // 按优先级排序，并限制总长度
+    contextParts.sort((a, b) => a.priority - b.priority);
+
+    // 上下文长度限制（字符数）- 进一步减少到 5000 以确保快速响应
+    const MAX_CONTEXT_LENGTH = 5000;
+    let totalLength = 0;
+    const selectedParts: string[] = [];
+
+    for (const part of contextParts) {
+      const partLength = part.content.length;
+
+      // 如果添加这个部分会超过限制，检查是否可以截断
+      if (totalLength + partLength > MAX_CONTEXT_LENGTH) {
+        // 高优先级（1-2）的总是包含，可能截断
+        if (part.priority <= 2) {
+          const remainingSpace = MAX_CONTEXT_LENGTH - totalLength;
+          if (remainingSpace > 200) { // 至少保留 200 字符
+            // 截断内容
+            const truncated = part.content.substring(0, remainingSpace - 50) + '\n...(已截断)';
+            selectedParts.push(truncated);
+            totalLength += remainingSpace;
+            console.log(chalk.gray(`  ⚠️  ${part.name}: 已截断 (${partLength} -> ${remainingSpace} 字符)`));
+          } else {
+            console.log(chalk.gray(`  ⊘ ${part.name}: 跳过（空间不足）`));
+          }
+        } else {
+          console.log(chalk.gray(`  ⊘ ${part.name}: 跳过（低优先级）`));
+        }
+        // 达到限制后，只保留高优先级的内容
+        if (totalLength >= MAX_CONTEXT_LENGTH * 0.9) {
+          break;
+        }
+      } else {
+        selectedParts.push(part.content);
+        totalLength += partLength;
+        console.log(chalk.gray(`  ✓ ${part.name}: ${partLength} 字符`));
+      }
+    }
+
+    const finalContext = selectedParts.join('\n');
+    console.log(chalk.gray(`\n📊 上下文统计: 总长度 ${finalContext.length} / ${MAX_CONTEXT_LENGTH} 字符`));
+
+    return finalContext;
   }
 
   /**
    * 清理 AI 生成的文档
    */
   private cleanGeneratedDoc(doc: string): string {
-    // 移除可能的 markdown 代码块标记
-    let cleaned = doc.replace(/^```markdown\n?/gm, '');
-    cleaned = cleaned.replace(/^```\n?$/gm, '');
+    let cleaned = doc;
 
-    // 移除 AI 可能添加的额外说明
-    const lines = cleaned.split('\n');
-    const filteredLines: string[] = [];
+    // 移除可能的外层 markdown 代码块标记
+    cleaned = cleaned.replace(/^```markdown\n?\n?([\s\S]*?)\n?```$/s, '$1');
+    cleaned = cleaned.replace(/^```\n?\n?([\s\S]*?)\n?```$/s, '$1');
 
-    for (const line of lines) {
-      // 跳过 AI 的常见对话标记
-      if (line.match(/^(这里是|以上是|好的|我会)/)) {
-        continue;
-      }
-      filteredLines.push(line);
+    // 移除 AI 的常见对话填充词（在文档开头）
+    const fillerPatterns = [
+      /^(以下是|Here is|这是| Below is|I'll create|I will generate|I have created|生成的|创建的).*?\n\n?/im,
+      /^(当然|好的|没问题|Sure|OK|Certainly).*?\n\n?/im,
+    ];
+
+    for (const pattern of fillerPatterns) {
+      cleaned = cleaned.replace(pattern, '');
     }
 
-    return filteredLines.join('\n').trim() + '\n';
+    // 移除结尾的对话填充词
+    cleaned = cleaned.replace(/\n\n?(希望|Hope|如有|If you have|请|Please).*$/im, '');
+
+    // 确保文档以 # AGENTS.md 开头（如果没有，添加它）
+    if (!cleaned.startsWith('#')) {
+      // 查找第一个 # 标题
+      const firstTitleMatch = cleaned.match(/\n#+\s/);
+      if (firstTitleMatch && firstTitleMatch.index !== undefined && firstTitleMatch.index > 0) {
+        // 移除第一个标题之前的内容
+        cleaned = cleaned.substring(firstTitleMatch.index);
+      }
+    }
+
+    // 清理多余的空行（超过2个连续空行合并为2个）
+    cleaned = cleaned.replace(/\n{4,}/g, '\n\n\n');
+
+    // 移除行首尾空白
+    cleaned = cleaned.trim();
+
+    // 确保文档不为空
+    if (!cleaned) {
+      throw new Error('生成的文档为空，可能是 AI 返回了无效内容');
+    }
+
+    return cleaned + '\n';
   }
 
   /**
