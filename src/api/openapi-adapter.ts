@@ -5,7 +5,14 @@
  */
 
 import axios, { AxiosError } from 'axios';
-import type { Message, OpenAPIConfig, OpenAPIRequest, OpenAPIResponse } from '../types';
+import type {
+  Message,
+  OpenAPIConfig,
+  OpenAPIRequest,
+  OpenAPIResponse,
+  OpenAPIStreamChunk,
+  StreamCallback
+} from '../types';
 import { APIError, ErrorCode } from '../errors';
 import { withRetry, RETRY_CONFIG } from '../utils/retry';
 

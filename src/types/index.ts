@@ -105,6 +105,24 @@ export interface OpenAPIRequest {
 }
 
 /**
+ * OpenAPI 流式响应块
+ */
+export interface OpenAPIStreamChunk {
+  id: string;
+  object: string;
+  created: number;
+  model: string;
+  choices: Array<{
+    index: number;
+    delta: {
+      role?: string;
+      content?: string;
+    };
+    finish_reason: string | null;
+  }>;
+}
+
+/**
  * OpenAPI 响应体
  */
 export interface OpenAPIResponse {

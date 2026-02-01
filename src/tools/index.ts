@@ -153,44 +153,17 @@ export async function generateToolsDescription(): Promise<string> {
   const lines: string[] = [];
 
   for (const info of infos) {
-    // 工具描述已经从 prompts/tools/*.txt 加载
-    // 如果描述较短，补充参数信息
+    // 检查是否有外部 prompt 文件（包含换行符说明是详细描述）
     const hasExternalPrompt = info.description.includes('\n');
 
     if (hasExternalPrompt) {
-      // 外部文件已经包含完整说明
-      lines.push(`## ${formatToolName(info.id)}\n`);
+      // 外部文件已经包含完整说明（包括格式、示例等）
+      // 直接使用，不添加额外的标题（标题可能包含在描述中）
       lines.push(info.description);
       lines.push('');
     } else {
-      // 回退到简短描述 + 参数列表
-      lines.push(`## ${formatToolName(info.id)}`);
-      lines.push(`${info.description}\n`);
-      lines.push('**Parameters**:');
-
-      const schema = info.parameters as any;
-      const keys = schema ? Object.keys(schema.shape || {}) : [];
-
-      if (keys.length === 0) {
-        lines.push('  (None)');
-      } else {
-        keys.forEach((key: string) => {
-          const fieldSchema = schema.shape[key];
-          const isOptional = fieldSchema?.isOptional?.();
-          const description = (fieldSchema as any).description || '';
-
-          let typeName = 'unknown';
-          if (fieldSchema instanceof z.ZodString) typeName = 'string';
-          else if (fieldSchema instanceof z.ZodNumber) typeName = 'number';
-          else if (fieldSchema instanceof z.ZodBoolean) typeName = 'boolean';
-          else if (fieldSchema instanceof z.ZodOptional) typeName = 'any';
-
-          const optional = isOptional ? ' [optional]' : ' [required]';
-          lines.push(`  - \`${key}\` (${typeName})${optional}: ${description}`);
-        });
-      }
-
-      lines.push('');
+      // 简短描述：使用一行格式
+      lines.push(`- **${info.id}**: ${info.description}`);
     }
   }
 
@@ -217,10 +190,9 @@ export async function getBuiltinTools(): Promise<ToolDefinition[]> {
 }
 
 function formatToolName(toolId: string): string {
-  return toolId
-    .split('-')
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join('');
+  // 保持小写，与系统提示词中的格式要求一致
+  // 这确保 AI 看到的工具名称与 prompt 中要求的格式一致
+  return toolId;
 }
 
 function adaptParameters(args: Record<string, unknown>): Record<string, unknown> {

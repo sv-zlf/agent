@@ -532,6 +532,65 @@ export class ToolEngine {
   }
 
   /**
+   * 检测响应中是否存在错误格式的工具调用
+   * 用于识别 AI 返回的不符合要求的格式，以便进行纠正
+   */
+  detectMalformedToolCalls(response: string): {
+    hasMalformed: boolean;
+    detectedFormats: string[];
+    examples: string[];
+  } {
+    const formats: string[] = [];
+    const examples: string[] = [];
+
+    // 1. 检测 XML 标签格式（如 <Read>, <function_calls>）
+    const xmlTagRegex = /<\/?[A-Z][a-zA-Z0-9]*[^>]*>|<function_calls[^>]*>/g;
+    const xmlMatches = response.match(xmlTagRegex);
+    if (xmlMatches && xmlMatches.length > 0) {
+      formats.push('XML tags (e.g., <ToolName>)');
+      examples.push(...xmlMatches.slice(0, 2).map(m => m.slice(0, 30)));
+    }
+
+    // 2. 检测函数调用格式（如 Read{...} 或 Read(...)）
+    const functionCallRegex = /\b([A-Z][a-zA-Z0-9]*)\s*(\{|\()/g;
+    const funcMatches = response.match(functionCallRegex);
+    if (funcMatches && funcMatches.length > 0) {
+      // 排除已知工具名称的小写形式
+      const knownTools = new Set(this.tools.keys());
+      const invalidCalls = funcMatches.filter(match => {
+        const toolName = match.match(/\b([A-Z][a-zA-Z0-9]*)/)?.[1];
+        return toolName && !knownTools.has(toolName.toLowerCase());
+      });
+      if (invalidCalls.length > 0) {
+        formats.push('Function notation (e.g., ToolName{...})');
+        examples.push(...invalidCalls.slice(0, 2).map(m => m.slice(0, 30)));
+      }
+    }
+
+    // 3. 检测大写工具名称在 JSON 中
+    const uppercaseToolRegex = /\{\s*"tool"\s*:\s*"[A-Z]/g;
+    if (uppercaseToolRegex.test(response)) {
+      formats.push('Uppercase tool names in JSON (use lowercase)');
+      const match = response.match(uppercaseToolRegex);
+      if (match) examples.push(match[0].slice(0, 30));
+    }
+
+    // 4. 检测混合格式（如 ToolName {"tool": ...}）
+    const mixedFormatRegex = /\b([A-Z][a-zA-Z0-9]*)\s*\{[^}]*"tool"\s*:/g;
+    if (mixedFormatRegex.test(response)) {
+      formats.push('Mixed format (e.g., ToolName {tool: ...})');
+      const match = response.match(mixedFormatRegex);
+      if (match) examples.push(match[0].slice(0, 30));
+    }
+
+    return {
+      hasMalformed: formats.length > 0,
+      detectedFormats: formats,
+      examples: [...new Set(examples)] // 去重
+    };
+  }
+
+  /**
    * 清空所有工具
    */
   clear(): void {

@@ -8,6 +8,9 @@ import { FunctionalAgentManager } from './functional-agents';
 import { generateToolsDescription } from '../tools';
 import { APIError, AgentExecutionError, ErrorCode } from '../errors';
 import { ToolParameterHelper } from '../utils/tool-params';
+import { createLogger } from '../utils';
+
+const logger = createLogger(true);
 
 /**
  * Agent执行配置
@@ -141,6 +144,29 @@ export class AgentOrchestrator {
 
         // 从响应中提取纯文本内容（移除工具调用 JSON）
         const cleanResponse = this.extractTextFromResponse(response);
+
+        // 检测错误格式的工具调用
+        const malformedDetection = this.toolEngine.detectMalformedToolCalls(response);
+
+        // 如果没有解析出有效工具调用，但检测到错误格式，提供纠正反馈
+        if (toolCalls.length === 0 && malformedDetection.hasMalformed) {
+          logger.warning(
+            `检测到错误格式的工具调用: ${malformedDetection.detectedFormats.join(', ')}`
+          );
+          logger.warning(`示例: ${malformedDetection.examples.slice(0, 3).join(', ')}`);
+
+          // 构建纠正消息
+          const correctionMessage = this.buildFormatCorrectionMessage(malformedDetection);
+
+          // 将 AI 响应添加到上下文
+          this.contextManager.addMessage('assistant', response);
+
+          // 添加纠正反馈
+          this.contextManager.addMessage('user', correctionMessage);
+
+          // 继续下一轮循环，让 AI 重新生成
+          continue;
+        }
 
         // 智能检测是否应该结束
         if (this.shouldFinish(response, toolCalls)) {
@@ -532,6 +558,52 @@ ${toolsDescription}
       // 添加空行分隔
       lines.push('');
     }
+
+    return lines.join('\n');
+  }
+
+  /**
+   * 构建工具调用格式纠正消息
+   * 当 AI 返回错误格式的工具调用时，向其提供详细的纠正指导
+   */
+  private buildFormatCorrectionMessage(malformedDetection: {
+    hasMalformed: boolean;
+    detectedFormats: string[];
+    examples: string[];
+  }): string {
+    const lines: string[] = [];
+
+    lines.push('⚠️ **工具调用格式错误**\n');
+    lines.push('你的响应中包含了错误格式的工具调用，系统无法识别。\n');
+    lines.push('**检测到的问题**:');
+    malformedDetection.detectedFormats.forEach((format) => {
+      lines.push(`- ${format}`);
+    });
+
+    if (malformedDetection.examples.length > 0) {
+      lines.push('\n**检测到的示例**:');
+      malformedDetection.examples.slice(0, 3).forEach((ex) => {
+        lines.push(`  ${ex}`);
+      });
+    }
+
+    lines.push('\n**正确的格式**:');
+    lines.push('```json');
+    lines.push('{');
+    lines.push('  "tool": "read",');
+    lines.push('  "parameters": {');
+    lines.push('    "file_path": "path/to/file"');
+    lines.push('  }');
+    lines.push('}');
+    lines.push('```');
+
+    lines.push('\n**重要提示**:');
+    lines.push('1. 工具名称必须是**小写**（如 "read", "write", "todowrite"）');
+    lines.push('2. 必须使用 `{"tool": "...", "parameters": {...}}` 结构');
+    lines.push('3. 必须包装在 ```json 代码块中');
+    lines.push('4. 不要使用XML标签（如 <ToolName>）或函数调用格式（如 ToolName{...}）');
+
+    lines.push('\n请使用正确的格式重新调用工具。');
 
     return lines.join('\n');
   }

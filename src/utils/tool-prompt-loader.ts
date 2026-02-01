@@ -15,7 +15,8 @@ const promptCache = new Map<string, string>();
  * 获取工具提示词文件路径（相对于 __dirname）
  */
 function getToolPromptPath(toolId: string): string {
-  return path.join(__dirname, '../tools/prompts/tools', `${toolId}.txt`);
+  // 修复路径：prompts 文件在 src/tools/prompts/ 目录下，不是 tools 子目录
+  return path.join(__dirname, '../tools/prompts', `${toolId}.txt`);
 }
 
 /**

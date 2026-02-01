@@ -137,7 +137,8 @@ export class ToolParameterHelper {
     params: Record<string, unknown>
   ): Record<string, unknown> {
     const adapted = { ...params };
-    const mappings = PARAM_MAPPINGS[toolName];
+    const capitalizedToolName = toolName.charAt(0).toUpperCase() + toolName.slice(1);
+    const mappings = PARAM_MAPPINGS[capitalizedToolName];
 
     if (mappings) {
       for (const [snakeName, camelName] of Object.entries(mappings)) {
