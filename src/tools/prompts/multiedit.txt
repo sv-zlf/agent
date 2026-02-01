@@ -1,5 +1,9 @@
 Performs multiple edit operations on a single file. All edits are executed sequentially as atomic operations.
 
+**IMPORTANT - When to use:**
+- When you need to edit the SAME file multiple times → use `multiedit`
+- When editing DIFFERENT files → use separate `edit` calls
+
 **Usage:**
 - All edits are applied sequentially in the order they appear
 - If any edit fails, all changes are rolled back and the file is not modified
@@ -34,10 +38,10 @@ Performs multiple edit operations on a single file. All edits are executed seque
   - replaceAll (optional): Replace all occurrences (default: false)
 
 **Recommendations:**
-- Use MultiEdit when you need to make multiple related changes to a file
+- Use MultiEdit when you need to make multiple changes to the SAME file
 - Break large refactorings into multiple MultiEdit calls if needed
 - Test oldStrings carefully to ensure they match exactly
 - Use Read tool first to verify the file content before editing
-- For single edits, use Edit tool instead
+- For single edits to a file, use Edit tool instead
 
 **exact string matching** is required for each oldString

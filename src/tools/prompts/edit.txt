@@ -34,5 +34,6 @@ Performs precise string replacement in a file.
 - For large changes, use write tool instead
 - If edit fails, re-read the file - content may have changed
 - Use replaceAll parameter to replace all occurrences
+- **For multiple edits to the SAME file → use `multiedit` tool instead**
 
 **exact string matching** is required - the oldString must match file content exactly
