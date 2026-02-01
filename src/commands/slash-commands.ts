@@ -390,7 +390,9 @@ export class CommandManager {
         const projectInfo = [
           pkgJson.name ? `**项目名称**: ${pkgJson.name}` : '',
           pkgJson.description ? `**描述**: ${pkgJson.description}` : '',
-        ].filter(Boolean).join('\n');
+        ]
+          .filter(Boolean)
+          .join('\n');
         if (projectInfo) {
           contextParts.push({
             priority: 1,
@@ -502,7 +504,8 @@ export class CommandManager {
         // 高优先级（1-2）的总是包含，可能截断
         if (part.priority <= 2) {
           const remainingSpace = MAX_CONTEXT_LENGTH - totalLength;
-          if (remainingSpace > 200) { // 至少保留 200 字符
+          if (remainingSpace > 200) {
+            // 至少保留 200 字符
             // 截断内容
             const truncated = part.content.substring(0, remainingSpace - 50) + '\n...(已截断)';
             selectedParts.push(truncated);
@@ -746,6 +749,13 @@ export class CommandManager {
       return {
         shouldContinue: false,
       };
+    } catch (error: any) {
+      if (error.name === 'UserCancelled' || error.message?.includes('User force closed')) {
+        console.log(chalk.gray('\n已取消选择\n'));
+      } else {
+        console.log(chalk.red(`\n✗ 选择失败: ${error.message}\n`));
+      }
+      return { shouldContinue: false };
     } finally {
       // 恢复按键监听器
       resumeKeyListener();
@@ -798,7 +808,7 @@ export class CommandManager {
 
       return { shouldContinue: false };
     } catch (error: any) {
-      if (error.message?.includes('User force closed') || error.message?.includes('Esc')) {
+      if (error.name === 'UserCancelled' || error.message?.includes('User force closed')) {
         console.log(chalk.gray('\n已取消切换\n'));
       } else {
         console.log(chalk.red(`\n✗ 选择失败: ${error.message}\n`));

@@ -10,8 +10,8 @@ import * as tty from 'tty';
  * 选择选项
  */
 export interface SelectOption {
-  label: string;      // 显示标签
-  value: string;      // 实际值
+  label: string; // 显示标签
+  value: string; // 实际值
   description?: string; // 描述信息（可选）
 }
 
@@ -19,9 +19,9 @@ export interface SelectOption {
  * 选择器配置
  */
 export interface SelectConfig {
-  message: string;      // 提示消息
+  message: string; // 提示消息
   options: SelectOption[]; // 选项列表
-  default?: number;     // 默认选中的索引（从 0 开始）
+  default?: number; // 默认选中的索引（从 0 开始）
 }
 
 /**
@@ -95,7 +95,10 @@ export async function select(config: SelectConfig): Promise<SelectOption> {
       // ESC 或 Ctrl+C 取消
       if (key.name === 'escape' || (key.name === 'c' && key.ctrl)) {
         cleanup();
-        process.exit(0);
+        // 抛出错误而不是退出程序，让调用者处理取消
+        const error = new Error('User force closed');
+        error.name = 'UserCancelled';
+        throw error;
         return;
       }
     };
@@ -111,13 +114,8 @@ export async function select(config: SelectConfig): Promise<SelectOption> {
         stdin.setRawMode(false);
       }
 
-      // 暂停 stdin 以清空缓冲区，防止按键残留到后续的 readline
-      stdin.pause();
-
-      // 清空 stdin 缓冲区中的剩余数据
-      if (stdin.isTTY) {
-        stdin.read();
-      }
+      // 只暂停一下让按键被处理，不清空缓冲区
+      // 不要调用 stdin.pause()，否则会导致后续 readline 无法读取输入
     };
 
     stdin.on('data', onKeyPress);
@@ -304,7 +302,7 @@ export async function multiSelect(config: SelectConfig): Promise<SelectOption[]>
       // 回车确认
       if (key.name === 'return' || key.name === 'enter') {
         cleanup();
-        const results = Array.from(selected).map(i => options[i]);
+        const results = Array.from(selected).map((i) => options[i]);
         resolve(results);
         return;
       }
@@ -312,7 +310,9 @@ export async function multiSelect(config: SelectConfig): Promise<SelectOption[]>
       // ESC 取消
       if (key.name === 'escape' || (key.name === 'c' && key.ctrl)) {
         cleanup();
-        process.exit(0);
+        const error = new Error('User force closed');
+        error.name = 'UserCancelled';
+        throw error;
         return;
       }
     };
@@ -320,15 +320,7 @@ export async function multiSelect(config: SelectConfig): Promise<SelectOption[]>
     const cleanup = () => {
       resolved = true;
       stdin.setRawMode(false);
-
-      // 暂停 stdin 以清空缓冲区，防止按键残留到后续的 readline
-      stdin.pause();
-
-      // 清空 stdin 缓冲区中的剩余数据
-      if (stdin.isTTY) {
-        stdin.read();
-      }
-
+      // 不要暂停 stdin，否则会导致后续 readline 无法读取输入
       stdin.removeListener('data', onKeyPress);
     };
 

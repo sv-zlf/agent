@@ -654,7 +654,6 @@ export const agentCommand = new Command('agent')
               // 更新 contextManager 的历史文件路径并加载历史
               contextManager.updateHistoryFile(historyFile);
               await contextManager.loadHistory();
-              console.log(chalk.gray('已加载会话历史，继续对话...\n'));
             }
 
             // 如果系统提示词未设置（比如切换会话后），重新设置
