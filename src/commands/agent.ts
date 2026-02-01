@@ -484,6 +484,10 @@ export const agentCommand = new Command('agent')
         // 移除监听器，避免重复触发
         currentRl.removeListener('line', onLine);
 
+        // 清除用户输入的回显，避免在下一行重复显示
+        // 使用 ANSI 转义码清除当前行：\r 回到行首，\x1b[2K 清除整行
+        process.stdout.write('\r\x1b[2K');
+
         if (!input.trim()) {
           setImmediate(() => chatLoop());
           return;
