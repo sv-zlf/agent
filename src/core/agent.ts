@@ -161,6 +161,9 @@ export class AgentOrchestrator {
         try {
           response = await this.apiAdapter.chat(messages, {
             abortSignal: abortController.signal,
+            stream: true,
+            onChunk: this.config.onStreamChunk,
+            onToken: this.config.onStreamChunk,
           });
           clearTimeout(timeoutId);
 
@@ -293,6 +296,9 @@ export class AgentOrchestrator {
         try {
           finalResponse = await this.apiAdapter.chat(messagesWithWarning, {
             abortSignal: finalAbortController.signal,
+            stream: true,
+            onChunk: this.config.onStreamChunk,
+            onToken: this.config.onStreamChunk,
           });
           clearTimeout(finalTimeoutId);
 
