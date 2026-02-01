@@ -210,6 +210,17 @@ export const agentCommand = new Command('agent')
     // 获取中断管理器
     const interruptManager = getInterruptManager();
 
+    // 添加全局未捕获异常处理器，防止进程意外退出
+    process.on('unhandledRejection', (reason: any) => {
+      console.error(chalk.red('未捕获的 Promise 错误:'), reason);
+      // 不退出，让对话继续
+    });
+
+    process.on('uncaughtException', (error: Error) => {
+      console.error(chalk.red('未捕获的异常:'), error.message);
+      // 不退出，让对话继续
+    });
+
     // 启动交互式循环
     const readline = require('readline');
     let rl = readline.createInterface({
@@ -475,7 +486,7 @@ export const agentCommand = new Command('agent')
         }
 
         if (!input.trim()) {
-          chatLoop();
+          setImmediate(() => chatLoop());
           return;
         }
 
@@ -594,7 +605,7 @@ export const agentCommand = new Command('agent')
           contextManager.clearContext();
           contextManager.setSystemPrompt(systemPrompt); // 重新设置系统提示词
           logger.success('上下文已清空\n');
-          chatLoop();
+          setImmediate(() => chatLoop());
           return;
         }
 
@@ -606,7 +617,7 @@ export const agentCommand = new Command('agent')
             console.log(chalk.cyan(`  ${tool.name}`));
             console.log(chalk.gray(`    ${tool.description}`));
           });
-          chatLoop();
+          setImmediate(() => chatLoop());
           return;
         }
 
