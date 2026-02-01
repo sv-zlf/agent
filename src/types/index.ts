@@ -188,6 +188,10 @@ export interface AgentConfig {
     max_history: number;
     max_iterations?: number;
     auto_approve?: boolean;
+    // 自动压缩配置
+    auto_compress?: boolean;
+    compress_threshold?: number; // 触发压缩的 token 百分比 (0-1)
+    compress_reserve?: number; // 保留的 token 数量
   };
   sessions?: SessionManagementConfig;
 }

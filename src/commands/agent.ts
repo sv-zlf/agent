@@ -192,6 +192,13 @@ export const agentCommand = new Command('agent')
       currentSession.historyFile
     );
 
+    // 根据配置启用自动压缩（默认启用）
+    const autoCompress = agentConfig.auto_compress !== false;
+    if (autoCompress) {
+      contextManager.enableAutoCompress();
+      console.log(chalk.gray('✓ 已启用自动上下文压缩'));
+    }
+
     // 加载历史记录（可选）
     if (options.history) {
       await contextManager.loadHistory();
@@ -653,13 +660,17 @@ export const agentCommand = new Command('agent')
               // 获取当前上下文并调用AI
               let messages = contextManager.getContext();
 
-              // 检查上下文大小，如果过大则触发压缩
+              // 检查上下文大小，如果过大则触发压缩（仅在启用自动压缩时）
               const agentConfig = config.getAgentConfig();
               const maxTokens = agentConfig.max_context_tokens;
+              const compressThreshold = agentConfig.compress_threshold || 0.85; // 默认 85%
               const estimatedTokens = contextManager.estimateTokens();
 
-              // 如果上下文超过最大 tokens 的 80%，触发压缩
-              if (estimatedTokens > maxTokens * 0.8) {
+              // 根据配置决定是否启用自动压缩
+              const autoCompressEnabled = agentConfig.auto_compress !== false;
+
+              // 如果上下文超过阈值且自动压缩已启用，触发压缩
+              if (autoCompressEnabled && estimatedTokens > maxTokens * compressThreshold) {
                 console.log(
                   chalk.yellow(
                     `\n⚠️  上下文过大 (${estimatedTokens}/${maxTokens} tokens)，触发压缩...\n`

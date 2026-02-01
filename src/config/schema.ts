@@ -34,6 +34,10 @@ const DEFAULT_CONFIG: AgentConfig = {
     max_history: 20,
     max_iterations: 20,
     auto_approve: false,
+    // 自动压缩配置（默认启用）
+    auto_compress: true,
+    compress_threshold: 0.85, // 当上下文达到 85% 时触发压缩
+    compress_reserve: 2000, // 保留 2000 tokens 给输出
   },
   sessions: {
     max_sessions: 20, // 最多保留20个会话

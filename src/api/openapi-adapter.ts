@@ -5,14 +5,7 @@
  */
 
 import axios, { AxiosError } from 'axios';
-import type {
-  Message,
-  OpenAPIConfig,
-  OpenAPIRequest,
-  OpenAPIResponse,
-  OpenAPIStreamChunk,
-  StreamCallback
-} from '../types';
+import type { Message, OpenAPIConfig, OpenAPIRequest, OpenAPIResponse } from '../types';
 import { APIError, ErrorCode } from '../errors';
 import { withRetry, RETRY_CONFIG } from '../utils/retry';
 
@@ -38,6 +31,8 @@ export class OpenAPIAdapter {
       temperature?: number;
       topP?: number;
       abortSignal?: AbortSignal;
+      stream?: boolean;
+      onToken?: (token: string) => void;
     }
   ): Promise<string> {
     if (options?.abortSignal?.aborted) {
@@ -50,7 +45,7 @@ export class OpenAPIAdapter {
         messages,
         temperature: options?.temperature ?? 0.7,
         top_p: options?.topP ?? 0.8,
-        stream: false,
+        stream: options?.stream ?? false,
       };
 
       try {
