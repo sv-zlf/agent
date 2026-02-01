@@ -26,107 +26,69 @@ const logger = createLogger();
 
 /**
  * 过滤流式输出中的工具调用 JSON 代码块
- * 用于实时输出，避免显示工具调用的原始 JSON
  */
 interface StreamFilterState {
   inCodeBlock: boolean;
-  codeBlockType: string | null;
-  processedLength: number; // 已处理并输出的字符数
+  buffer: string;
 }
 
 function createStreamFilter(): {
   filter: (chunk: string) => string;
-  flush: () => string;
 } {
   const state: StreamFilterState = {
     inCodeBlock: false,
-    codeBlockType: null,
-    processedLength: 0,
+    buffer: '',
   };
 
   return {
     filter: (chunk: string): string => {
+      let remaining = state.buffer + chunk;
+      state.buffer = '';
       let result = '';
-      let remaining = chunk;
 
-      // 处理整个 chunk 以保持代码块状态正确
       while (remaining.length > 0) {
         if (!state.inCodeBlock) {
-          // 检测代码块开始
           const codeBlockStart = remaining.match(/```(json|tool)?\s*\n?/);
           if (codeBlockStart) {
             const index = codeBlockStart.index!;
             result += remaining.slice(0, index);
             state.inCodeBlock = true;
-            state.codeBlockType = codeBlockStart[1] || '';
             remaining = remaining.slice(index + codeBlockStart[0].length);
           } else {
-            // 没有代码块，全部输出
             result += remaining;
             remaining = '';
           }
         } else {
-          // 在代码块中，查找结束标记
           const codeBlockEnd = remaining.indexOf('```');
           if (codeBlockEnd !== -1) {
-            // 找到结束标记，跳过代码块内容
             state.inCodeBlock = false;
-            state.codeBlockType = null;
-            // 加上代码块结束标记
-            result += '```\n';
             remaining = remaining.slice(codeBlockEnd + 3);
           } else {
-            // 没有结束标记，跳过整个 chunk
-            remaining = '';
+            state.buffer = remaining;
+            break;
           }
         }
       }
 
-      // 只返回从 processedLength 开始的新增内容
-      const newResult = result.slice(state.processedLength);
-      state.processedLength = result.length;
-      return newResult;
-    },
-    flush: (): string => {
-      // 如果还在代码块中，清空状态
-      state.inCodeBlock = false;
-      state.codeBlockType = null;
-      state.processedLength = 0;
-      return '';
+      return result;
     },
   };
 }
 
 /**
  * 清理 AI 响应文本，移除工具调用的 JSON 代码块
- * 只保留有意义的对话内容
  */
 function cleanResponse(response: string): string {
   let cleaned = response;
 
-  // 移除 ```json 工具调用代码块
   cleaned = cleaned.replace(/```json\s*\n?\s*\{[\s\S]*?\}\s*\n?```/g, '');
-
-  // 移除 ``` 工具调用代码块（没有 json 标记）
   cleaned = cleaned.replace(/```\s*\n?\s*\{[\s\S]*?\}\s*\n?```/g, '');
-
-  // 移除单独的 JSON 工具调用（不在代码块中的）
   cleaned = cleaned.replace(
     /\{[\s]*"tool"[\s]*:[\s]*"[\w]+"[\s]*,[\s]*"parameters"[\s]*:[\s]*\{[\s\S]*?\}\s*\}/g,
     ''
   );
-
-  // 清理多余的空行
   cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
-
-  // 移除开头和结尾的空白
   cleaned = cleaned.trim();
-
-  // 如果清理后为空，返回空字符串
-  // 避免在历史记录中添加无意义的占位符文本
-  if (!cleaned) {
-    return '';
-  }
 
   return cleaned;
 }
@@ -800,8 +762,8 @@ export const agentCommand = new Command('agent')
               let wasInterrupted = false;
               let fullResponse = ''; // 累积流式响应
               let isFirstChunk = true; // 标记是否是第一个 chunk
-              let streamBuffer = ''; // 流式输出缓冲区，用于过滤工具调用
-              const { filter: streamFilter } = createStreamFilter(); // 创建流式过滤器
+              let streamBuffer = ''; // 流式输出缓冲区
+              const { filter: streamFilter } = createStreamFilter(); // 工具调用过滤器
               let hasStreamed = false; // 标记是否已经流式输出过
 
               try {
@@ -812,26 +774,33 @@ export const agentCommand = new Command('agent')
                       abortSignal: abortSignal,
                       stream: true, // 启用流式输出
                       onChunk: (chunk: string) => {
-                        // 累积完整响应（包含所有内容）
+                        // 累积完整响应
                         fullResponse += chunk;
 
-                        // 添加到缓冲区
-                        streamBuffer += chunk;
+                        // 过滤工具调用代码块
+                        const filteredChunk = streamFilter(chunk);
+                        if (!filteredChunk) return;
 
-                        // 过滤工具调用代码块，只输出纯文本内容
-                        const filteredContent = streamFilter(streamBuffer);
+                        // 累积过滤后的内容
+                        streamBuffer += filteredChunk;
 
-                        // 如果有可输出的内容
-                        if (filteredContent) {
-                          // 第一个有效 chunk 到达时，停止 spinner 并输出 emoji 前缀
+                        // 查找完整段落（句末或换行）
+                        const match = streamBuffer.match(/[^.!?\n]*[.!?\n]|[^.!?\n]+$/);
+                        if (!match) return;
+
+                        // 取完整段落
+                        const completeText = streamBuffer.slice(0, match[0].length);
+                        if (completeText) {
                           if (isFirstChunk) {
                             spinner.stop();
                             process.stdout.write(chalk.cyan('● '));
                             isFirstChunk = false;
                           }
-                          // 渲染 markdown 内容
-                          const rendered = renderMarkdown(filteredContent, { colors: true });
+                          // 渲染 markdown
+                          const rendered = renderMarkdown(completeText, { colors: true });
                           process.stdout.write(rendered);
+                          // 移除已渲染内容
+                          streamBuffer = streamBuffer.slice(completeText.length);
                         }
                       },
                     });
