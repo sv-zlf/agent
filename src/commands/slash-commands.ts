@@ -223,22 +223,10 @@ export class CommandManager {
 
     // 检查是否需要使用 AI 生成（有 API adapter）
     if (!context.apiAdapter) {
-      console.log(chalk.gray(`context.apiAdapter = ${context.apiAdapter}`));
       return await this.generateBasicAgentsDocument(context.workingDirectory, agentsFilePath);
     }
 
     console.log(chalk.cyan('🔍 正在分析项目并生成 AGENTS.md...\n'));
-
-    // 调试信息：检查API配置
-    const apiConfig = context.config.getAPIConfig();
-    console.log(chalk.gray(`API base_url: ${apiConfig.base_url}`));
-    if (apiConfig.mode === 'OpenApi') {
-      console.log(chalk.gray(`API model: ${apiConfig.model}`));
-      console.log(chalk.gray(`API key配置: ${apiConfig.api_key ? '已配置' : '未配置'}`));
-    } else {
-      console.log(chalk.gray(`Access Key: ${apiConfig.access_key_id}`));
-      console.log(chalk.gray(`TX Code: ${apiConfig.tx_code}`));
-    }
 
     try {
       // 1. 读取提示词模板
@@ -262,13 +250,10 @@ export class CommandManager {
       promptTemplate = promptTemplate.replace(/\$\{path\}/g, context.workingDirectory);
 
       // 3. 收集项目上下文信息
-      console.log(chalk.gray('开始收集项目上下文...'));
       const projectContext = await this.collectProjectContext(context.workingDirectory);
-      console.log(chalk.gray(`项目上下文收集完成，长度: ${projectContext.length} 字符`));
 
       // 4. 构建发送给 AI 的消息
       const userContent = `${promptTemplate}\n\n## 项目上下文信息\n\n${projectContext}`;
-      console.log(chalk.gray(`用户提示词长度: ${userContent.length} 字符`));
 
       const messages: Message[] = [
         {
@@ -283,27 +268,9 @@ export class CommandManager {
       ];
 
       // 5. 调用 AI 生成文档
-      console.log(chalk.gray('正在调用 AI 生成文档...'));
-      console.log(chalk.gray(`API适配器状态: ${context.apiAdapter ? '可用' : '不可用'}`));
-      console.log(chalk.gray(`API适配器类型: ${context.apiAdapter?.constructor.name}`));
-
       let generatedDoc: string | undefined;
       try {
-        console.log(chalk.gray('准备发送消息到AI...'));
-        console.log(chalk.gray(`消息长度: ${JSON.stringify(messages).length} 字符`));
-
-        // 检查并发控制状态
-        const controller =
-          require('../core/api-concurrency').APIConcurrencyController.getInstance();
-        const status = controller.getStatus();
-        console.log(
-          chalk.gray(
-            `API并发控制状态: 处理中=${status.isProcessing}, 队列长度=${status.queueLength}`
-          )
-        );
-
         // 由于API有并发限制，使用重试机制
-        console.log(chalk.gray('尝试API调用（带重试）...'));
 
         let retryCount = 0;
         const maxRetries = 3;
@@ -316,13 +283,9 @@ export class CommandManager {
               temperature: 0.3, // 较低温度以确保稳定性
               timeout: 90000, // 90秒超时（文档生成任务）
             });
-            console.log(chalk.green(`API调用成功！（尝试 ${retryCount + 1}/${maxRetries})`));
             break; // 成功则跳出重试循环
           } catch (apiError: any) {
             retryCount++;
-            console.log(
-              chalk.yellow(`API调用失败（尝试 ${retryCount}/${maxRetries}）: ${apiError.message}`)
-            );
 
             // 精确判断429错误类型
             if (apiError.message && apiError.message.includes('429')) {
@@ -333,7 +296,6 @@ export class CommandManager {
                 apiError.message.includes('quota') ||
                 apiError.message.includes('limit')
               ) {
-                console.log(chalk.yellow('⏰ API使用已达上限，等待配额重置'));
                 throw apiError; // 配额问题，直接抛出，不重试
               }
 
@@ -344,7 +306,6 @@ export class CommandManager {
                 apiError.message.includes('过高')
               ) {
                 if (retryCount < maxRetries) {
-                  console.log(chalk.gray(`🔄 并发限制，等待 ${retryDelay}ms 后重试...`));
                   await new Promise((resolve) => setTimeout(resolve, retryDelay));
                   retryDelay *= 2; // 指数退避
                 } else {
@@ -353,7 +314,6 @@ export class CommandManager {
               } else {
                 // 其他类型的429错误，有限重试
                 if (retryCount < maxRetries) {
-                  console.log(chalk.gray(`🔄 429错误，等待 ${retryDelay}ms 后重试...`));
                   await new Promise((resolve) => setTimeout(resolve, retryDelay));
                   retryDelay *= 2;
                 } else {
@@ -367,11 +327,7 @@ export class CommandManager {
             }
           }
         }
-
-        console.log(chalk.green(`AI响应成功，文档长度: ${generatedDoc?.length || 0} 字符`));
       } catch (apiError) {
-        console.log(chalk.red(`❌ API调用失败: ${(apiError as Error).message}`));
-        console.log(chalk.gray(`错误详情: ${JSON.stringify(apiError, null, 2)}`));
         throw apiError; // 重新抛出以触发降级逻辑
       }
 
@@ -383,14 +339,12 @@ export class CommandManager {
       await fs.writeFile(agentsFilePath, cleanedDoc, 'utf-8');
 
       console.log(chalk.green(`✓ 已生成项目文档: ${agentsFilePath}`));
-      console.log(chalk.gray(`\n文档大小: ${cleanedDoc?.length || 0} 字符`));
 
       return {
         shouldContinue: false,
       };
     } catch (error) {
       console.log(chalk.red(`✗ 生成文档失败: ${(error as Error).message}\n`));
-      console.log(chalk.gray('提示: 如果 API 不可用，文档将使用基础模板生成\n'));
 
       // 降级到基础模板
       return await this.generateBasicAgentsDocument(context.workingDirectory, agentsFilePath);
@@ -553,12 +507,7 @@ export class CommandManager {
             const truncated = part.content.substring(0, remainingSpace - 50) + '\n...(已截断)';
             selectedParts.push(truncated);
             totalLength += remainingSpace;
-            console.log(chalk.gray(`  ⚠️  ${part.name}: 已截断 (${partLength} -> ${remainingSpace} 字符)`));
-          } else {
-            console.log(chalk.gray(`  ⊘ ${part.name}: 跳过（空间不足）`));
           }
-        } else {
-          console.log(chalk.gray(`  ⊘ ${part.name}: 跳过（低优先级）`));
         }
         // 达到限制后，只保留高优先级的内容
         if (totalLength >= MAX_CONTEXT_LENGTH * 0.9) {
@@ -567,13 +516,10 @@ export class CommandManager {
       } else {
         selectedParts.push(part.content);
         totalLength += partLength;
-        console.log(chalk.gray(`  ✓ ${part.name}: ${partLength} 字符`));
       }
     }
 
     const finalContext = selectedParts.join('\n');
-    console.log(chalk.gray(`\n📊 上下文统计: 总长度 ${finalContext.length} / ${MAX_CONTEXT_LENGTH} 字符`));
-
     return finalContext;
   }
 
