@@ -27,17 +27,17 @@ const DEFAULT_CONFIG: AgentConfig = {
     model: process.env.MODEL_ID || 'DeepSeek-V3-671B_20250725',
     // OpenAPI 配置 (OpenApi 模式)
     api_key: process.env.OPENAPI_KEY || '',
-    timeout: 30000,
+    timeout: 60000,
   },
   agent: {
-    max_context_tokens: 8000,
+    max_context_tokens: 64000,
     max_history: 20,
-    max_iterations: 20,
+    max_iterations: 10,
     auto_approve: false,
-    // 自动压缩配置（默认启用）
+    // 自动压缩配置
     auto_compress: true,
-    compress_threshold: 0.85, // 当上下文达到 85% 时触发压缩
-    compress_reserve: 2000, // 保留 2000 tokens 给输出
+    compress_threshold: 0.7, // 70% 时触发压缩
+    compress_reserve: 4000, // 保留 4000 tokens 给输出
   },
   sessions: {
     max_sessions: 20, // 最多保留20个会话

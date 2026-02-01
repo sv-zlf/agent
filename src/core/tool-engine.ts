@@ -502,109 +502,76 @@ export class ToolEngine {
       }
     };
 
-    const extractJSONObjects = (text: string): string[] => {
-      const result: string[] = [];
-      let i = 0;
-      while (i < text.length) {
-        if (text[i] === '{') {
-          let depth = 0;
-          let j = i;
-          for (; j < text.length; j++) {
-            if (text[j] === '{') depth++;
-            else if (text[j] === '}') {
-              depth--;
-              if (depth === 0) {
-                result.push(text.substring(i, j + 1));
-                break;
-              }
-            }
-          }
-          i = j + 1;
-        } else i++;
-      }
-      return result;
-    };
-
-    // Strategy 1: Code block JSON
-    for (const m of cleaned.matchAll(/```(?:json|tool)?\s*\n?([\s\S]*?)```/g)) {
+    // Strategy 2: Universal parser - extract tool name and params from any format
+    // Handle: <tool_call>toolname>\n<param>value</param>\n</invoke>
+    // Handle: <toolcall>toolname{...}</toolcall>
+    // Handle: {"tool":"toolname","parameters":{...}}
+    const universalRegex =
+      /<(?:tool_call|toolcall|invoke)(?:\s[^>]*)?>([\s\S]*?)<\/(?:tool_call|toolcall|invoke)>/gi;
+    const universalMatches = cleaned.matchAll(universalRegex);
+    for (const m of universalMatches) {
+      // Skip if timeout or max calls reached
       if (calls.length >= 50 || Date.now() - startTime > TIMEOUT) break;
-      const parsed = tryParseJSON(m[1].trim());
-      if (!parsed) continue;
-      if (parsed.tool && parsed.parameters) {
-        addCall(parsed.tool, fixParams(parsed.parameters), parsed.id);
-      } else if (Array.isArray(parsed)) {
-        for (const item of parsed) {
-          if (item.tool && item.parameters) addCall(item.tool, fixParams(item.parameters), item.id);
+
+      // Try to extract tool call from various sub-formats
+      const content = m[1] || m[2] || '';
+      const trimmed = content.trim();
+      if (!trimmed) continue;
+
+      // Strategy 2a: Extract tool name from start, then find params as XML-like tags
+      const xmlFormatMatch = trimmed.match(/^(\w+)\s*>\s*\n*([\s\S]*)$/);
+      if (xmlFormatMatch) {
+        const toolName = xmlFormatMatch[1].toLowerCase();
+        if (knownTools.has(toolName)) {
+          const params = this.extractParamsFromAnyFormat(xmlFormatMatch[2]);
+          if (Object.keys(params).length > 0) {
+            addCall(toolName, fixParams(params));
+            continue;
+          }
+        }
+      }
+
+      // Strategy 2b: Extract tool name and JSON-like params
+      const jsonFormatMatch = trimmed.match(/^(\w+)\s*[\{:]([\s\S]*)$/);
+      if (jsonFormatMatch) {
+        const toolName = jsonFormatMatch[1].toLowerCase();
+        if (knownTools.has(toolName)) {
+          const params = this.extractParamsFromAnyFormat(jsonFormatMatch[2]);
+          if (Object.keys(params).length > 0) {
+            addCall(toolName, fixParams(params));
+            continue;
+          }
+        }
+      }
+
+      // Strategy 2c: Full JSON format
+      const fullJson = tryParseJSON(trimmed);
+      if (fullJson?.tool && fullJson?.parameters) {
+        addCall(fullJson.tool, fixParams(fullJson.parameters), fullJson.id);
+        continue;
+      }
+
+      // Strategy 2d: Extract tool name first, then params from remaining text
+      const toolNameMatch = trimmed.match(/^(\w+)/);
+      if (toolNameMatch) {
+        const toolName = toolNameMatch[1].toLowerCase();
+        if (knownTools.has(toolName)) {
+          const afterName = trimmed.substring(toolNameMatch[0].length);
+          const params = this.extractParamsFromAnyFormat(afterName);
+          if (Object.keys(params).length > 0) {
+            addCall(toolName, fixParams(params));
+            continue;
+          }
         }
       }
     }
 
-    // Strategy 2: <tool_call> or <toolcall> tags
-    for (const m of cleaned.matchAll(
-      /<(?:tool_call|toolcall)>([\s\S]*?)(?:\s*<\/(?:tool_call|toolcall)>|$)/gi
-    )) {
-      if (calls.length >= 50 || Date.now() - startTime > TIMEOUT) break;
-      const content = m[1].trim();
-      if (!content) continue;
-
-      // Format: toolname{...}
-      const styleMatch = content.match(/^(\w+)\s*\{([\s\S]*?)\}$/);
-      if (styleMatch) {
-        const toolName = styleMatch[1].toLowerCase();
-        if (knownTools.has(toolName)) {
-          const params = this.parseParameters(styleMatch[2]);
-          if (Object.keys(params).length > 0) addCall(toolName, params);
-        }
-        continue;
-      }
-
-      // Format: toolname>{...}
-      const malformedMatch = content.match(/^(\w+)\s*>\s*\{([\s\S]*)\}\s*$/);
-      if (malformedMatch) {
-        const toolName = malformedMatch[1].toLowerCase();
-        if (knownTools.has(toolName)) {
-          const jsonText = '{' + malformedMatch[2].replace(/\}\s*$/, '').trim() + '}';
-          const parsed = tryParseJSON(jsonText);
-          if (parsed) {
-            const params = fixParams(parsed.parameters || parsed);
-            if (Object.keys(params).length > 0) addCall(toolName, params);
-          }
-        }
-        continue;
-      }
-
-      // Format: {"tool":"name","parameters":{...}}
-      const parsed = tryParseJSON(content);
-      if (parsed?.tool && parsed?.parameters) {
-        addCall(parsed.tool, fixParams(parsed.parameters), parsed.id);
-        continue;
-      }
-
-      // Format: Multiple independent JSON objects
-      const jsonObjects = extractJSONObjects(content);
-      if (jsonObjects.length > 0) {
-        const merged: Record<string, unknown> = {};
-        for (const objText of jsonObjects) {
-          const obj = tryParseJSON(objText);
-          if (obj) Object.assign(merged, obj);
-        }
-        const toolMatch = content.match(/^(\w+)/);
-        if (
-          toolMatch &&
-          knownTools.has(toolMatch[1].toLowerCase()) &&
-          Object.keys(merged).length > 0
-        ) {
-          addCall(toolMatch[1], fixParams(merged));
-        }
-      }
-    }
-
-    // Strategy 3: ToolName{...} format
+    // Strategy 3: ToolName{...} format (outside tags)
     for (const m of cleaned.matchAll(/\b([A-Z][a-zA-Z0-9]*)\s*\{([\s\S]*?)\}/g)) {
       if (calls.length >= 50 || Date.now() - startTime > TIMEOUT) break;
       const toolName = m[1].toLowerCase();
       if (!knownTools.has(toolName)) continue;
-      if (m[2].includes('(') || m[2].includes(')')) continue;
+      if (m[2].includes('(') && m[2].includes(')')) continue;
       const params = this.parseParameters(m[2]);
       if (Object.keys(params).length > 0) addCall(toolName, params);
     }
@@ -617,6 +584,29 @@ export class ToolEngine {
       const parsed = tryParseJSON(m[0]);
       if (parsed?.tool && parsed?.parameters) {
         addCall(parsed.tool, fixParams(parsed.parameters), parsed.id);
+      }
+    }
+
+    // Strategy 5: Fallback - Handle <tool_call> or <toolcall> formats WITHOUT end tags
+    // Matches: <tool_call>read{...} or <toolcall>read{"..."}
+    const noEndTagRegex = /<(?:tool_call|toolcall)>([\s\S]*?)(?=\s*<[\/\w]|$)/gi;
+    const noEndTagMatches = cleaned.matchAll(noEndTagRegex);
+    for (const m of noEndTagMatches) {
+      if (calls.length >= 50 || Date.now() - startTime > TIMEOUT) break;
+      const content = m[1].trim();
+      if (!content) continue;
+
+      // Try to extract tool name and params
+      const toolNameMatch = content.match(/^(\w+)/);
+      if (toolNameMatch) {
+        const toolName = toolNameMatch[1].toLowerCase();
+        if (knownTools.has(toolName)) {
+          const afterName = content.substring(toolNameMatch[0].length);
+          const params = this.extractParamsFromAnyFormat(afterName);
+          if (Object.keys(params).length > 0) {
+            addCall(toolName, fixParams(params));
+          }
+        }
       }
     }
 
@@ -787,6 +777,88 @@ export class ToolEngine {
   }
 
   /**
+   * 从任意格式提取参数
+   * 支持：JSON、key:value、XML标签、混合格式
+   */
+  private extractParamsFromAnyFormat(text: string): Record<string, unknown> {
+    const params: Record<string, unknown> = {};
+
+    // 1. 尝试 JSON 格式 {"key": "value"}
+    try {
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        if (parsed.parameters) {
+          Object.assign(params, parsed.parameters);
+        } else if (Object.keys(parsed).length > 0) {
+          Object.assign(params, parsed);
+        }
+      }
+    } catch {
+      /* 忽略 */
+    }
+
+    // 2. 如果 JSON 解析失败，尝试解析类似 JSON 的格式 (key: "value" 或 key: value)
+    if (Object.keys(params).length === 0) {
+      try {
+        // 替换单引号为双引号，添加缺失的引号
+        const fixedJson = text
+          .replace(/'/g, '"')
+          .replace(/(\w+):\s*([^"\s,}\]]+)/g, '"$1": "$2"')
+          .replace(/(\w+):\s*"([^"]*)"/g, '"$1": "$2"');
+        const parsed = JSON.parse(`{${fixedJson}}`);
+        Object.assign(params, parsed);
+      } catch {
+        /* 忽略 */
+      }
+    }
+
+    // 3. 尝试 key:value 或 key="value" 格式
+    const keyValueMatches = text.matchAll(/(\w+)\s*[:=]\s*"([^"]*)"/g);
+    for (const m of keyValueMatches) {
+      params[m[1]] = m[2];
+    }
+
+    // 4. 尝试 XML/HTML 标签格式 <key>value</key>
+    const xmlMatches = text.matchAll(/<(\w+)>([\s\S]*?)<\/\1>/g);
+    for (const m of xmlMatches) {
+      const key = m[1];
+      const value = m[2].trim();
+      // 映射 XML 标签到参数名
+      const paramMap: Record<string, string> = {
+        path: 'filePath',
+        filepath: 'filePath',
+        pattern: 'pattern',
+        oldtext: 'oldString',
+        newtext: 'newString',
+        oldstring: 'oldString',
+        newstring: 'newString',
+        command: 'command',
+        content: 'content',
+      };
+      params[paramMap[key.toLowerCase()] || key] = value;
+    }
+
+    // 5. 尝试 key=value (无引号)
+    const bareKeyValueMatches = text.matchAll(/(\w+)\s*=\s*([^\s,}\]]+)/g);
+    for (const m of bareKeyValueMatches) {
+      if (!params[m[1]]) {
+        params[m[1]] = m[2];
+      }
+    }
+
+    // 6. 尝试 key: value (无引号)
+    const colonKeyValueMatches = text.matchAll(/(\w+)\s*:\s*([^\s,}\]]+)/g);
+    for (const m of colonKeyValueMatches) {
+      if (!params[m[1]]) {
+        params[m[1]] = m[2].trim();
+      }
+    }
+
+    return params;
+  }
+
+  /**
    * 获取解析统计
    */
   getParseStats(): {
@@ -820,6 +892,42 @@ export class ToolEngine {
   clearParseCache(): void {
     PARSE_CACHE.clear();
     logger.debug('Parse cache cleared');
+  }
+
+  /**
+   * 验证工具参数
+   * @returns { valid: boolean, error?: string }
+   */
+  validateToolParams(
+    toolName: string,
+    params: Record<string, unknown>
+  ): { valid: boolean; error?: string } {
+    const tool = this.tools.get(toolName.toLowerCase());
+    if (!tool) {
+      return { valid: false, error: `Unknown tool: ${toolName}` };
+    }
+
+    const missingParams: string[] = [];
+    for (const [paramName, paramDef] of Object.entries(tool.parameters)) {
+      if (
+        paramDef.required &&
+        (params[paramName] === undefined || params[paramName] === null || params[paramName] === '')
+      ) {
+        missingParams.push(paramName);
+      }
+    }
+
+    if (missingParams.length > 0) {
+      const allRequired = Object.entries(tool.parameters)
+        .filter(([, p]) => p.required)
+        .map(([p]) => p);
+      return {
+        valid: false,
+        error: `Missing required parameters: ${missingParams.join(', ')}. Required: ${allRequired.join(', ')}`,
+      };
+    }
+
+    return { valid: true };
   }
 
   /**
