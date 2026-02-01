@@ -550,11 +550,36 @@ export class ToolEngine {
     }
 
     // 策略2: 解析 <toolcall> 标签
-    const toolcallRegex = /<toolcall[^>]*>([\s\S]*?)<\/toolcall>/gi;
+    const toolcallRegex = /<toolcall[^>]*>([\s\S]*?)(?:<\/toolcall>|$)/gi;
     while ((match = toolcallRegex.exec(cleanedResponse)) !== null && calls.length < 50) {
       if (Date.now() - parseStartTime > PARSE_TIMEOUT) break;
       try {
-        const content = match[1].trim();
+        let content = match[1].trim();
+
+        // 处理格式: <toolcall>toolname>{"..."} 或 <toolcall>toolname>\n{...}
+        const malformedToolMatch = content.match(/^(\w+)\s*>\s*\{([\s\S]*)\}\s*$/);
+        if (malformedToolMatch) {
+          const toolName = malformedToolMatch[1].toLowerCase();
+          if (knownTools.has(toolName)) {
+            try {
+              // 解析参数 JSON（移除末尾的 }）
+              const paramsContent = malformedToolMatch[2].replace(/\}\s*$/, '').trim();
+              const parsed = JSON.parse(`{${paramsContent}}`);
+              const params = parsed.parameters || parsed;
+              if (Object.keys(params).length > 0) {
+                addCall(
+                  toolName,
+                  fixParamNames(params as Record<string, unknown>),
+                  undefined,
+                  'toolcall-malformed'
+                );
+              }
+            } catch {
+              /* 忽略 */
+            }
+          }
+          continue;
+        }
 
         // 格式: <toolcall>toolname{...}</toolcall>
         const styleMatch = content.match(/^(\w+)\s*\{([\s\S]*?)\}$/);
@@ -576,26 +601,13 @@ export class ToolEngine {
         }
 
         // 格式: <toolcall>{"tool":"name","parameters":{...}}</toolcall>
-        const parsed = JSON.parse(content);
-        if (parsed.tool && parsed.parameters) {
-          addCall(parsed.tool, fixParamNames(parsed.parameters), parsed.id, 'toolcall-json');
-        }
-
-        // 格式: <toolcall>toolname\n{...}</toolcall> (AI 错误格式)
-        if (calls.length === 0) {
-          const lines = content.split('\n').filter((l) => l.trim());
-          if (lines.length >= 2) {
-            const possibleTool = lines[0].trim().toLowerCase();
-            if (knownTools.has(possibleTool)) {
-              try {
-                const jsonContent = lines.slice(1).join('\n');
-                const parsed2 = JSON.parse(jsonContent);
-                addCall(possibleTool, fixParamNames(parsed2), undefined, 'toolcall-malformed');
-              } catch {
-                /* 忽略 */
-              }
-            }
+        try {
+          const parsed = JSON.parse(content);
+          if (parsed.tool && parsed.parameters) {
+            addCall(parsed.tool, fixParamNames(parsed.parameters), parsed.id, 'toolcall-json');
           }
+        } catch {
+          // 忽略 JSON 解析失败
         }
       } catch {
         /* 忽略 */
@@ -750,8 +762,11 @@ export class ToolEngine {
     let parameters: Record<string, unknown> = {};
     const startTime = Date.now();
 
+    // 清理参数字符串：移除首尾空白和换行
+    const cleanedParams = paramsStr.trim();
+
     try {
-      const parsed = JSON.parse(`{${paramsStr}}`);
+      const parsed = JSON.parse(`{${cleanedParams}}`);
       if (parsed.parameters) {
         parameters = parsed.parameters as Record<string, unknown>;
       } else if (Object.keys(parsed).length > 0) {
