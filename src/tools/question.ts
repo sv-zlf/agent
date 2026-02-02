@@ -11,7 +11,7 @@ import { select, multiSelect, input } from '../utils/prompt';
  * 问题选项
  */
 export interface QuestionOption {
-  label: string;      // 显示标签（1-5个词，简洁）
+  label: string; // 显示标签（1-5个词，简洁）
   description: string; // 选项说明
 }
 
@@ -19,11 +19,11 @@ export interface QuestionOption {
  * 问题信息
  */
 export interface QuestionInfo {
-  question: string;             // 完整问题
-  header: string;               // 简短标签（最多30字符）
-  options: QuestionOption[];    // 可选选项
-  multiple?: boolean;           // 是否允许多选
-  custom?: boolean;             // 是否允许自定义输入（默认true）
+  question: string; // 完整问题
+  header: string; // 简短标签（最多30字符）
+  options: QuestionOption[]; // 可选选项
+  multiple?: boolean; // 是否允许多选
+  custom?: boolean; // 是否允许自定义输入（默认true）
 }
 
 /**
@@ -74,52 +74,77 @@ export const QuestionTool: ToolInfo<
   }),
 
   async execute(params, _ctx) {
-    const answers: QuestionAnswer[] = [];
+    // 关键：在提问前需要关闭 raw mode，否则 readline 无法正常工作
+    // raw mode 会阻止标准 readline 的 line 事件
+    const stdin = process.stdin as any;
+    const wasRawMode = stdin.isRaw;
+    try {
+      if (wasRawMode) {
+        stdin.setRawMode(false);
+      }
 
-    for (const q of params.questions) {
-      try {
-        const answer = await askSingleQuestion(q);
-        answers.push(answer);
-      } catch (error) {
-        if (error instanceof QuestionCancelledError) {
-          throw error;
+      const answers = await askQuestions(params.questions);
+
+      // 格式化输出 - 更友好的格式
+      const formatted = params.questions.map((q, i) => {
+        const answer = answers[i];
+
+        if (!answer || answer.length === 0) {
+          return `❓ ${q.question}: [未回答]`;
         }
-        // 其他错误，记录空答案
-        answers.push([]);
+
+        // 如果有选项，显示选项标签
+        if (q.options && q.options.length > 0) {
+          const selectedLabels = answer.join('、');
+          return `✅ ${q.question}: ${selectedLabels}`;
+        }
+
+        // 文本输入
+        return `✅ ${q.question}: ${answer.join(', ')}`;
+      });
+
+      const output =
+        params.questions.length === 1
+          ? formatted.join('\n')
+          : `用户已回答您的问题：\n\n${formatted.join('\n\n')}\n\n您可以继续基于用户的答案进行操作。`;
+
+      return {
+        title: `已提问 ${params.questions.length} 个问题`,
+        output,
+        metadata: {
+          answers,
+        },
+      };
+    } finally {
+      // 恢复 raw mode（如果之前是开启的）
+      if (wasRawMode) {
+        stdin.setRawMode(true);
       }
     }
-
-    // 格式化输出 - 更友好的格式
-    const formatted = params.questions.map((q, i) => {
-      const answer = answers[i];
-
-      if (!answer || answer.length === 0) {
-        return `❓ ${q.question}: [未回答]`;
-      }
-
-      // 如果有选项，显示选项标签
-      if (q.options && q.options.length > 0) {
-        const selectedLabels = answer.join('、');
-        return `✅ ${q.question}: ${selectedLabels}`;
-      }
-
-      // 文本输入
-      return `✅ ${q.question}: ${answer.join(', ')}`;
-    });
-
-    const output = params.questions.length === 1
-      ? formatted.join('\n')
-      : `用户已回答您的问题：\n\n${formatted.join('\n\n')}\n\n您可以继续基于用户的答案进行操作。`;
-
-    return {
-      title: `已提问 ${params.questions.length} 个问题`,
-      output,
-      metadata: {
-        answers,
-      },
-    };
   },
 });
+
+/**
+ * 批量处理问题
+ */
+async function askQuestions(questions: QuestionInfo[]): Promise<QuestionAnswer[]> {
+  const answers: QuestionAnswer[] = [];
+
+  for (const q of questions) {
+    try {
+      const answer = await askSingleQuestion(q);
+      answers.push(answer);
+    } catch (error) {
+      if (error instanceof QuestionCancelledError) {
+        throw error;
+      }
+      // 其他错误，记录空答案
+      answers.push([]);
+    }
+  }
+
+  return answers;
+}
 
 /**
  * 处理单个问题
@@ -160,7 +185,10 @@ async function askSingleQuestion(info: QuestionInfo): Promise<QuestionAnswer> {
       // 检查是否选择了"其他"
       if (selected.some((s) => s.value === '__custom__')) {
         const customAnswer = await input('请输入您的自定义答案');
-        return selected.filter((s) => s.value !== '__custom__').map((s) => s.label).concat(customAnswer ? [customAnswer] : []);
+        return selected
+          .filter((s) => s.value !== '__custom__')
+          .map((s) => s.label)
+          .concat(customAnswer ? [customAnswer] : []);
       }
 
       return selected.map((s) => s.label);

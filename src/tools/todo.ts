@@ -7,6 +7,7 @@ import * as z from 'zod';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
+import chalk from 'chalk';
 import { defineTool } from './tool';
 import { FileOperationError, ErrorCode } from '../errors';
 
@@ -76,34 +77,52 @@ function generateId(): string {
 }
 
 /**
- * 格式化任务列表显示
+ * 格式化任务列表显示（纯文本，适合 AI 和控制台）
  */
-function formatTodoList(todos: TodoItem[]): string {
+function formatTodoList(todos: TodoItem[], useColor = false): string {
   if (todos.length === 0) {
     return '当前没有任务';
   }
 
-  const lines = [`任务列表 (${todos.length} 个任务):\n`];
+  const lines: string[] = [];
   const completedCount = todos.filter((t) => t.done).length;
 
   todos.forEach((todo, index) => {
-    const status = todo.done ? '✓' : '○';
-    const prefix = todo.done ? chalk.gray('~~') : chalk.yellow(`  `);
-    const strikethrough = todo.done ? '~~' : '';
+    const status = todo.done ? '[✓]' : '[ ]';
+    const prefix = todo.done ? '' : `${index + 1}. `;
 
-    lines.push(
-      `${prefix}${index + 1}. [${todo.id.substring(0, 8)}] ${status} ${strikethrough}${todo.content}${strikethrough}~~`
-    );
+    if (useColor) {
+      const coloredStatus = todo.done ? chalk.gray(status) : chalk.yellow(status);
+      const coloredContent = todo.done ? chalk.gray(todo.content) : todo.content;
+      lines.push(`${coloredStatus} ${coloredContent}`);
+    } else {
+      lines.push(`${prefix}${status} ${todo.content}`);
+    }
   });
 
-  if (completedCount > 0) {
-    lines.push(`\n已完成 ${completedCount}/${todos.length} 个任务`);
-  }
+  lines.push('');
+  lines.push(`进度: ${completedCount}/${todos.length} 已完成`);
 
   return lines.join('\n');
 }
 
-import chalk from 'chalk';
+/**
+ * 格式化单个任务的简洁输出
+ */
+function formatTodoSummary(todos: TodoItem[]): string {
+  if (todos.length === 0) {
+    return '暂无任务';
+  }
+
+  const pending = todos.filter((t) => !t.done).length;
+  const completed = todos.filter((t) => t.done).length;
+
+  const parts: string[] = [];
+  if (pending > 0) parts.push(`${pending} 待办`);
+  if (completed > 0) parts.push(`${completed} 已完成`);
+
+  return parts.length > 0 ? parts.join(', ') : '全部完成';
+}
 
 /**
  * TodoWrite 工具 - 创建或更新任务
@@ -171,13 +190,13 @@ export const TodoWriteTool = defineTool('todowrite', {
     const completedCount = updatedTodos.filter((t) => t.done).length;
 
     return {
-      title: `已更新任务列表`,
+      title: `任务列表`,
       output: formatTodoList(updatedTodos),
       metadata: {
         total: updatedTodos.length,
         completed: completedCount,
-        added: newTodos.length,
-        updated: newTodos.length,
+        pending: updatedTodos.length - completedCount,
+        summary: formatTodoSummary(updatedTodos),
       },
     };
   },
@@ -198,19 +217,25 @@ export const TodoReadTool = defineTool('todoread', {
     const todos = await loadTodos();
 
     let filteredTodos = todos;
+    let filterLabel = '全部';
+
     if (args.filter === 'pending') {
       filteredTodos = todos.filter((t) => !t.done);
+      filterLabel = '待办';
     } else if (args.filter === 'completed') {
       filteredTodos = todos.filter((t) => t.done);
+      filterLabel = '已完成';
     }
 
     return {
-      title: `任务列表 (${filteredTodos.length} 个任务)`,
+      title: `任务列表 (${filterLabel})`,
       output: formatTodoList(filteredTodos),
       metadata: {
         total: todos.length,
         pending: todos.filter((t) => !t.done).length,
         completed: todos.filter((t) => t.done).length,
+        filtered: filteredTodos.length,
+        summary: formatTodoSummary(todos),
       },
     };
   },
