@@ -50,3 +50,4 @@ nul
 #   ~/.ggcode/history/      - 对话历史
 #   ~/.ggcode/config.json   - 系统级配置
 /dist-exe/
+/release/

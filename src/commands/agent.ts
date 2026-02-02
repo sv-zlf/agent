@@ -279,6 +279,7 @@ export const agentCommand = new Command('agent')
     // 加载历史记录（可选）
     if (options.history) {
       await contextManager.loadHistory();
+      logger.debug('[启动] 已加载历史记录，等待设置系统提示词后验证');
     }
 
     // 读取版本号

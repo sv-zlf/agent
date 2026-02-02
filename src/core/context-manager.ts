@@ -52,10 +52,17 @@ export class ContextManager {
   addMessage(role: 'user' | 'assistant', content: string): void {
     this.messages.push({ role, content });
 
-    // 限制历史消息数量
+    // 限制历史消息数量，但保留系统消息
     if (this.messages.length > this.maxHistory * 2) {
-      // 保留最近的maxHistory轮对话
-      this.messages = this.messages.slice(-this.maxHistory * 2);
+      // 🔑 修复：保留系统消息，只裁剪非系统消息
+      const systemMessages = this.messages.filter((m) => m.role === 'system');
+      const otherMessages = this.messages.filter((m) => m.role !== 'system');
+      const toKeep = this.maxHistory * 2 - systemMessages.length;
+      if (toKeep > 0) {
+        this.messages = [...systemMessages, ...otherMessages.slice(-toKeep)];
+      } else {
+        this.messages = [...systemMessages];
+      }
     }
 
     // 自动压缩（如果启用）
@@ -87,9 +94,17 @@ export class ContextManager {
   addEnhancedMessage(message: EnhancedMessage): void {
     this.messages.push(message);
 
-    // 限制历史消息数量
+    // 限制历史消息数量，但保留系统消息
     if (this.messages.length > this.maxHistory * 2) {
-      this.messages = this.messages.slice(-this.maxHistory * 2);
+      // 🔑 修复：保留系统消息，只裁剪非系统消息
+      const systemMessages = this.messages.filter((m) => m.role === 'system');
+      const otherMessages = this.messages.filter((m) => m.role !== 'system');
+      const toKeep = this.maxHistory * 2 - systemMessages.length;
+      if (toKeep > 0) {
+        this.messages = [...systemMessages, ...otherMessages.slice(-toKeep)];
+      } else {
+        this.messages = [...systemMessages];
+      }
     }
   }
 
@@ -170,15 +185,24 @@ export class ContextManager {
 
     // 调试日志
     if (this.systemPromptSet) {
-      console.log(`[getContext] 🔍 systemPromptSet=true, this.messages.length=${this.messages.length}`);
+      console.log(
+        `[getContext] 🔍 systemPromptSet=true, this.messages.length=${this.messages.length}`
+      );
       console.log(`[getContext] 🔍 过滤出的 systemMessages.length=${systemMessages.length}`);
-      console.log(`[getContext] 🔍 所有消息角色: ${this.messages.map((m, i) => `${i}:${m.role}`).join(', ')}`);
+      console.log(
+        `[getContext] 🔍 所有消息角色: ${this.messages.map((m, i) => `${i}:${m.role}`).join(', ')}`
+      );
 
       if (systemMessages.length === 0) {
         console.warn('[getContext] ⚠️  systemPromptSet=true 但没有找到 system 消息！');
-        console.warn(`[getContext] ⚠️  this.messages 的类型: ${Array.isArray(this.messages) ? 'Array' : typeof this.messages}`);
+        console.warn(
+          `[getContext] ⚠️  this.messages 的类型: ${Array.isArray(this.messages) ? 'Array' : typeof this.messages}`
+        );
         if (this.messages.length > 0) {
-          console.warn(`[getContext] ⚠️  第一条消息:`, JSON.stringify(this.messages[0]).substring(0, 200));
+          console.warn(
+            `[getContext] ⚠️  第一条消息:`,
+            JSON.stringify(this.messages[0]).substring(0, 200)
+          );
         }
       }
     }
@@ -188,7 +212,9 @@ export class ContextManager {
       const systemMsgs = systemMessages
         .map((msg) => {
           const converted = this.convertToLegacyMessage(msg);
-          console.log(`[getContext] 🔍 转换后: role=${converted.role}, content长度=${converted.content?.length || 0}`);
+          console.log(
+            `[getContext] 🔍 转换后: role=${converted.role}, content长度=${converted.content?.length || 0}`
+          );
           return converted;
         })
         .filter((msg) => {
@@ -205,6 +231,19 @@ export class ContextManager {
 
       result.push(...systemMsgs);
       currentTokens = systemMsgs.reduce((sum, msg) => sum + this.estimateMessageTokens(msg), 0);
+    } else if (this.systemPromptSet) {
+      // 🔑 修复：系统提示词标记为已设置，但没有找到系统消息
+      // 这可能发生在压缩或加载历史后系统消息丢失的情况
+      console.warn('[getContext] ⚠️  系统提示词已设置但消息已丢失！尝试恢复...');
+
+      // 记录当前状态以便调试
+      console.warn(`[getContext] ⚠️  当前消息数量: ${this.messages.length}`);
+      console.warn(
+        `[getContext] ⚠️  最近5条消息: ${this.messages
+          .slice(-5)
+          .map((m, i) => `${i}:${m.role}`)
+          .join(', ')}`
+      );
     }
 
     // 从最新的消息开始倒序添加（排除system消息）
@@ -506,8 +545,9 @@ export class ContextManager {
     // 调试日志
     const systemMsgs = this.messages.filter((m) => m.role === 'system');
     console.log(
-      `[setSystemPrompt] 已设置系统提示词 (${prompt.length} 字符), 当前系统消息数: ${systemMsgs.length}`
+      `[setSystemPrompt] ✅ 已设置系统提示词 (${prompt.length} 字符), 当前系统消息数: ${systemMsgs.length}, messages总数: ${this.messages.length}`
     );
+    console.log(`[setSystemPrompt] 🔍 messages[0].role = ${this.messages[0].role}`);
   }
 
   /**

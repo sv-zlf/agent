@@ -223,6 +223,10 @@ export class ContextCompactor {
   ): Promise<CompactionResult> {
     const originalTokens = this.estimateMessages(messages);
 
+    // 🔑 修复：先分离出系统消息，确保不丢失
+    const originalSystemMessages = messages.filter((m) => m.role === 'system');
+    const hasSystemMessages = originalSystemMessages.length > 0;
+
     try {
       const promptPath =
         config.promptPath || path.join(process.cwd(), 'src/tools/prompts/compaction.txt');
@@ -258,12 +262,23 @@ ${messagesText}`;
         throw new Error('LLM 压缩返回空结果');
       }
 
-      const compressedTokens = this.estimateMessages(compressedMessages);
+      // 🔑 修复：确保系统消息被保留
+      let finalMessages = compressedMessages;
+      if (hasSystemMessages) {
+        const compressedSystemMessages = compressedMessages.filter((m) => m.role === 'system');
+        if (compressedSystemMessages.length === 0) {
+          // LLM 压缩时丢失了系统消息，恢复它们
+          console.warn('[llmCompact] ⚠️  LLM 压缩丢失系统消息，已恢复');
+          finalMessages = [...originalSystemMessages, ...compressedMessages];
+        }
+      }
+
+      const compressedTokens = this.estimateMessages(finalMessages);
       const savedTokens = originalTokens - compressedTokens;
 
       return {
         compressed: true,
-        messages: compressedMessages,
+        messages: finalMessages,
         originalTokens,
         compressedTokens,
         savedTokens,
