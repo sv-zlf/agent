@@ -843,40 +843,106 @@ export class AgentManager {
       return agent.systemPrompt;
     }
 
+    // 1. 加载基础的 agent 提示词
+    let basePrompt = '';
+
     // 优先尝试使用打包的提示词
     const { hasPackedPrompts, getProjectPrompt } = await import('../utils/packed-prompts');
     if (hasPackedPrompts()) {
       const packedPrompt = getProjectPrompt(agentName);
       if (packedPrompt) {
-        return packedPrompt;
+        basePrompt = packedPrompt;
       }
     }
 
     // 回退到文件读取（开发环境）
+    if (!basePrompt) {
+      const fs = await import('fs/promises');
+      const fsSync = await import('fs');
+      const path = await import('path');
+
+      // 检测运行环境：开发环境还是生产环境
+      const isDev = fsSync.existsSync(path.join(process.cwd(), 'src'));
+      const projectPromptsBasePath = path.join(process.cwd(), isDev ? 'src/prompts' : 'dist/prompts');
+
+      const promptFile = path.join(projectPromptsBasePath, `${agentName}.txt`);
+
+      try {
+        const content = await fs.readFile(promptFile, 'utf-8');
+        basePrompt = content;
+      } catch (error) {
+        // 如果找不到文件，使用默认提示词
+        const defaultPromptFile = path.join(projectPromptsBasePath, 'default.txt');
+        try {
+          const content = await fs.readFile(defaultPromptFile, 'utf-8');
+          basePrompt = content;
+        } catch (defaultError) {
+          // 如果连默认文件都没有，返回硬编码的提示词
+          basePrompt = this.getDefaultPrompt();
+        }
+      }
+    }
+
+    // 2. 加载项目文档 (AGENTS.md, CLAUDE.md 等)
+    const projectInstructions = await this.loadProjectInstructions();
+
+    // 3. 组合提示词
+    if (projectInstructions) {
+      return `${basePrompt}\n\n${projectInstructions}`;
+    }
+
+    return basePrompt;
+  }
+
+  /**
+   * 加载项目文档指令
+   * 参考 OpenCode 实现：在项目目录向上查找 AGENTS.md, CLAUDE.md 等文件
+   */
+  private async loadProjectInstructions(): Promise<string> {
     const fs = await import('fs/promises');
+
+    // 要查找的文档文件列表
+    const docFiles = ['AGENTS.md', 'CLAUDE.md', 'CONTEXT.md'];
+
+    // 获取当前工作目录
+    const workingDir = process.cwd();
+
+    const instructions: string[] = [];
+
+    for (const docFile of docFiles) {
+      const docPath = await this.findFileUpwards(docFile, workingDir);
+      if (docPath) {
+        try {
+          const content = await fs.readFile(docPath, 'utf-8');
+          instructions.push(`# Instructions from: ${docPath}\n\n${content}`);
+        } catch (error) {
+          // 忽略读取错误
+        }
+      }
+    }
+
+    return instructions.join('\n\n---\n\n');
+  }
+
+  /**
+   * 从当前目录向上查找文件
+   */
+  private async findFileUpwards(filename: string, startDir: string): Promise<string | null> {
     const fsSync = await import('fs');
     const path = await import('path');
 
-    // 检测运行环境：开发环境还是生产环境
-    const isDev = fsSync.existsSync(path.join(process.cwd(), 'src'));
-    const projectPromptsBasePath = path.join(process.cwd(), isDev ? 'src/prompts' : 'dist/prompts');
+    let currentDir = startDir;
+    const root = path.parse(startDir).root;
 
-    const promptFile = path.join(projectPromptsBasePath, `${agentName}.txt`);
-
-    try {
-      const content = await fs.readFile(promptFile, 'utf-8');
-      return content;
-    } catch (error) {
-      // 如果找不到文件，使用默认提示词
-      const defaultPromptFile = path.join(projectPromptsBasePath, 'default.txt');
-      try {
-        const content = await fs.readFile(defaultPromptFile, 'utf-8');
-        return content;
-      } catch (defaultError) {
-        // 如果连默认文件都没有，返回硬编码的提示词
-        return this.getDefaultPrompt();
+    while (currentDir !== root && currentDir !== path.dirname(currentDir)) {
+      const filePath = path.join(currentDir, filename);
+      if (fsSync.existsSync(filePath)) {
+        return filePath;
       }
+      currentDir = path.dirname(currentDir);
     }
+
+    return null;
   }
 
   /**
