@@ -197,10 +197,21 @@ export class FunctionalAgentManager {
       },
     ];
 
-    return this.executeAgent(FunctionalAgentType.TITLE, context, {
-      maxTokens: 30, // 标题只需要很少的 tokens，30 足够生成简短标题
-      priority: API_PRIORITY.NORMAL, // 使用普通优先级，避免等待太久
-    });
+    // 使用 Promise.race 实现快速超时
+    const timeoutMs = 10000; // 10秒超时
+
+    const executeWithTimeout = async (): Promise<FunctionalAgentResult> => {
+      return this.executeAgent(FunctionalAgentType.TITLE, context, {
+        maxTokens: 30, // 标题只需要很少的 tokens，30 足够生成简短标题
+        priority: API_PRIORITY.HIGH, // 使用高优先级，加快标题生成
+      });
+    };
+
+    const timeoutPromise = new Promise<FunctionalAgentResult>((resolve) =>
+      setTimeout(() => resolve({ success: false, error: '标题生成超时' }), timeoutMs)
+    );
+
+    return Promise.race([executeWithTimeout(), timeoutPromise]);
   }
 
   /**

@@ -102,10 +102,13 @@ export class APIConcurrencyController {
           request.resolve(result);
           logger.debug(`API请求完成: ${request.id}`);
 
-          // 检测429错误并在队列不为空时添加延迟
-          if (this.queue.length > 0) {
-            logger.debug(`队列中还有 ${this.queue.length} 个请求，等待1秒以避免并发限制`);
-            await new Promise((resolve) => setTimeout(resolve, 1000));
+          // 检测429错误并在队列不为空时添加延迟（缩短等待时间）
+          if (this.queue.length > 0 && this.queue.length <= 2) {
+            logger.debug(`队列中还有 ${this.queue.length} 个请求，等待500ms以避免并发限制`);
+            await new Promise((resolve) => setTimeout(resolve, 500));
+          } else if (this.queue.length > 2) {
+            logger.debug(`队列中还有 ${this.queue.length} 个请求，等待800ms以避免并发限制`);
+            await new Promise((resolve) => setTimeout(resolve, 800));
           }
         } catch (error: any) {
           // 只对网络连接错误（非 API 响应错误）做并发控制
