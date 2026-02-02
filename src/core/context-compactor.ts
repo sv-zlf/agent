@@ -267,8 +267,6 @@ ${messagesText}`;
       if (hasSystemMessages) {
         const compressedSystemMessages = compressedMessages.filter((m) => m.role === 'system');
         if (compressedSystemMessages.length === 0) {
-          // LLM 压缩时丢失了系统消息，恢复它们
-          console.warn('[llmCompact] ⚠️  LLM 压缩丢失系统消息，已恢复');
           finalMessages = [...originalSystemMessages, ...compressedMessages];
         }
       }

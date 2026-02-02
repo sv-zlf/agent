@@ -71,9 +71,6 @@ export class ContextManager {
         const result = this.semanticCompactor.quickCompact(this.messages);
         if (result.compressed) {
           this.messages = result.messages;
-          console.log(
-            `上下文已压缩: 节省 ${result.savedTokens} tokens, 移除 ${result.removedCount} 条消息`
-          );
         }
       } else if (this.compactor.needsCompaction(this.messages)) {
         this.compact().catch(() => {});
@@ -183,67 +180,15 @@ export class ContextManager {
     // 首先确保system消息在结果中（如果存在）
     const systemMessages = this.messages.filter((m) => m.role === 'system');
 
-    // 调试日志
-    if (this.systemPromptSet) {
-      console.log(
-        `[getContext] 🔍 systemPromptSet=true, this.messages.length=${this.messages.length}`
-      );
-      console.log(`[getContext] 🔍 过滤出的 systemMessages.length=${systemMessages.length}`);
-      console.log(
-        `[getContext] 🔍 所有消息角色: ${this.messages.map((m, i) => `${i}:${m.role}`).join(', ')}`
-      );
-
-      if (systemMessages.length === 0) {
-        console.warn('[getContext] ⚠️  systemPromptSet=true 但没有找到 system 消息！');
-        console.warn(
-          `[getContext] ⚠️  this.messages 的类型: ${Array.isArray(this.messages) ? 'Array' : typeof this.messages}`
-        );
-        if (this.messages.length > 0) {
-          console.warn(
-            `[getContext] ⚠️  第一条消息:`,
-            JSON.stringify(this.messages[0]).substring(0, 200)
-          );
-        }
-      }
-    }
-
     if (systemMessages.length > 0) {
-      console.log(`[getContext] 🔍 开始转换 ${systemMessages.length} 条系统消息`);
       const systemMsgs = systemMessages
-        .map((msg) => {
-          const converted = this.convertToLegacyMessage(msg);
-          console.log(
-            `[getContext] 🔍 转换后: role=${converted.role}, content长度=${converted.content?.length || 0}`
-          );
-          return converted;
-        })
-        .filter((msg) => {
-          const hasContent = msg.content && msg.content.trim().length > 0;
-          if (!hasContent) {
-            console.warn('[getContext] ⚠️  系统消息被过滤（内容为空）');
-          }
-          return hasContent;
-        });
+        .map((msg) => this.convertToLegacyMessage(msg))
+        .filter((msg) => msg.content && msg.content.trim().length > 0);
 
-      if (systemMsgs.length === 0) {
-        console.warn('[getContext] ⚠️  找到了 system 消息但转换后为空！');
+      if (systemMsgs.length > 0) {
+        result.push(...systemMsgs);
+        currentTokens = systemMsgs.reduce((sum, msg) => sum + this.estimateMessageTokens(msg), 0);
       }
-
-      result.push(...systemMsgs);
-      currentTokens = systemMsgs.reduce((sum, msg) => sum + this.estimateMessageTokens(msg), 0);
-    } else if (this.systemPromptSet) {
-      // 🔑 修复：系统提示词标记为已设置，但没有找到系统消息
-      // 这可能发生在压缩或加载历史后系统消息丢失的情况
-      console.warn('[getContext] ⚠️  系统提示词已设置但消息已丢失！尝试恢复...');
-
-      // 记录当前状态以便调试
-      console.warn(`[getContext] ⚠️  当前消息数量: ${this.messages.length}`);
-      console.warn(
-        `[getContext] ⚠️  最近5条消息: ${this.messages
-          .slice(-5)
-          .map((m, i) => `${i}:${m.role}`)
-          .join(', ')}`
-      );
     }
 
     // 从最新的消息开始倒序添加（排除system消息）
@@ -541,13 +486,6 @@ export class ContextManager {
     // 添加新的系统提示词到开头
     this.messages.unshift({ role: 'system', content: prompt });
     this.systemPromptSet = true;
-
-    // 调试日志
-    const systemMsgs = this.messages.filter((m) => m.role === 'system');
-    console.log(
-      `[setSystemPrompt] ✅ 已设置系统提示词 (${prompt.length} 字符), 当前系统消息数: ${systemMsgs.length}, messages总数: ${this.messages.length}`
-    );
-    console.log(`[setSystemPrompt] 🔍 messages[0].role = ${this.messages[0].role}`);
   }
 
   /**
@@ -559,7 +497,7 @@ export class ContextManager {
       await fs.ensureDir(path.dirname(this.historyFile));
       await fs.writeFile(this.historyFile, JSON.stringify(legacyMessages, null, 2), 'utf-8');
     } catch (error) {
-      console.warn(`保存历史记录失败: ${(error as Error).message}`);
+      // 静默处理历史记录保存失败
     }
   }
 
@@ -591,25 +529,17 @@ export class ContextManager {
         if (loadedSystemMessages.length > 0) {
           // 历史中有系统消息，使用历史中的
           this.systemPromptSet = true;
-          console.log(
-            `[loadHistory] 已加载 ${loaded.length} 条消息，其中 ${loadedSystemMessages.length} 条系统消息`
-          );
         } else if (existingSystemMessages.length > 0) {
           // 历史中没有系统消息，但内存中有，恢复它们
           this.messages.unshift(...existingSystemMessages);
           this.systemPromptSet = true;
-          console.log(
-            `[loadHistory] 已加载 ${loaded.length} 条消息，历史中没有系统消息，已恢复 ${existingSystemMessages.length} 条系统消息`
-          );
         } else {
           // 历史和内存中都没有系统消息
           this.systemPromptSet = false;
-          console.log(`[loadHistory] 已加载 ${loaded.length} 条消息，但没有系统消息`);
         }
       }
     } catch (error) {
       // 静默处理历史记录加载失败
-      console.warn(`[loadHistory] 加载失败: ${(error as Error).message}`);
     }
   }
 
@@ -627,7 +557,7 @@ export class ContextManager {
     try {
       await fs.remove(this.historyFile);
     } catch (error) {
-      console.warn(`清空历史记录失败: ${(error as Error).message}`);
+      // 静默处理历史记录清空失败
     }
   }
 

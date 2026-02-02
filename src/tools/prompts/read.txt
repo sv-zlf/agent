@@ -17,7 +17,7 @@ Reads a file from the filesystem.
 
 **Options:**
 - `offset`: Start line (0-based, default: 0)
-- `limit`: Max lines to read (default: 2000)
+- `limit`: Max lines to read (default: 1000)
 
 **Examples:**
 ```json

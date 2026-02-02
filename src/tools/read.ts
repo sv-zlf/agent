@@ -9,7 +9,7 @@ import * as path from 'path';
 import { defineTool } from './tool';
 import { truncateOutput } from '../utils/truncation';
 
-const DEFAULT_READ_LIMIT = 2000;
+const DEFAULT_READ_LIMIT = 1000;
 const MAX_LINE_LENGTH = 2000;
 
 export const ReadTool = defineTool('read', {
@@ -18,7 +18,7 @@ export const ReadTool = defineTool('read', {
   parameters: z.object({
     filePath: z.string().describe('要读取的文件的绝对路径'),
     offset: z.coerce.number().optional().describe('开始读取的行号（从0开始）'),
-    limit: z.coerce.number().optional().describe('要读取的行数（默认为2000）'),
+    limit: z.coerce.number().optional().describe('要读取的行数（默认为1000）'),
   }),
   async execute(args, _ctx) {
     const { filePath, offset = 0, limit = DEFAULT_READ_LIMIT } = args;
