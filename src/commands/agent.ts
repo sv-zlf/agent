@@ -79,17 +79,30 @@ function createStreamFilter(): {
 }
 
 /**
- * 清理 AI 响应文本，移除工具调用的 JSON 代码块
+ * 清理响应文本，移除工具调用格式
  */
 function cleanResponse(response: string): string {
   let cleaned = response;
 
+  // 移除 JSON 代码块格式的工具调用
   cleaned = cleaned.replace(/```json\s*\n?\s*\{[\s\S]*?\}\s*\n?```/g, '');
   cleaned = cleaned.replace(/```\s*\n?\s*\{[\s\S]*?\}\s*\n?```/g, '');
+
+  // 移除标准 JSON 格式的工具调用
   cleaned = cleaned.replace(
     /\{[\s]*"tool"[\s]*:[\s]*"[\w]+"[\s]*,[\s]*"parameters"[\s]*:[\s]*\{[\s\S]*?\}\s*\}/g,
     ''
   );
+
+  // 移除 XML 格式的工具调用
+  cleaned = cleaned.replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, '');
+  cleaned = cleaned.replace(/<toolcall>[\s\S]*?<\/toolcall>/gi, '');
+  cleaned = cleaned.replace(/<invoke>[\s\S]*?<\/invoke>/gi, '');
+
+  // 移除函数式格式的工具调用（如 glob(...)）
+  cleaned = cleaned.replace(/\b[a-z][a-z0-9]*\s*\([^)]*\)/gi, '');
+
+  // 清理多余的空行
   cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
   cleaned = cleaned.trim();
 
@@ -168,10 +181,61 @@ function printCompactToolCall(
   params: Record<string, unknown>,
   _toolEngine: any
 ): void {
-  const paramsStr = Object.entries(params)
-    .map(([k, v]) => `${k}=${JSON.stringify(v)}`)
-    .join(', ');
-  console.log(chalk.yellow('● ') + chalk.cyan(tool) + (paramsStr ? `(${paramsStr})` : ''));
+  let display = '';
+
+  // 根据工具类型选择关键参数
+  switch (tool) {
+    case 'glob':
+    case 'grep':
+      // 搜索类工具只显示 pattern
+      if (params.pattern) {
+        display = chalk.cyan(String(params.pattern));
+      }
+      break;
+    case 'read':
+      // 读取类工具只显示 filePath
+      if (params.filePath) {
+        const fp = String(params.filePath);
+        display = chalk.cyan(fp.length > 40 ? '...' + fp.slice(-37) : fp);
+      }
+      break;
+    case 'edit':
+    case 'multiedit':
+      // 编辑类工具显示文件路径
+      if (params.filePath) {
+        const fp = String(params.filePath);
+        display = chalk.cyan(fp.length > 40 ? '...' + fp.slice(-37) : fp);
+      }
+      break;
+    case 'bash':
+      // bash 只显示命令摘要
+      if (params.command) {
+        const cmd = String(params.command);
+        display = chalk.cyan(cmd.length > 40 ? cmd.slice(0, 37) + '...' : cmd);
+      }
+      break;
+    case 'write':
+      if (params.filePath) {
+        const fp = String(params.filePath);
+        display = chalk.cyan(fp.length > 40 ? '...' + fp.slice(-37) : fp) + chalk.gray(' (new)');
+      }
+      break;
+    default:
+      // 其他工具使用简洁的参数摘要
+      const paramKeys = Object.keys(params);
+      if (paramKeys.length === 0) {
+        display = '';
+      } else if (paramKeys.length === 1) {
+        const [k, v] = Object.entries(params)[0];
+        display = `${chalk.cyan(k)}=${JSON.stringify(v).slice(0, 30)}`;
+      } else {
+        // 多参数只显示第一个
+        const [k, v] = Object.entries(params)[0];
+        display = `${chalk.cyan(k)}=${JSON.stringify(v).slice(0, 20)}...`;
+      }
+  }
+
+  console.log(chalk.yellow('● ') + chalk.cyan(tool) + (display ? ' ' + display : ''));
 }
 
 function printToolCompactResult(
