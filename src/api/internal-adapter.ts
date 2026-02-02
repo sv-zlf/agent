@@ -57,9 +57,9 @@ export class InternalAPIAdapter {
       stream: false,
       model_config: {
         model: this.config.model,
-        repetition_penalty: options?.repetitionPenalty ?? 1.05,
-        temperature: options?.temperature ?? 0.95,
-        top_p: options?.topP ?? 0.9,
+        repetition_penalty: options?.repetitionPenalty ?? 1.0,
+        temperature: options?.temperature ?? 0.3,
+        top_p: options?.topP ?? 0.8,
         top_k: options?.topK ?? 20,
       },
     };
@@ -210,9 +210,9 @@ export class InternalAPIAdapter {
       stream: true,
       model_config: {
         model: this.config.model,
-        repetition_penalty: options?.repetitionPenalty ?? 1.05,
-        temperature: options?.temperature ?? 0.95,
-        top_p: options?.topP ?? 0.9,
+        repetition_penalty: options?.repetitionPenalty ?? 1.0,
+        temperature: options?.temperature ?? 0.3,
+        top_p: options?.topP ?? 0.8,
         top_k: options?.topK ?? 20,
       },
     };
