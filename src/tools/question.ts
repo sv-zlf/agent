@@ -89,16 +89,31 @@ export const QuestionTool: ToolInfo<
       }
     }
 
-    // 格式化输出
+    // 格式化输出 - 更友好的格式
     const formatted = params.questions.map((q, i) => {
       const answer = answers[i];
-      const answerText = answer && answer.length > 0 ? answer.join(', ') : 'Unanswered';
-      return `"${q.question}"="${answerText}"`;
+
+      if (!answer || answer.length === 0) {
+        return `❓ ${q.question}: [未回答]`;
+      }
+
+      // 如果有选项，显示选项标签
+      if (q.options && q.options.length > 0) {
+        const selectedLabels = answer.join('、');
+        return `✅ ${q.question}: ${selectedLabels}`;
+      }
+
+      // 文本输入
+      return `✅ ${q.question}: ${answer.join(', ')}`;
     });
 
+    const output = params.questions.length === 1
+      ? formatted.join('\n')
+      : `用户已回答您的问题：\n\n${formatted.join('\n\n')}\n\n您可以继续基于用户的答案进行操作。`;
+
     return {
-      title: `Asked ${params.questions.length} question${params.questions.length > 1 ? 's' : ''}`,
-      output: `用户已回答您的问题：${formatted.join(', ')}。您可以继续基于用户的答案进行操作。`,
+      title: `已提问 ${params.questions.length} 个问题`,
+      output,
       metadata: {
         answers,
       },
