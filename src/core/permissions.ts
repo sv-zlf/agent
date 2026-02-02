@@ -43,7 +43,7 @@ export interface PermissionRequest {
  */
 export class PermissionManager {
   private rules: PermissionRule[] = [];
-  private defaultAction: PermissionAction = PermissionAction.ALLOW;
+  private defaultAction: PermissionAction = PermissionAction.ASK;  // 默认需要用户确认，而不是自动允许
 
   /**
    * 添加权限规则

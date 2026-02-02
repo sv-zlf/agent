@@ -898,6 +898,12 @@ export const agentCommand = new Command('agent')
                 break; // 退出工具调用循环，等待用户输入
               }
 
+              // 调试日志：显示检测到的工具调用
+              logger.debug(`检测到 ${toolCalls.length} 个工具调用`);
+              toolCalls.forEach((call, index) => {
+                logger.debug(`  [${index + 1}] ${call.tool}`);
+              });
+
               // 开启 raw mode 以支持 P 键中断（工具执行期间）
               if (!currentRl.input.isRaw) {
                 currentRl.input.setRawMode(true);
