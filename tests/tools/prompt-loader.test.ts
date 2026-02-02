@@ -135,7 +135,7 @@ describe('工具提示词加载器', () => {
       const prompt = await loadToolPrompt('read');
 
       expect(prompt).toContain('Usage');
-      expect(prompt).toContain('Recommendations');
+      expect(prompt).toContain('Best Practices');
       expect(prompt).toContain('filePath');
     });
 
@@ -154,7 +154,7 @@ describe('工具提示词加载器', () => {
       expect(prompt).toContain('Usage');
       expect(prompt).toContain('oldString');
       expect(prompt).toContain('newString');
-      expect(prompt).toContain('exact string matching');
+      expect(prompt).toContain('must match file content exactly');
     });
 
     it('glob 提示词应该包含模式示例', async () => {
@@ -177,8 +177,8 @@ describe('工具提示词加载器', () => {
       const prompt = await loadToolPrompt('bash');
 
       expect(prompt).toContain('Usage');
-      expect(prompt).toContain('Allowed Use Cases');
-      expect(prompt).toContain('NOT Recommended For');
+      expect(prompt).toContain('Best Practices');
+      expect(prompt).toContain('When NOT to use');
     });
   });
 });

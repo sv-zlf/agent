@@ -3,8 +3,8 @@ import * as os from 'os';
 
 export { Logger, createLogger } from './logger';
 export { BackupManager, createBackupManager } from './backup';
-export { select, confirm, question, multiSelect } from './prompt';
-export type { SelectOption, SelectConfig } from './prompt';
+export { select, confirm, input, multiSelect, textInput } from './prompt';
+export type { SelectOption, SelectConfig, InputConfig } from './prompt';
 export { truncateOutput, cleanupOldTruncationFiles, formatTruncateStats } from './truncation';
 export type { TruncateOptions, TruncateResult, TruncateStats } from './truncation';
 export {

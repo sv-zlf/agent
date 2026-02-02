@@ -1,119 +1,77 @@
 /**
  * GG CODE - 工具提示词加载器
- * 从 src/tools/prompts/tools/ 目录加载工具的详细使用说明
+ * 从 src/prompts/_tools/ 目录加载工具的详细使用说明
+ * 优先文件系统，打包提示词作为生产环境回退
  */
 
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import { getToolPrompt, hasPackedPrompts } from './packed-prompts';
 
-/**
- * 工具提示词缓存
- */
 const promptCache = new Map<string, string>();
 
-/**
- * 获取工具提示词文件路径（相对于 __dirname）
- */
 function getToolPromptPath(toolId: string): string {
-  // 修复路径：prompts 文件在 src/tools/prompts/ 目录下，不是 tools 子目录
-  return path.join(__dirname, '../tools/prompts', `${toolId}.txt`);
+  return path.join(__dirname, '../prompts/_tools', `${toolId}.txt`);
 }
 
-/**
- * 加载工具提示词
- * @param toolId 工具ID (如 'read', 'write', 'edit')
- * @returns 工具的详细使用说明文本，如果文件不存在则返回空字符串
- */
 export async function loadToolPrompt(toolId: string): Promise<string> {
-  // 检查缓存
   if (promptCache.has(toolId)) {
     return promptCache.get(toolId)!;
   }
 
-  // 优先尝试使用打包的提示词
-  const { hasPackedPrompts, getToolPrompt } = await import('./packed-prompts');
-  if (hasPackedPrompts()) {
-    const packedPrompt = getToolPrompt(toolId);
-    if (packedPrompt) {
-      promptCache.set(toolId, packedPrompt);
-      return packedPrompt;
-    }
-  }
-
-  // 开发环境回退到文件加载
+  // 优先从文件系统加载（开发环境）
+  const promptPath = getToolPromptPath(toolId);
   try {
-    const promptPath = getToolPromptPath(toolId);
     const content = await fs.readFile(promptPath, 'utf-8');
-
-    // 缓存结果
     promptCache.set(toolId, content);
     return content;
-  } catch (error) {
-    // 文件不存在或读取失败，返回空字符串
+  } catch {
+    // 回退到打包提示词（生产环境）
+    if (hasPackedPrompts()) {
+      const packedPrompt = getToolPrompt(toolId);
+      if (packedPrompt) {
+        promptCache.set(toolId, packedPrompt);
+        return packedPrompt;
+      }
+    }
     return '';
   }
 }
 
-/**
- * 清除提示词缓存
- * 用于开发时热重载
- */
 export function clearPromptCache(): void {
   promptCache.clear();
 }
 
-/**
- * 批量加载多个工具的提示词
- */
 export async function loadToolPrompts(toolIds: string[]): Promise<Record<string, string>> {
   const prompts: Record<string, string> = {};
-
   await Promise.all(
     toolIds.map(async (toolId) => {
       prompts[toolId] = await loadToolPrompt(toolId);
     })
   );
-
   return prompts;
 }
 
-/**
- * 检查工具提示词文件是否存在
- */
 export async function hasToolPrompt(toolId: string): Promise<boolean> {
-  // 优先检查打包的提示词
-  const { hasPackedPrompts, getToolPrompt } = await import('./packed-prompts');
-  if (hasPackedPrompts() && getToolPrompt(toolId)) {
-    return true;
-  }
-
-  // 开发环境检查文件
+  // 检查文件系统
   try {
     const promptPath = getToolPromptPath(toolId);
     await fs.access(promptPath);
     return true;
   } catch {
-    return false;
+    // 回退到打包提示词
+    return hasPackedPrompts() && !!getToolPrompt(toolId);
   }
 }
 
-/**
- * 获取工具提示词文件的修改时间
- * 用于判断缓存是否过期
- */
 export async function getPromptModTime(toolId: string): Promise<Date | null> {
-  // 优先检查打包的提示词
-  const { hasPackedPrompts, getToolPrompt } = await import('./packed-prompts');
-  if (hasPackedPrompts() && getToolPrompt(toolId)) {
-    return new Date();
-  }
-
-  // 开发环境检查文件
+  // 检查文件系统
   try {
     const promptPath = getToolPromptPath(toolId);
     const stats = await fs.stat(promptPath);
     return stats.mtime;
   } catch {
-    return null;
+    // 打包提示词返回当前时间
+    return hasPackedPrompts() && getToolPrompt(toolId) ? new Date() : null;
   }
 }

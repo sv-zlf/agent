@@ -1,0 +1,28 @@
+## write
+
+Creates a new file or completely overwrites an existing file.
+
+**Usage:**
+- Creating new files
+- Completely replacing file content
+
+**Parameters:**
+- `filePath` (required): Absolute path to the file
+- `content` (required): Complete file content to write
+
+**Example:**
+```json
+{
+  "tool": "write",
+  "parameters": {
+    "filePath": "H:/Project/agent/src/new-file.ts",
+    "content": "export const hello = 'world';"
+  }
+}
+```
+
+**Best Practices:**
+- Always use absolute paths
+- For small changes to existing files, use `edit` instead
+- Content must be the complete file, not a fragment
+- Parent directories are created automatically

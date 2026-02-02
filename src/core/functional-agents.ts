@@ -8,7 +8,6 @@ import * as path from 'path';
 import type { IAPIAdapter } from '../api';
 import type { Message } from '../types';
 import { executeAPIRequest, API_PRIORITY } from './api-concurrency';
-import { hasPackedPrompts, getProjectPrompt } from '../utils/packed-prompts';
 
 /**
  * 功能性 Agent 类型
@@ -46,28 +45,17 @@ export class FunctionalAgentManager {
 
   constructor(apiAdapter: IAPIAdapter, promptsDir?: string) {
     this.apiAdapter = apiAdapter;
-    this.promptsDir = promptsDir || path.join(process.cwd(), 'src/tools/prompts');
+    this.promptsDir = promptsDir || path.join(process.cwd(), 'src/prompts');
   }
 
   /**
    * 加载功能性 Agent 的 prompt
-   * 优先使用打包的 prompts，如果不存在则从文件系统读取
    */
   async loadPrompt(type: FunctionalAgentType): Promise<string> {
-    // 1. 优先使用打包的 prompts
-    if (hasPackedPrompts()) {
-      const packedPrompt = getProjectPrompt(type);
-      if (packedPrompt) {
-        return packedPrompt;
-      }
-    }
-
-    // 2. 回退到文件系统读取（开发环境）
-    const promptPath = path.join(this.promptsDir, `${type}.txt`);
+    const promptPath = path.join(this.promptsDir, 'system', `${type}.txt`);
 
     try {
-      const content = await fs.readFile(promptPath, 'utf-8');
-      return content;
+      return await fs.readFile(promptPath, 'utf-8');
     } catch (error) {
       throw new Error(`Failed to load prompt for ${type}: ${(error as Error).message}`);
     }

@@ -1,0 +1,52 @@
+## batch
+
+Executes multiple tool calls in parallel, significantly improving efficiency.
+
+**When to use:**
+- Multiple independent operations
+- Parallel file reads or searches
+- Reducing round-trip time
+
+**When NOT to use:**
+- Sequential operations with dependencies
+- Nested batch calls (not allowed)
+
+**Parameters:**
+- `tool_calls` (required): Array of tool call objects
+
+**Example:**
+```json
+{
+  "tool": "batch",
+  "parameters": {
+    "tool_calls": [
+      {
+        "tool": "read",
+        "parameters": {
+          "filePath": "H:/Project/agent/src/app.ts"
+        }
+      },
+      {
+        "tool": "read",
+        "parameters": {
+          "filePath": "H:/Project/agent/src/utils.ts"
+        }
+      },
+      {
+        "tool": "grep",
+        "parameters": {
+          "pattern": "interface User",
+          "path": "H:/Project/agent/src"
+        }
+      }
+    ]
+  }
+}
+```
+
+**Best Practices:**
+- Batch independent operations together
+- Group related file reads or searches
+- Do not use Batch for sequential operations
+- Check results to identify success/failure
+- Up to 25 tool calls can be batched at once

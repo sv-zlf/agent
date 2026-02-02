@@ -1,0 +1,82 @@
+## Tool Calling Format
+
+**CRITICAL**: Every tool call MUST be in a separate JSON code block with the exact format below.
+
+### Single Tool Format
+
+```json
+{
+  "tool": "toolName",
+  "parameters": {
+    "param1": "value1",
+    "param2": "value2"
+  }
+}
+```
+
+### Multiple Tools Format (Array)
+
+```json
+[
+  {
+    "tool": "read",
+    "parameters": {
+      "filePath": "/path/to/file1"
+    }
+  },
+  {
+    "tool": "read",
+    "parameters": {
+      "filePath": "/path/to/file2"
+    }
+  }
+]
+```
+
+### ❌ FORBIDDEN FORMATS (NEVER USE)
+
+- `glob(pattern="*.json")` - Function call syntax
+- `read{filePath: "..."}` - Object literal syntax
+- `ToolName(...)` - Function notation
+- `<toolcall>...</toolcall>` - XML tags
+- Mixing text with JSON: `I'll read the file. {"tool": "read", ...}`
+- Tool name outside JSON object
+
+**ANY format that looks like a function call is WRONG. You MUST use JSON format.**
+
+### ✅ CORRECT EXAMPLES
+
+**Read a file:**
+```json
+{
+  "tool": "read",
+  "parameters": {
+    "filePath": "H:/Project/agent/src/index.ts"
+  }
+}
+```
+
+**Edit a file:**
+```json
+{
+  "tool": "edit",
+  "parameters": {
+    "filePath": "H:/Project/agent/src/index.ts",
+    "oldString": "const x = 1;",
+    "newString": "const x = 2;"
+  }
+}
+```
+
+## Tool Naming Rules
+
+1. **Tool names are lowercase**: `read`, `write`, `edit`, `glob`, `grep`, `bash`
+2. **Parameters are camelCase**: `filePath`, `oldString`, `newString`, `pattern`
+3. **Paths must be absolute**: `H:/Project/agent/src/` (use forward slashes)
+
+## Response Format Rules
+
+- **ALWAYS use JSON code blocks** - Wrap EVERY tool call in ` ```json ... ``` `
+- **NO text before/after tool calls** - Keep tool calls separate from explanations
+- **Batch independent tools** - Use array format for multiple independent operations
+- **Read before editing** - Always read file before making changes

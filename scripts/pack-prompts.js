@@ -13,25 +13,9 @@ const outputFile = path.join(rootDir, 'src', 'utils', 'packed-prompts.ts');
 
 console.log('🔖 打包提示词文件...');
 
-// 读取项目级提示词（src/prompts）
-const projectPrompts = {};
-const projectPromptsDir = path.join(rootDir, 'src', 'prompts');
-if (fs.existsSync(projectPromptsDir)) {
-  const items = fs.readdirSync(projectPromptsDir);
-  for (const item of items) {
-    const itemPath = path.join(projectPromptsDir, item);
-    if (fs.statSync(itemPath).isFile() && item.endsWith('.txt')) {
-      const key = item.replace('.txt', '');
-      const content = fs.readFileSync(itemPath, 'utf-8');
-      projectPrompts[key] = content;
-      console.log(`  ✓ project/${key}`);
-    }
-  }
-}
-
-// 读取工具级提示词（src/tools/prompts）
+// 读取工具级提示词（src/prompts/_tools）
 const toolPrompts = {};
-const toolsDir = path.join(rootDir, 'src', 'tools', 'prompts');
+const toolsDir = path.join(rootDir, 'src', 'prompts', '_tools');
 if (fs.existsSync(toolsDir)) {
   const toolFiles = fs.readdirSync(toolsDir);
   for (const toolFile of toolFiles) {
@@ -39,8 +23,52 @@ if (fs.existsSync(toolsDir)) {
       const toolKey = toolFile.replace('.txt', '');
       const content = fs.readFileSync(path.join(toolsDir, toolFile), 'utf-8');
       toolPrompts[toolKey] = content;
-      console.log(`  ✓ tool/${toolKey}`);
+      console.log(`  ✓ tools/${toolKey}`);
     }
+  }
+}
+
+// 读取项目级提示词（src/prompts 下除 _tools 和 _base 外的 txt 文件）
+const projectPrompts = {};
+const projectDirs = ['agents', 'system'];
+for (const dir of projectDirs) {
+  const dirPath = path.join(rootDir, 'src', 'prompts', dir);
+  if (fs.existsSync(dirPath)) {
+    const files = fs.readdirSync(dirPath);
+    for (const file of files) {
+      if (file.endsWith('.txt')) {
+        const key = `${dir}/${file.replace('.txt', '')}`;
+        const content = fs.readFileSync(path.join(dirPath, file), 'utf-8');
+        projectPrompts[key] = content;
+        console.log(`  ✓ project/${key}`);
+      }
+    }
+  }
+}
+
+// 读取基础组件提示词（_base 目录）
+const baseDir = path.join(rootDir, 'src', 'prompts', '_base');
+if (fs.existsSync(baseDir)) {
+  const files = fs.readdirSync(baseDir);
+  for (const file of files) {
+    if (file.endsWith('.txt')) {
+      const key = `_base/${file.replace('.txt', '')}`;
+      const content = fs.readFileSync(path.join(baseDir, file), 'utf-8');
+      projectPrompts[key] = content;
+      console.log(`  ✓ project/${key}`);
+    }
+  }
+}
+
+// 读取根目录的提示词文件（default.txt 等）
+const rootPromptFiles = ['default.txt'];
+for (const file of rootPromptFiles) {
+  const filePath = path.join(rootDir, 'src', 'prompts', file);
+  if (fs.existsSync(filePath)) {
+    const key = file.replace('.txt', '');
+    const content = fs.readFileSync(filePath, 'utf-8');
+    projectPrompts[key] = content;
+    console.log(`  ✓ project/${key}`);
   }
 }
 

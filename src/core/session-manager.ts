@@ -104,17 +104,17 @@ export class SessionManager {
    */
   async createSession(
     title: string = 'New Session',
-    agentType: string = 'default',
+    agentType: string = 'build',
     parentID?: string
   ): Promise<Session> {
     // 检查会话数量限制
     await this.enforceSessionLimits();
 
     // 验证agentType
-    const validAgentTypes = ['default', 'explore', 'build', 'plan'];
+    const validAgentTypes = ['build', 'explore', 'plan'];
     if (!validAgentTypes.includes(agentType)) {
       console.log(`⚠️ 无效的agent类型: ${agentType}，使用默认值`);
-      agentType = 'default';
+      agentType = 'build';
     }
     const sessionId = this.generateId();
 
@@ -301,7 +301,7 @@ export class SessionManager {
    * 获取当前会话的 agent 类型
    */
   getAgent(): string {
-    return this.getCurrentSession()?.agentType || 'default';
+    return this.getCurrentSession()?.agentType || 'build';
   }
 
   /**
@@ -767,7 +767,7 @@ export class SessionManager {
       lastActiveAt: Date.now(),
       historyFile: sessionFile,
       contextFile: contextFile,
-      agentType: data.info?.agentType || 'default',
+      agentType: data.info?.agentType || 'build',
       parentID: data.info?.parentID,
       messageCount: data.messages?.length || 0,
       stats: data.info?.stats,

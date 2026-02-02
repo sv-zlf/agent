@@ -1,0 +1,33 @@
+## edit
+
+Performs precise string replacement in a file. Use for single edits to a single file.
+
+**Usage:**
+- Editing ONE location in ONE file
+- Making precise string replacements
+
+**When NOT to use:**
+- Multiple edits to the same file → use `multiedit`
+- Creating new files → use `write`
+
+**Parameters:**
+- `filePath` (required): Absolute path to the file
+- `oldString` (required): Exact text to replace (must match file content exactly)
+- `newString` (required): New text to insert
+
+**Example:**
+```json
+{
+  "tool": "edit",
+  "parameters": {
+    "filePath": "H:/Project/agent/src/config.ts",
+    "oldString": "const VERSION = '1.0.0';",
+    "newString": "const VERSION = '2.0.0';"
+  }
+}
+```
+
+**Important Notes:**
+- `oldString` must match file content exactly (including whitespace)
+- Always read the file first to get the exact content
+- Use `multiedit` for multiple changes to the same file

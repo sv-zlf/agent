@@ -11,14 +11,14 @@ This is **GG CODE** - a TypeScript CLI application that implements an AI-powered
 - TypeScript (Node.js >= 16.0.0)
 - Commander.js for CLI interface
 - Custom internal network API with double JSON serialization
-- Session-based conversation management
-- Interactive TUI with keyboard shortcuts
+- Session-based conversation management with isolated histories
+- Interactive TUI with keyboard shortcuts and P-key interrupt
 
 ## Common Commands
 
 ```bash
 # Development and Building
-npm run build               # Compile TypeScript to dist/
+npm run build               # Compile TypeScript to dist/ (includes prompt packing)
 npm run typecheck           # Type check without emitting files
 npm run agent               # Run the main agent CLI
 npm run agent -- -y         # Auto-approve all tool calls
@@ -43,6 +43,8 @@ npm run clean                # Clean all temp files
 npm run clean:dist            # Clean only dist/
 ```
 
+**Single test execution:** Run specific test file with `npm test -- path/to/test.test.ts`
+
 ## Code Architecture
 
 ### Core System Architecture
@@ -56,6 +58,7 @@ Core Components:
     ├── ToolEngine          - Tool registration and execution
     ├── ContextManager      - Conversation history with token limits
     ├── ContextCompactor    - Smart context compression
+    ├── SemanticCompactor   - Semantic-aware compression
     ├── SessionManager      - Multi-session isolation
     ├── AgentOrchestrator   - AI agent orchestration
     └── InterruptManager    - P-key interrupt handling
@@ -65,83 +68,69 @@ API Layer (ChatAPIAdapter)
 Internal Network API (double JSON serialization)
 ```
 
-### Key Components
+### Tool System (`src/tools/`)
 
-**Tool Engine** (`src/core/tool-engine.ts`)
+**Available Tools:**
+- **File Operations**: `read`, `write`, `edit`, `multiedit`
+- **Search**: `glob`, `grep`
+- **Execution**: `bash`
+- **Advanced**: `task`, `batch`, `question`, `todowrite/todoread/tododelete/todoclear`
 
-- Central registry for all tools (Read, Edit, Write, Glob, Grep, Bash, etc.)
-- Tool permission levels: `safe`, `local-modify`, `network`, `dangerous`
-- Tools with `safe` permission auto-execute without confirmation
-- Default timeout: 30s, max: 120s
-- Enhanced tools include smart features (file suggestions, binary detection)
+**Tool Definition Pattern:**
+```typescript
+export const MyTool = defineTool('toolname', {
+  description: 'Tool description',
+  parameters: z.object({
+    param: z.string().describe('Parameter description')
+  }),
+  async execute(args, ctx) {
+    // Tool implementation
+    return {
+      title: 'Operation title',
+      output: 'Result output',
+      metadata: {}
+    };
+  }
+});
+```
 
-**Context Management** (`src/core/context-manager.ts`)
+**Tool Prompts:** Individual tool descriptions are in `src/tools/prompts/*.txt` and are packed into `src/utils/packed-prompts.ts` at build time by `scripts/pack-prompts.js`.
 
-- Dual message format support: legacy `Message` and enhanced `EnhancedMessage`
-- Session-isolated history files (`.agent-history-{sessionId}.json`)
-- System prompt tracking with `systemPromptSet` flag
-- Token estimation for context management
-- Automatic pruning when exceeding limits
+**Permission System:**
+- `safe` - Auto-approved (Read, Glob, Grep, TodoRead, Batch)
+- `local-modify` - Requires confirmation (Write, Edit, MultiEdit)
+- `network` - Requires confirmation (Task)
+- `dangerous` - Requires confirmation (Bash)
 
-**Context Compactor** (`src/core/context-compactor.ts`)
+### Context Management
 
-- Intelligent pruning: protects recent 4000 tokens of tool calls
-- Two-stage compression: trim tool outputs, then remove old messages
-- Preserves last 2 conversation rounds completely
-- Protects certain tools from being pruned
-- Configurable compression thresholds
+**Message Formats:**
+- **Legacy** (`Message`): Simple role/content format for backward compatibility
+- **Enhanced** (`EnhancedMessage`): Multi-part messages with parts (text, file, tool_call, tool_result, reasoning, system)
 
-**Session Manager** (`src/core/session-manager.ts`)
+**Context Compression:** Two strategies:
+1. **ContextCompactor**: Rule-based pruning, protects recent 4000 tokens of tool calls
+2. **SemanticCompactor**: Semantic-aware compression with importance evaluation
 
-- Multi-session support with isolated histories
-- Session persistence in `.agent-sessions/` directory
-- Session types: default, explore, build, plan
-- Auto-switch to another session when deleting current
+Both preserve:
+- System prompts
+- Last 2 conversation rounds
+- Recent tool call metadata
+
+### Session Management (`src/core/session-manager.ts`)
+
+- Multi-session support with isolated history files
+- Session types: `default`, `explore`, `build`, `plan`
+- Automatic title generation after first user message
+- Session summary with code change statistics
 - Inactive session cleanup (configurable age threshold)
+- Auto-switch to another session when deleting current
 
-**Interrupt Manager** (`src/core/interrupt.ts`)
+**Session Storage:** `.agent-sessions/{sessionId}.json`
 
-- P-key interrupt support during AI thinking or tool execution
-- Graceful cleanup with readline recreation
-- Global singleton pattern
+### API Layer (`src/api/`)
 
-**Agent Orchestrator** (`src/core/agent.ts`)
-
-- Multi-agent coordination (default, explore, build, plan, general)
-- Permission-based tool approval workflow
-- Session state management
-- Iterative tool calling until completion or max iterations
-
-**Slash Commands** (`src/commands/slash-commands.ts`)
-
-- `/init` - Create/update project documentation (AGENTS.md)
-- `/models [model]` - List or switch AI models
-- `/session new/list/switch/delete` - Session management
-- `/compress on/off/manual/status` - Context compression control
-- `/tokens` - Display token usage statistics
-- `/test` - Test interactive selection features
-
-**Interactive Prompts** (`src/utils/prompt.ts`)
-
-- `select()` - Single-choice menu with arrow key navigation
-- `multiSelect()` - Multi-choice with space toggle
-- `confirm()` - Yes/no confirmation dialog
-- `question()` - Text input with default value
-- Raw mode keyboard handling (↑↓, Enter, ESC, 1-9 shortcuts)
-
-### Configuration System
-
-Configuration file: `~/.ggcode/config.json` or `.ggrc.json`
-
-Key sections:
-
-- `api` - API endpoint, auth headers, model settings
-- `agent` - Context limits, backup settings, file size limits, max iterations
-- `prompts` - System prompt template paths
-
-**Critical: Double JSON Serialization**
-The internal API requires nested JSON:
-
+**Double JSON Serialization** (Internal API - A4011LM01):
 ```typescript
 {
   Data_cntnt: JSON.stringify({
@@ -153,71 +142,23 @@ The internal API requires nested JSON:
 }
 ```
 
-### Tool Permission System
+**API Modes:**
+- `A4011LM01` - Internal network API with double JSON
+- `OpenApi` - Standard OpenAI-compatible API
+- `MockApi` - Testing with predefined responses
+- `RecordingApi` - Record/playback sessions
 
-Four permission levels determine auto-approval behavior:
+### Interactive System
 
-1. **`safe`** - Auto-approved (Read, Glob, Grep)
-2. **`local-modify`** - Requires confirmation (Write, Edit, MakeDirectory)
-3. **`network`** - Requires confirmation (network operations)
-4. **`dangerous`** - Requires confirmation (Bash)
+**Slash Commands** (`src/commands/slash-commands.ts`):
+- `/init` - Create/update project documentation (AGENTS.md)
+- `/models [model]` - List or switch AI models
+- `/session new/list/switch/delete/[id]` - Session management
+- `/compress on/off/manual/status` - Context compression control
+- `/tokens` - Display token usage statistics
+- `/setting` - Interactive parameter configuration
 
-User can approve: once, all (for session), or reject.
-
-### Message System
-
-**Legacy Format** (backward compatible):
-
-```typescript
-interface Message {
-  role: 'user' | 'assistant' | 'system';
-  content: string;
-}
-```
-
-**Enhanced Format** (new, multi-part messages):
-
-```typescript
-interface EnhancedMessage {
-  id: string;
-  role: 'user' | 'assistant' | 'system';
-  parts: MessagePart[]; // Multiple parts per message
-  timestamp: number;
-  agent?: string;
-}
-```
-
-Message parts can be: text, file, tool_call, tool_result, reasoning, system
-
-### Code Patterns
-
-**Factory Pattern**: Core components use `create*()` factory functions
-**Singleton Pattern**: ConfigManager, InterruptManager, AgentManager
-**Event-Driven**: Bus-based event system for cross-component communication
-**Async/Await**: All I/O operations are async
-**Error Handling**: Custom error types with error codes
-
-### Agent Flow
-
-1. Initialize session manager, load or create session
-2. Load session-specific history with `contextManager.setSessionId()`
-3. Set system prompt from agent template
-4. Display interactive banner with available commands
-5. Enter readline loop with raw mode for single-key detection
-6. On user input:
-   - Check for slash commands
-   - Check for special commands (exit, clear, tools)
-   - Otherwise, treat as user message
-7. Multi-round tool execution loop:
-   - Call AI API with context
-   - Parse tool calls from response
-   - For each tool: check permission → ask user if needed → execute
-   - Feed results back to AI
-   - Repeat until no tool calls or max iterations
-8. Save history to session-specific file
-
-### Keyboard Shortcuts
-
+**Keyboard Shortcuts** (`src/utils/prompt.ts`):
 - **P key** - Interrupt AI thinking or tool execution
 - **Ctrl+C** - Exit program
 - **↑/↓** - Navigate interactive menus
@@ -226,22 +167,156 @@ Message parts can be: text, file, tool_call, tool_result, reasoning, system
 - **Enter** - Confirm selection
 - **ESC** - Cancel/exit
 
-### File Structure Highlights
+**Interactive Prompts:**
+- `select()` - Single-choice menu
+- `multiSelect()` - Multi-choice with space toggle
+- `input()` - Simple text input
+- `textInput()` - Advanced text input with validation
+- `confirm()` - Yes/no confirmation
 
-- `src/core/` - All core business logic components
-- `src/commands/` - CLI command implementations (agent.ts is main entry)
-- `src/tools/` - Built-in and enhanced tool definitions
-- `src/tools/prompts/` - Agent system prompt templates
-- `src/types/message.ts` - Enhanced message system with parts
-- `src/utils/prompt.ts` - Interactive TUI prompts
-- `src/prompts/` - Project-level prompt templates
-- `.agent-sessions/` - Session data (gitignored)
+### Configuration
+
+**Config Files:** `~/.ggcode/config.json` or `.ggrc.json`
+
+**Key Sections:**
+```json
+{
+  "api": {
+    "mode": "A4011LM01",
+    "base_url": "http://...",
+    "model": "model-name"
+  },
+  "agent": {
+    "max_context_tokens": 8000,
+    "max_history": 20,
+    "max_iterations": 20,
+    "auto_approve": false
+  },
+  "prompts": {
+    "system": "path/to/system.txt",
+    "agents": {
+      "default": "path/to/default.txt",
+      "explore": "path/to/explore.txt"
+    }
+  }
+}
+```
 
 ### Important Implementation Details
 
-1. **Session Isolation**: Each conversation gets unique history file, preventing cross-contamination
-2. **Context Compression**: Automatically triggered when approaching token limits, intelligently prunes old tool outputs
-3. **Permission Caching**: User's "approve all" choice persists for session duration
-4. **Tool Timeout**: Each tool call has configurable timeout with abort signal support
-5. **Interrupt Handling**: Cleanly stops mid-operation, recreates readline to clear buffer
-6. **Token Estimation**: Separate estimators for Chinese (2 chars/token) vs English (4 chars/token)
+**Prompt Packing:**
+- Tool prompts in `src/tools/prompts/*.txt`
+- Project prompts in `src/prompts/*.txt` (deleted, now packed)
+- Both packed into `src/utils/packed-prompts.ts` by `scripts/pack-prompts.js`
+- Build process: `npm run build` runs `pack-prompts.js && tsc`
+
+**Session Isolation:**
+- Each conversation gets unique session ID
+- History file: `.agent-history-{sessionId}.json`
+- Sessions stored in `~/.ggcode/sessions/` directory
+
+**Token Estimation:**
+- Chinese: 2 characters/token
+- English: 4 characters/token
+
+**Interrupt Handling:**
+- Global singleton `InterruptManager`
+- P-key during AI thinking or tool execution
+- Graceful cleanup with readline recreation
+
+### Code Patterns
+
+**Factory Pattern:** Core components use `create*()` functions:
+- `createToolEngine()`
+- `createContextManager()`
+- `createSessionManager()`
+
+**Singleton Pattern:**
+- `ConfigManager`
+- `InterruptManager`
+- `AgentManager`
+
+**Event-Driven:** Bus-based event system for cross-component communication
+
+### Agent Types
+
+**Available Agents:**
+- `default` - General-purpose coding assistant
+- `explore` - Read-only codebase exploration
+- `build` - Build specialist
+- `plan` - Planning mode (experimental)
+
+### Tool Registration
+
+Tools are defined in `src/tools/*.ts` and registered in `src/tools/index.ts`. The `ToolEngine` handles:
+- Permission checking
+- Auto-approval caching
+- Timeout management (default 30s, max 120s)
+- Output truncation for large results
+
+### File Structure
+
+```
+src/
+├── api/                    # API adapters (ChatAPIAdapter, etc.)
+├── commands/               # CLI commands
+│   ├── agent.ts           # Main agent command
+│   └── slash-commands.ts  # Slash command handlers
+├── config/                 # Configuration management
+├── core/                   # Core business logic
+│   ├── agent.ts           # Agent orchestration
+│   ├── context-manager.ts
+│   ├── context-compactor.ts
+│   ├── semantic-compactor.ts
+│   ├── session-manager.ts
+│   ├── tool-engine.ts
+│   └── interrupt.ts
+├── prompts/                # Project-level prompt templates
+│   └── init.txt           # Initialization template
+├── tools/                  # Tool definitions
+│   ├── *.ts               # Tool implementations
+│   └── prompts/           # Tool description files
+├── types/                  # Type definitions
+│   └── message.ts         # Message formats
+└── utils/                  # Utility functions
+    ├── prompt.ts          # Interactive prompts
+    ├── packed-prompts.ts # Auto-generated prompt pack
+    └── tool-prompt-loader.ts
+```
+
+### Recent Changes
+
+**Question Tool (`src/tools/question.ts`):**
+- New tool for AI to ask users questions during execution
+- Supports single-choice, multi-choice, and text input
+- Marked as `safe` permission (auto-executes without pre-approval)
+
+**Prompt System Refactor:**
+- `question()` → `input()` for simple text input
+- `input()` → `textInput()` for advanced input with validation
+- Clearer naming: `input` for simple cases, `textInput` for complex ones
+
+**System Prompt Updates:**
+- Added `question` tool to available tools list
+- Updated tool permission classifications
+- Enhanced user confirmation rules
+
+### Testing
+
+**Test Files:**
+- `tests/tools.test.ts` - Tool system tests
+- `tests/tools-validation.test.ts` - Tool validation tests
+- `tests/tools/prompt-loader.test.ts` - Prompt loading tests
+
+**Run single test:** `npm test -- tools.test.ts`
+**Watch mode:** `npm run test:watch`
+
+### Development Workflow
+
+1. Make changes to source files
+2. Run `npm run typecheck` to verify types
+3. Run `npm run build` to compile (includes prompt packing)
+4. Run `npm test` to verify tests
+5. Test manually with `npm run agent`
+
+**Important:** Always run `npm run build` after modifying `.txt` prompt files to regenerate `packed-prompts.ts`.

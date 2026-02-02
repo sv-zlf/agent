@@ -8,7 +8,7 @@ import * as fsSync from 'fs';
 import * as path from 'path';
 import chalk from 'chalk';
 import type { Message } from '../types';
-import { select, confirm, question, multiSelect, getConfigPath } from '../utils';
+import { select, confirm, input, multiSelect, textInput, getConfigPath } from '../utils';
 import type { Session } from '../core/session-manager';
 
 /**
@@ -915,12 +915,12 @@ export class CommandManager {
     switch (command) {
       case 'status': {
         const currentSession = sessionManager.getCurrentSession();
-        const agent = currentSession?.agentType || 'default';
+        const agent = currentSession?.agentType || 'build';
 
         console.log(chalk.cyan('\n📋 会话状态:\n'));
-        console.log(chalk.gray(`  当前会话: ${currentSession?.title || 'Default Session'}`));
+        console.log(chalk.gray(`  当前会话: ${currentSession?.title || 'New Session'}`));
         console.log(chalk.gray(`  Agent 类型: ${agent}`));
-        console.log(chalk.gray(`  会话 ID: ${currentSession?.id || 'default'}`));
+        console.log(chalk.gray(`  会话 ID: ${currentSession?.id || 'new'}`));
 
         // 显示摘要信息
         if (currentSession?.summary) {
@@ -1385,7 +1385,7 @@ export class CommandManager {
     config: any,
     pauseKeyListener?: () => () => void
   ): Promise<CommandResult> {
-    const { select, input } = await import('../utils/prompt');
+    const { select } = await import('../utils/prompt');
 
     // 暂停按键监听器
     const resumeKeyListener = pauseKeyListener ? pauseKeyListener() : () => {};
@@ -1432,7 +1432,7 @@ export class CommandManager {
 
       const rule = validation[paramName];
 
-      const value = await input({
+      const value = await textInput({
         message: `请输入 ${rule.description} 的值 (${rule.min}-${rule.max}, 默认 ${rule.default}):`,
         validate: (val: string) => {
           if (!val.trim()) {
@@ -1665,7 +1665,7 @@ export class CommandManager {
 
     // 测试输入
     console.log(chalk.yellow('测试 3: 文本输入\n'));
-    const name = await question('请输入你的名字', 'Guest');
+    const name = await input('请输入你的名字', 'Guest');
 
     console.log(chalk.green(`你好, ${name}!\n`));
 

@@ -1,3 +1,5 @@
+# Init Agent
+
 You are analyzing a codebase to create/update AGENTS.md. Generate ONLY a valid Markdown document.
 
 ## Output Format Requirements

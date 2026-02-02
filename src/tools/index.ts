@@ -14,6 +14,7 @@ import { TaskTool } from './task';
 import { TodoWriteTool, TodoReadTool, TodoDeleteTool, TodoClearTool } from './todo';
 import { BatchTool } from './batch';
 import { MultiEditTool } from './multiedit';
+import { QuestionTool } from './question';
 import type { ToolDefinition } from '../types';
 
 /**
@@ -33,6 +34,7 @@ export const tools = {
   todoclear: TodoClearTool,
   batch: BatchTool,
   multiedit: MultiEditTool,
+  question: QuestionTool,
 };
 
 /**
@@ -82,7 +84,7 @@ async function toolToDefinition(tool: any): Promise<ToolDefinition> {
   // 创建 ToolDefinition 兼容格式
   return {
     name: formatToolName(tool.id),
-    description: info.description,
+    description: (info as any).shortDescription || info.description,
     category: getCategory(tool.id),
     permission: getPermission(tool.id),
     parameters,
@@ -124,6 +126,7 @@ export * from './tool';
 export * from './todo';
 export * from './batch';
 export * from './multiedit';
+export * from './question';
 
 /**
  * 获取所有工具信息
@@ -152,12 +155,11 @@ export async function generateToolsDescription(): Promise<string> {
   const lines: string[] = [];
 
   for (const [id, tool] of Object.entries(tools)) {
-    // 获取工具的原始定义描述（使用 promise 立即解析获取）
     const initResult = await tool.init();
-    const originalDesc = (initResult as any).shortDescription || initResult.description;
-    // 提取第一句作为简短描述
-    const desc = originalDesc.split('\n')[0].split('.')[0];
-    lines.push(`- **${id}**: ${desc}`);
+    // 优先使用 shortDescription（原始简短描述）
+    const desc = (initResult as any).shortDescription || initResult.description;
+    const firstLine = desc.split('\n')[0].split('.')[0];
+    lines.push(`- **${id}**: ${firstLine}`);
   }
 
   return lines.join('\n');
@@ -232,6 +234,7 @@ function getCategory(toolId: string): ToolDefinition['category'] {
     tododelete: 'system',
     todoclear: 'system',
     batch: 'system',
+    question: 'system',
   };
   return categories[toolId] || 'system';
 }
@@ -251,6 +254,7 @@ function getPermission(toolId: string): ToolDefinition['permission'] {
     tododelete: 'local-modify',
     todoclear: 'local-modify',
     batch: 'safe',
+    question: 'safe',
   };
   return permissions[toolId] || 'safe';
 }
@@ -277,6 +281,7 @@ export function overrideToolPermission(
     tododelete: 'local-modify',
     todoclear: 'local-modify',
     batch: 'safe',
+    question: 'safe',
   };
   permissions[toolId] = permission;
 }

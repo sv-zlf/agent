@@ -234,9 +234,10 @@ export async function confirm(message: string, defaultValue: boolean = true): Pr
 }
 
 /**
- * 问答提示符 - 支持自定义输入
+ * 文本输入提示符
+ * 简单的 readline 输入，支持默认值
  */
-export async function question(message: string, defaultValue?: string): Promise<string> {
+export async function input(message: string, defaultValue?: string): Promise<string> {
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
@@ -369,10 +370,10 @@ export interface InputConfig {
 }
 
 /**
- * 创建交互式输入
- * 回车确认，Ctrl+C 取消
+ * 创建交互式文本输入
+ * 回车确认，Ctrl+C 取消，支持实时显示和验证
  */
-export async function input(config: InputConfig): Promise<string> {
+export async function textInput(config: InputConfig): Promise<string> {
   const { message, default: defaultValue, validate } = config;
 
   const stdin = process.stdin as tty.ReadStream;

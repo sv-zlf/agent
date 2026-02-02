@@ -1,0 +1,37 @@
+## task
+
+Launches a specialized subagent to handle complex, multi-step tasks autonomously.
+
+**When to use:**
+- Complex, multi-step tasks requiring autonomous execution
+- Tasks requiring broad codebase navigation
+- When main context is too large and focused exploration is needed
+
+**When NOT to use:**
+- Reading specific files → use `read` directly
+- Searching specific patterns → use `glob`/`grep` directly
+- Simple 2-3 file operations → use tools directly
+
+**Parameters:**
+- `description` (required): Brief task description (3-5 words)
+- `prompt` (required): Detailed task instructions
+- `subagent_type` (required): Type of subagent to use
+  - `explore`: File search specialist for codebase exploration
+
+**Example:**
+```json
+{
+  "tool": "task",
+  "parameters": {
+    "subagent_type": "explore",
+    "description": "Find auth-related files",
+    "prompt": "Find all files related to authentication in the codebase. Look for files containing 'auth', 'login', 'password', 'token'. Report the file paths found."
+  }
+}
+```
+
+**Best Practices:**
+- Be specific and clear in task description
+- Provide detailed instructions in the prompt
+- Use for tasks requiring autonomous execution
+- Use explore agent for codebase exploration

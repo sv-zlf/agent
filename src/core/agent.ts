@@ -746,25 +746,20 @@ export interface IAgentConfig {
  * Agent 注册表
  */
 export const AGENTS: Record<string, IAgentConfig> = {
-  default: {
-    name: 'default',
-    description: '默认的 AI 编程助手，可以执行所有操作',
+  build: {
+    name: 'build',
+    description: 'AI 编程助手 - 编写、修改、测试和部署代码',
     mode: 'primary',
   },
   explore: {
     name: 'explore',
-    description: '代码探索专家，只进行只读操作',
+    description: '代码探索专家 - 只读模式，分析和理解代码库',
     mode: 'all',
     permissions: ['read', 'glob', 'grep'],
   },
-  build: {
-    name: 'build',
-    description: '构建和部署专家',
-    mode: 'primary',
-  },
   plan: {
     name: 'plan',
-    description: '规划模式，只允许分析和规划，不允许修改代码',
+    description: '规划专家 - 只读模式，创建详细的实现计划',
     mode: 'primary',
     permissions: ['read', 'glob', 'grep'],
   },
@@ -816,7 +811,7 @@ export class AgentManager {
    * 获取默认 agent
    */
   getDefaultAgent(): IAgentConfig {
-    return this.agents.get('default')!;
+    return this.agents.get('build')!;
   }
 
   /**
@@ -844,50 +839,90 @@ export class AgentManager {
       return agent.systemPrompt;
     }
 
-    // 1. 加载基础的 agent 提示词
+    // 使用新的 PromptBuilder 加载提示词
+    try {
+      const { getPromptBuilder } = await import('../prompts');
+      const promptBuilder = getPromptBuilder();
+
+      // 映射 agent 名称到提示词类型
+      const agentType = this.mapToAgentType(agentName);
+      const config = {
+        agentType,
+        workingDirectory: process.cwd(),
+        allowedTools: agent.permissions,
+      };
+
+      const basePrompt = await promptBuilder.buildSystemPrompt(config);
+      const projectInstructions = await this.loadProjectInstructions();
+
+      if (projectInstructions) {
+        return `${basePrompt}\n\n${projectInstructions}`;
+      }
+
+      return basePrompt;
+    } catch (error) {
+      // 回退到旧的文件加载方式
+      return this.loadAgentPromptLegacy(agentName);
+    }
+  }
+
+  /**
+   * 映射 agent 名称到提示词类型
+   */
+  private mapToAgentType(agentName: string): 'build' | 'explore' | 'plan' {
+    switch (agentName) {
+      case 'explore':
+        return 'explore';
+      case 'plan':
+        return 'plan';
+      case 'build':
+      case 'default':
+      default:
+        return 'build';
+    }
+  }
+
+  /**
+   * 旧的文件加载方式（回退用）
+   */
+  async loadAgentPromptLegacy(agentName: string): Promise<string> {
+    const { hasPackedPrompts, getProjectPrompt } = await import('../utils/packed-prompts');
     let basePrompt = '';
 
-    // 优先尝试使用打包的提示词
-    const { hasPackedPrompts, getProjectPrompt } = await import('../utils/packed-prompts');
     if (hasPackedPrompts()) {
-      const packedPrompt = getProjectPrompt(agentName);
+      const packedPrompt = getProjectPrompt(agentName) || getProjectPrompt('default');
       if (packedPrompt) {
         basePrompt = packedPrompt;
       }
     }
 
-    // 回退到文件读取（开发环境）
     if (!basePrompt) {
       const fs = await import('fs/promises');
       const fsSync = await import('fs');
       const path = await import('path');
 
-      // 检测运行环境：开发环境还是生产环境
       const isDev = fsSync.existsSync(path.join(process.cwd(), 'src'));
-      const projectPromptsBasePath = path.join(process.cwd(), isDev ? 'src/prompts' : 'dist/prompts');
+      const projectPromptsBasePath = path.join(
+        process.cwd(),
+        isDev ? 'src/prompts' : 'dist/prompts'
+      );
 
       const promptFile = path.join(projectPromptsBasePath, `${agentName}.txt`);
+      const defaultPromptFile = path.join(projectPromptsBasePath, 'default.txt');
 
       try {
-        const content = await fs.readFile(promptFile, 'utf-8');
-        basePrompt = content;
-      } catch (error) {
-        // 如果找不到文件，使用默认提示词
-        const defaultPromptFile = path.join(projectPromptsBasePath, 'default.txt');
+        basePrompt = await fs.readFile(promptFile, 'utf-8');
+      } catch {
         try {
-          const content = await fs.readFile(defaultPromptFile, 'utf-8');
-          basePrompt = content;
-        } catch (defaultError) {
-          // 如果连默认文件都没有，返回硬编码的提示词
+          basePrompt = await fs.readFile(defaultPromptFile, 'utf-8');
+        } catch {
           basePrompt = this.getDefaultPrompt();
         }
       }
     }
 
-    // 2. 加载项目文档 (AGENTS.md, CLAUDE.md 等)
     const projectInstructions = await this.loadProjectInstructions();
 
-    // 3. 组合提示词
     if (projectInstructions) {
       return `${basePrompt}\n\n${projectInstructions}`;
     }
@@ -964,7 +999,11 @@ export class AgentManager {
     let currentDir = startDir;
     const searched = new Set<string>();
 
-    while (currentDir && currentDir !== path.dirname(currentDir) && currentDir.startsWith(projectRoot)) {
+    while (
+      currentDir &&
+      currentDir !== path.dirname(currentDir) &&
+      currentDir.startsWith(projectRoot)
+    ) {
       for (const file of docFiles) {
         const filePath = path.join(currentDir, file);
         if (!searched.has(filePath) && fsSync.existsSync(filePath)) {
@@ -995,7 +1034,14 @@ export class AgentManager {
     const path = require('path');
     const fsSync = require('fs');
 
-    const rootIndicators = ['.git', 'package.json', '.ggrc.json', 'tsconfig.json', 'Cargo.toml', 'go.mod'];
+    const rootIndicators = [
+      '.git',
+      'package.json',
+      '.ggrc.json',
+      'tsconfig.json',
+      'Cargo.toml',
+      'go.mod',
+    ];
 
     let currentDir = startDir;
     const root = path.parse(startDir).root;

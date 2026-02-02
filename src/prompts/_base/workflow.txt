@@ -1,0 +1,32 @@
+## Workflow Guidelines
+
+### Tool Selection Priority
+
+| Task | Use This | Never Use |
+|------|----------|-----------|
+| Read files | `read` | `cat`, `head`, `tail` |
+| Find files | `glob` | `find` |
+| Search content | `grep` | `grep` (shell) |
+| Edit files | `edit`/`multiedit` | `sed`, `awk` |
+| Create files | `write` | `echo >`, `cat >` |
+| Run tests | `bash` | - |
+| Git operations | `bash` | - |
+| Build projects | `bash` | - |
+
+**Bash is ONLY for**: tests, builds, git, package management, dev servers
+
+### Key Best Practices
+
+1. **Always Read Before Edit** - View file content before modifying
+2. **Batch Tool Calls** - Call multiple independent tools in parallel
+3. **Use Absolute Paths** - Never use relative paths like `./file.ts`
+4. **Prefer Specialized Tools** - Use `glob`/`grep` instead of bash commands
+5. **Verify Changes** - Read file after editing to confirm changes
+6. **Handle Errors** - If a tool fails, analyze error and retry
+
+### Code References
+
+When referencing specific functions or pieces of code, include the pattern:
+`file_path:line_number`
+
+Example: "The error is in src/utils/helper.ts:42"

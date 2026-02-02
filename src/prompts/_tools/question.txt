@@ -1,0 +1,49 @@
+## question
+
+Asks the user questions during execution to gather preferences or requirements.
+
+**When to use:**
+- Gathering user preferences
+- Clarifying ambiguous instructions
+- Getting decisions on implementation choices
+- Offering choices to the user
+
+**Parameters:**
+- `questions` (required): Array of question objects
+  - `header` (required): Very short label (max 30 chars)
+  - `question` (required): Complete question text
+  - `options` (required): Array of choices
+    - `label` (required): Display text (1-5 words)
+    - `description` (required): Explanation of choice
+  - `multiple` (optional): Allow selecting multiple choices (default: false)
+
+**Example:**
+```json
+{
+  "tool": "question",
+  "parameters": {
+    "questions": [
+      {
+        "header": "Framework",
+        "question": "Which framework would you like to use?",
+        "options": [
+          {
+            "label": "React",
+            "description": "Popular UI library with component-based architecture"
+          },
+          {
+            "label": "Vue",
+            "description": "Progressive framework with gentle learning curve"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+**Best Practices:**
+- Keep questions concise and clear
+- Provide meaningful descriptions for each option
+- Use for decisions that require user input
+- Don't ask for information you can determine from context

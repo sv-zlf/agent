@@ -1,0 +1,81 @@
+## todo (TodoWrite, TodoRead, TodoDelete, TodoClear)
+
+Task management tools for tracking progress through multi-step tasks.
+
+### TodoWrite - Create/Update Task List
+
+Creates or updates a task list to track progress.
+
+**Parameters:**
+- `todos` (required): Array of task items
+  - `content` (required): Task description
+  - `status` (optional): 'pending', 'in_progress', or 'completed'
+  - `id` (optional): Task identifier
+
+**Example:**
+```json
+{
+  "tool": "todowrite",
+  "parameters": {
+    "todos": [
+      {
+        "content": "Read project configuration",
+        "status": "completed",
+        "id": "1"
+      },
+      {
+        "content": "Implement the feature",
+        "status": "in_progress",
+        "id": "2"
+      }
+    ]
+  }
+}
+```
+
+### TodoRead - Read Current Tasks
+
+Reads the current task list.
+
+**Example:**
+```json
+{
+  "tool": "todoread",
+  "parameters": {}
+}
+```
+
+### TodoDelete - Delete Tasks
+
+Deletes specific tasks by ID.
+
+**Parameters:**
+- `ids` (required): Array of task IDs to delete
+
+**Example:**
+```json
+{
+  "tool": "tododelete",
+  "parameters": {
+    "ids": ["1", "2"]
+  }
+}
+```
+
+### TodoClear - Clear All Tasks
+
+Removes all tasks from the list.
+
+**Example:**
+```json
+{
+  "tool": "todoclear",
+  "parameters": {}
+}
+```
+
+**Best Practices:**
+- Use TodoWrite at the beginning of complex tasks
+- Update task status as you progress
+- Review task list regularly to stay on track
+- Tasks persist across sessions

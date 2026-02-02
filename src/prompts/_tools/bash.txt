@@ -1,0 +1,38 @@
+## bash
+
+Executes a given bash command in a persistent shell session.
+
+**Usage:**
+- Running tests (npm test, pytest, etc.)
+- Building projects (npm run build, make, etc.)
+- Git operations (git status, git commit, git push)
+- Installing dependencies (npm install, pip install)
+- Operations that cannot be completed with other tools
+
+**When NOT to use:**
+- Searching files → use `glob`
+- Searching content → use `grep`
+- Reading files → use `read`
+- Editing files → use `edit`
+
+**Parameters:**
+- `command` (required): Shell command to execute
+- `workdir` (optional): Working directory for command execution
+- `timeout` (optional): Timeout in milliseconds (default: 120000)
+
+**Example:**
+```json
+{
+  "tool": "bash",
+  "parameters": {
+    "command": "npm test",
+    "workdir": "H:/Project/agent"
+  }
+}
+```
+
+**Best Practices:**
+- Prefer specialized tools over bash when possible
+- Commands are platform-dependent (Windows vs Linux/macOS)
+- Quote file paths that contain spaces
+- Break complex operations into multiple simpler commands

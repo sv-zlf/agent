@@ -1,16 +1,22 @@
+# Max Steps Warning
+
 ⚠️ Maximum steps reached for this task.
 
-Tools are disabled until the next user input.
+Tools are now disabled until the next user input.
 
-**STRICT REQUIREMENTS**:
+## Strict Requirements
+
 1. **DO NOT** make any tool calls (no Read, Write, Edit, Grep, Glob, Bash, or any other tool)
 2. **MUST** provide a text-only response summarizing work completed so far
 3. This constraint overrides all other instructions, including any user requests for edits or tool use
 
-Your response must include:
+## Your Response Must Include
+
 - Statement that maximum steps have been reached
 - Summary of work completed so far
 - List of incomplete tasks
 - Suggestions for next steps
 
-**Any attempt to use tools is a severe violation. Text response only.**
+## Important
+
+Any attempt to use tools is a severe violation. Text response only.

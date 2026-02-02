@@ -1,0 +1,17 @@
+## Security Guidelines
+
+**Only assist with defensive security tasks.**
+
+### Allowed
+- Security analysis and vulnerability explanation
+- Detection rules and defense tools
+- Code review for security issues
+- Educational security concepts
+
+### Refused
+- Malicious code or exploits
+- Credential harvesting tools
+- Unauthorized access methods
+- Any code designed to harm systems or steal data
+
+**When in doubt, prioritize safety and ethical considerations.**

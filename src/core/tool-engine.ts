@@ -588,7 +588,102 @@ export class ToolEngine {
       }
     }
 
-    // Strategy 5: Fallback - Handle <tool_call> or <toolcall> formats WITHOUT end tags
+    // Strategy 5: Handle <tool_call>glob>pattern=value</pattern> format
+    // This handles the format: <tool_call>toolName>paramName>value</paramName>
+    const hybridFormatRegex = /<tool_call>\s*(\w+)\s*>\s*(\w+)\s*>\s*([\s\S]*?)\s*<\/\s*\2\s*>/gi;
+    for (const m of cleaned.matchAll(hybridFormatRegex)) {
+      if (calls.length >= 50 || Date.now() - startTime > TIMEOUT) break;
+
+      const toolName = m[1].toLowerCase();
+      if (!knownTools.has(toolName)) continue;
+
+      const paramName = m[2];
+      const paramValue = m[3].trim();
+
+      const params: Record<string, unknown> = {};
+      const paramMap: Record<string, string> = {
+        path: 'filePath',
+        filepath: 'filePath',
+        file_path: 'filePath',
+        pattern: 'pattern',
+        oldtext: 'oldString',
+        oldstring: 'oldString',
+        old_string: 'oldString',
+        newtext: 'newString',
+        newstring: 'newString',
+        new_string: 'newString',
+        command: 'command',
+        content: 'content',
+      };
+      params[paramMap[paramName.toLowerCase()] || paramName] = paramValue;
+
+      if (Object.keys(params).length > 0) {
+        addCall(toolName, fixParams(params));
+      }
+    }
+
+    // Strategy 6: Handle nested XML format <tool_call><toolName><param>value</param></toolName></tool_call>
+    const nestedXmlRegex = /<tool_call>\s*<(\w+)>([\s\S]*?)<\/\1>\s*<\/tool_call>/gi;
+    for (const m of cleaned.matchAll(nestedXmlRegex)) {
+      if (calls.length >= 50 || Date.now() - startTime > TIMEOUT) break;
+
+      const toolName = m[1].toLowerCase();
+      if (!knownTools.has(toolName)) continue;
+
+      const innerContent = m[2];
+      const params = this.extractParamsFromAnyFormat(innerContent);
+      if (Object.keys(params).length > 0) {
+        addCall(toolName, fixParams(params));
+      }
+    }
+
+    // Strategy 7: Handle standard XML format <tool><param>value</param></tool>
+    const xmlFormatRegex = /<(\w+)>([\s\S]*?)<\/\1>/gi;
+    for (const m of cleaned.matchAll(xmlFormatRegex)) {
+      if (calls.length >= 50 || Date.now() - startTime > TIMEOUT) break;
+
+      const toolName = m[1].toLowerCase();
+      if (!knownTools.has(toolName)) continue;
+
+      const innerContent = m[2];
+      const params = this.extractParamsFromAnyFormat(innerContent);
+      if (Object.keys(params).length > 0) {
+        addCall(toolName, fixParams(params));
+      }
+    }
+
+    // Strategy 7: Handle function-style format glob(pattern="...")
+    const funcStyleRegex = /\b([a-z][a-z0-9]*)\s*\(\s*([\w]+)\s*=\s*"([^"]*)"\s*\)/gi;
+    for (const m of cleaned.matchAll(funcStyleRegex)) {
+      if (calls.length >= 50 || Date.now() - startTime > TIMEOUT) break;
+
+      const toolName = m[1].toLowerCase();
+      if (!knownTools.has(toolName)) continue;
+
+      const paramName = m[2];
+      const paramValue = m[3];
+      const params: Record<string, unknown> = {};
+
+      const paramMap: Record<string, string> = {
+        path: 'filePath',
+        filepath: 'filePath',
+        file_path: 'filePath',
+        pattern: 'pattern',
+        oldtext: 'oldString',
+        oldstring: 'oldString',
+        old_string: 'oldString',
+        newtext: 'newString',
+        newstring: 'newString',
+        new_string: 'newString',
+        command: 'command',
+        content: 'content',
+      };
+      params[paramMap[paramName.toLowerCase()] || paramName] = paramValue;
+
+      addCall(toolName, fixParams(params));
+    }
+
+    // Strategy 8: Fallback - Handle <tool_call> or <toolcall> formats WITHOUT end tags
     // Matches: <tool_call>read{...} or <toolcall>read{"..."}
     const noEndTagRegex = /<(?:tool_call|toolcall)>([\s\S]*?)(?=\s*<[\/\w]|$)/gi;
     const noEndTagMatches = cleaned.matchAll(noEndTagRegex);
@@ -651,19 +746,30 @@ export class ToolEngine {
       examples.push(...xmlMatches.slice(0, 2).map((m) => m.slice(0, 30)));
     }
 
-    // 2. 检测函数调用格式（如 Read{...} 或 Read(...)）
-    const functionCallRegex = /\b([A-Z][a-zA-Z0-9]*)\s*(\{|\()/g;
+    // 2. 检测函数调用格式（如 Read{...}, Read(...), glob(...)）
+    const functionCallRegex = /\b([a-zA-Z][a-zA-Z0-9]*)\s*(\{|\()/g;
     const funcMatches = response.match(functionCallRegex);
     if (funcMatches && funcMatches.length > 0) {
-      // 排除已知工具名称的小写形式
+      // 排除已知工具名称的正确格式
       const knownTools = new Set(this.tools.keys());
       const invalidCalls = funcMatches.filter((match) => {
-        const toolName = match.match(/\b([A-Z][a-zA-Z0-9]*)/)?.[1];
+        const toolName = match.match(/\b([a-zA-Z][a-zA-Z0-9]*)/)?.[1];
         return toolName && !knownTools.has(toolName.toLowerCase());
       });
       if (invalidCalls.length > 0) {
         formats.push('Function notation (e.g., ToolName{...})');
         examples.push(...invalidCalls.slice(0, 2).map((m) => m.slice(0, 30)));
+      }
+    }
+
+    // 2b. 检测已知工具的错误格式调用（如 "glob(...)" 或 "glob{...}"）
+    const knownTools = new Set(this.tools.keys());
+    for (const tool of knownTools) {
+      const toolCallRegex = new RegExp(`\\b${tool}\\s*[{(][^})]*[})]`, 'g');
+      if (toolCallRegex.test(response)) {
+        formats.push(`Function-style call for ${tool} (use JSON format)`);
+        const match = response.match(toolCallRegex);
+        if (match) examples.push(match[0].slice(0, 50));
       }
     }
 

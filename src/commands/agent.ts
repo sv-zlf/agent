@@ -23,6 +23,7 @@ import { createCommandManager, type CommandResult } from './slash-commands';
 import { readFileSync } from 'fs';
 import { renderMarkdown } from '../utils/markdown';
 import { ToolParameterHelper } from '../utils/tool-params';
+import { startTUI, addMessageToTUI, updateTUIStatus } from '../tui';
 
 const logger = createLogger();
 
@@ -198,8 +199,9 @@ export const agentCommand = new Command('agent')
   .description('GG CODE - AI-Powered Code Editor (类似Claude Code)')
   .option('-y, --yes', '自动批准所有工具调用', false)
   .option('-i, --iterations <number>', '最大迭代次数')
-  .option('-a, --agent <name>', '使用的 Agent (default, explore, build, plan)', 'default')
+  .option('-a, --agent <name>', '使用的 Agent (build, explore, plan)', 'build')
   .option('--no-history', '不保存对话历史')
+  .option('--tui', '使用终端用户界面 (TUI) 模式', false)
   .action(async (options) => {
     const config = getConfig();
     await config.load();
@@ -718,7 +720,11 @@ export const agentCommand = new Command('agent')
               const systemMsgsInContext = messages.filter((m) => m.role === 'system');
               if (systemMsgsInContext.length === 0) {
                 console.log(chalk.yellow('[getContext] ⚠️  getContext 返回的消息中没有系统消息！'));
-                console.log(chalk.yellow(`[getContext] systemPromptSet: ${contextManager.isSystemPromptSet()}`));
+                console.log(
+                  chalk.yellow(
+                    `[getContext] systemPromptSet: ${contextManager.isSystemPromptSet()}`
+                  )
+                );
                 console.log(chalk.yellow(`[getContext] 总消息数: ${messages.length}`));
               }
 
@@ -1305,5 +1311,251 @@ export const agentCommand = new Command('agent')
     // 在整个运行期间激活 P 键中断监听
     setupInterruptKey();
 
-    chatLoop();
+    // TUI 模式支持
+    if (options.tui) {
+      // 启动 TUI 界面
+      const tui = startTUI({
+        sessionId: currentSession.id,
+        initialMessages: contextManager.getContext(),
+        onSendMessage: async (content: string) => {
+          // 添加用户消息到上下文
+          contextManager.addMessage('user', content);
+          stats.userMessages++;
+
+          // 重置状态
+          autoApproveAll = options.yes || agentConfig.auto_approve || false;
+          interruptManager.fullReset();
+
+          // 启动 AI 处理流程
+          await processAIResponse();
+        },
+        onInterrupt: () => {
+          interruptManager.requestInterrupt();
+          updateTUIStatus('idle');
+        },
+        onExit: cleanupAndExit,
+      });
+
+      // 定义 AI 处理函数
+      async function processAIResponse() {
+        let maxToolRounds = options.iterations
+          ? parseInt(options.iterations, 10)
+          : agentConfig.max_iterations || 10;
+        let currentRound = 0;
+
+        while (currentRound < maxToolRounds) {
+          currentRound++;
+
+          if (interruptManager.isAborted()) {
+            addMessageToTUI('操作已被用户中断', 'system');
+            break;
+          }
+
+          try {
+            let messages = contextManager.getContext();
+
+            // 检查上下文大小，触发压缩
+            const autoCompressEnabled = agentConfig.auto_compress !== false;
+            if (autoCompressEnabled && currentRound % 3 === 0) {
+              const maxTokens = agentConfig.max_context_tokens;
+              const compressThreshold = agentConfig.compress_threshold || 0.85;
+              const estimatedTokens = contextManager.estimateTokens();
+
+              if (estimatedTokens > maxTokens * compressThreshold) {
+                updateTUIStatus('thinking', 'Compacting context...');
+
+                try {
+                  let summaryContent = '';
+                  const existingSummary = sessionManager.getSessionSummary(currentSession.id);
+
+                  if (existingSummary && existingSummary.files > 0) {
+                    const parts = [];
+                    if (existingSummary.title) parts.push(`标题: ${existingSummary.title}`);
+                    parts.push(`修改了 ${existingSummary.files} 个文件`);
+                    parts.push(
+                      `新增 ${existingSummary.additions} 行，删除 ${existingSummary.deletions} 行`
+                    );
+                    summaryContent = parts.join('\n');
+                  } else {
+                    const compactResult = await functionalAgentManager.compact(messages);
+                    if (compactResult.success && compactResult.output) {
+                      summaryContent = compactResult.output;
+                    }
+                  }
+
+                  if (summaryContent) {
+                    contextManager.clearContext();
+                    const currentSystemPrompt = systemPrompt || '你是一个 AI 编程助手。';
+                    const newSystemPrompt = `${currentSystemPrompt}\n\n## 对话摘要\n${summaryContent}`;
+                    contextManager.setSystemPrompt(newSystemPrompt);
+                    messages = contextManager.getContext();
+                  }
+                } catch (compactError) {
+                  // 压缩失败，继续
+                }
+              }
+            }
+
+            // 开始 AI 思考
+            updateTUIStatus('thinking');
+            const abortSignal = interruptManager.startOperation();
+            interruptManager.setAIThinking(true);
+
+            let fullResponse = '';
+            const { filter: streamFilter } = createStreamFilter();
+
+            try {
+              const response = await executeAPIRequest(async () => {
+                return apiAdapter.chat(messages, {
+                  abortSignal,
+                  stream: true,
+                  onChunk: (chunk: string) => {
+                    fullResponse += chunk;
+                    const filteredChunk = streamFilter(chunk);
+                    if (filteredChunk) {
+                      // 在 TUI 中显示流式输出
+                      process.stdout.write(filteredChunk);
+                    }
+                  },
+                });
+              }, API_PRIORITY.HIGH);
+
+              fullResponse = fullResponse || response || '';
+            } catch (apiError: any) {
+              if (apiError.code === 'ABORTED' || interruptManager.isAborted()) {
+                addMessageToTUI('操作已被用户中断', 'system');
+                interruptManager.setAIThinking(false);
+                updateTUIStatus('idle');
+                return;
+              }
+              throw apiError;
+            } finally {
+              interruptManager.setAIThinking(false);
+            }
+
+            if (!fullResponse) {
+              addMessageToTUI('AI 未返回响应', 'system');
+              break;
+            }
+
+            // 清理响应
+            const cleanedResponse = cleanResponse(fullResponse);
+
+            // 检查是否是总结性消息（最后一条消息）
+            const isSummaryMessage =
+              cleanedResponse.includes('总结') ||
+              cleanedResponse.includes('Summary') ||
+              cleanedResponse.includes('已完成') ||
+              cleanedResponse.includes('任务完成');
+
+            if (isSummaryMessage) {
+              // 这是总结消息，直接显示并退出循环
+              addMessageToTUI(cleanedResponse, 'assistant');
+              contextManager.addMessage('assistant', fullResponse);
+              stats.assistantMessages++;
+              break;
+            }
+
+            // 解析工具调用
+            const toolCalls = toolEngine.parseToolCallsFromResponse(fullResponse);
+
+            if (toolCalls.length === 0) {
+              // 没有工具调用，显示响应并结束
+              addMessageToTUI(cleanedResponse || '我已收到您的消息。', 'assistant');
+              contextManager.addMessage('assistant', fullResponse);
+              stats.assistantMessages++;
+              updateTUIStatus('idle');
+              break;
+            }
+
+            // 有工具调用，先显示 AI 的说明
+            if (cleanedResponse) {
+              addMessageToTUI(cleanedResponse, 'assistant');
+            }
+
+            // 执行工具调用
+            contextManager.addMessage('assistant', fullResponse);
+            stats.assistantMessages++;
+
+            for (const toolCall of toolCalls) {
+              if (interruptManager.isAborted()) {
+                addMessageToTUI('工具执行被中断', 'system');
+                break;
+              }
+
+              // 检查权限
+              const permissionResult = permissionManager.checkPermission({
+                tool: toolCall.tool,
+                path: (toolCall.parameters as any).filePath || '*',
+                params: toolCall.parameters,
+              });
+
+              let approved = autoApproveAll || permissionResult.action === PermissionAction.ALLOW;
+
+              if (!approved && permissionResult.action === PermissionAction.ASK) {
+                // 在 TUI 中显示权限请求
+                addMessageToTUI(
+                  `请求执行工具: ${toolCall.tool}\n参数: ${JSON.stringify(toolCall.parameters, null, 2)}`,
+                  'system'
+                );
+                // 在 TUI 模式下自动批准（简化处理）
+                approved = true;
+              }
+
+              if (!approved) {
+                addMessageToTUI(`工具 ${toolCall.tool} 被拒绝`, 'system');
+                continue;
+              }
+
+              // 执行工具
+              updateTUIStatus('running', toolCall.tool);
+
+              try {
+                const toolResult = await toolEngine.executeToolCall(
+                  toolCall,
+                  interruptManager.startOperation()
+                );
+
+                // 防御性检查
+                if (!toolResult) {
+                  addMessageToTUI(`工具 ${toolCall.tool} 执行返回空结果`, 'system');
+                  continue;
+                }
+
+                // 在 TUI 中显示工具结果
+                if (toolResult.success) {
+                  addMessageToTUI(`工具 ${toolCall.tool} 执行成功`, 'assistant', {
+                    toolCalls: [{ name: toolCall.tool, result: toolResult.output }],
+                  });
+                } else {
+                  addMessageToTUI(`工具 ${toolCall.tool} 执行失败: ${toolResult.error}`, 'system');
+                }
+              } catch (error: any) {
+                addMessageToTUI(`工具执行错误: ${error.message}`, 'system');
+              } finally {
+                interruptManager.setExecutingTool(false);
+              }
+            }
+
+            updateTUIStatus('idle');
+
+            // 继续下一轮对话
+            if (currentRound >= maxToolRounds) {
+              addMessageToTUI('已达到最大迭代次数', 'system');
+              break;
+            }
+          } catch (error: any) {
+            addMessageToTUI(`错误: ${error.message}`, 'system');
+            updateTUIStatus('error');
+            break;
+          }
+        }
+      }
+
+      // 保存 TUI 引用以便清理
+      (global as any).tuiInstance = tui;
+    } else {
+      // 传统命令行模式
+      chatLoop();
+    }
   });
