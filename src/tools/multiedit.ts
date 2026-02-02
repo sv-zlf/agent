@@ -7,6 +7,8 @@ import * as z from 'zod';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { defineTool } from './tool';
+import { findMatch } from '../utils/edit-utils';
+import { escapeRegExp } from '../utils/edit-utils';
 
 /**
  * 编辑操作定义
@@ -15,13 +17,6 @@ interface EditOperation {
   oldString: string;
   newString: string;
   replaceAll?: boolean;
-}
-
-/**
- * 转义正则表达式特殊字符
- */
-function escapeRegExp(string: string): string {
-  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 /**
@@ -56,7 +51,13 @@ function validateEditOperations(operations: EditOperation[]): { valid: boolean; 
  */
 function formatMultiEditResults(
   filePath: string,
-  results: Array<{ index: number; success: boolean; message: string; replacements?: number }>,
+  results: Array<{
+    index: number;
+    success: boolean;
+    message: string;
+    replacements?: number;
+    matchStrategy?: string;
+  }>,
   totalCount: number
 ): string {
   const lines: string[] = [];
@@ -183,6 +184,7 @@ export const MultiEditTool = defineTool('multiedit', {
         success: boolean;
         message: string;
         replacements?: number;
+        matchStrategy?: string;
       }> = [];
       let contentAfterEdits = currentContent;
 
@@ -203,33 +205,52 @@ export const MultiEditTool = defineTool('multiedit', {
             continue;
           }
 
-          // 检查是否包含要替换的字符串
-          if (!contentAfterEdits.includes(oldString)) {
+          // 使用智能匹配查找字符串
+          const matchResult = findMatch(contentAfterEdits, oldString);
+
+          if (!matchResult.found) {
             throw new Error(
-              `未找到要替换的内容: "${oldString.substring(0, 50)}${oldString.length > 50 ? '...' : ''}"`
+              `未找到要替换的内容: "${oldString.substring(0, 50)}${oldString.length > 50 ? '...' : ''}"
+
+尝试的匹配策略: ${matchResult.strategies.join(', ')}
+
+建议:
+1. 使用 Read 工具先查看文件内容
+2. 确保包含精确的缩进（空格/制表符）
+3. 提供更多上下文（周围的代码行）使匹配唯一`
             );
           }
 
+          const matchedString = matchResult.matchedString;
+
           // 计算匹配数量
-          const count = (contentAfterEdits.match(new RegExp(escapeRegExp(oldString), 'g')) || [])
-            .length;
+          const count = (
+            contentAfterEdits.match(new RegExp(escapeRegExp(matchedString), 'g')) || []
+          ).length;
 
           if (count > 1 && !replaceAll) {
             throw new Error(
-              `找到 ${count} 处匹配，需要设置 replaceAll=true 或提供更唯一的 oldString`
+              `找到 ${count} 处匹配（使用"${matchResult.strategy}"策略）
+
+建议:
+1. 设置 replaceAll=true 替换所有匹配项
+2. 提供更唯一的 oldString，包含更多上下文代码`
             );
           }
 
           // 执行替换
           contentAfterEdits = replaceAll
-            ? contentAfterEdits.split(oldString).join(newString)
-            : contentAfterEdits.replace(oldString, newString);
+            ? contentAfterEdits.split(matchedString).join(newString)
+            : contentAfterEdits.replace(matchedString, newString);
 
           results.push({
             index: i + 1,
             success: true,
-            message: replaceAll ? `替换了 ${count} 处` : `替换了 1 处`,
+            message: replaceAll
+              ? `替换了 ${count} 处（${matchResult.strategy}策略）`
+              : `替换了 1 处（${matchResult.strategy}策略）`,
             replacements: count,
+            matchStrategy: matchResult.strategy,
           });
         } catch (error: any) {
           // 编辑失败，停止后续操作

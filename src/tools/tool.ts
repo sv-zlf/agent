@@ -114,7 +114,9 @@ export function defineTool<Parameters extends z.ZodType, M extends ToolMetadata 
         }
 
         // 4. 自动应用输出截断
-        const truncated = await truncateOutput(result.output, {});
+        const truncated = await truncateOutput(result.output, {
+          silent: true, // 静默模式
+        });
         return {
           ...result,
           output: truncated.content,

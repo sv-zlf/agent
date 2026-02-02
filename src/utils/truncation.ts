@@ -27,6 +27,7 @@ export interface TruncateOptions {
   maxBytes?: number;    // 最大字节数限制
   direction?: 'head' | 'tail'; // 截断方向：head（保留头部）或 tail（保留尾部）
   outputDir?: string;   // 溢出文件存储目录
+  silent?: boolean;     // 静默模式，不显示截断提示信息
 }
 
 /**
@@ -282,6 +283,16 @@ async function saveTruncatedOutput(
   try {
     // 将完整内容写入文件
     await fs.writeFile(outputPath, fullText, 'utf-8');
+
+    // 如果是静默模式，只返回截断标记，不添加提示信息
+    if (options.silent) {
+      return {
+        content: preview,
+        truncated: true,
+        outputPath,
+        stats,
+      };
+    }
 
     // 生成截断提示
     const removed = stats.truncateReason === 'bytes'

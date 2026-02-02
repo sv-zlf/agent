@@ -168,10 +168,40 @@ export class ContextManager {
     // 首先确保system消息在结果中（如果存在）
     const systemMessages = this.messages.filter((m) => m.role === 'system');
 
+    // 调试日志
+    if (this.systemPromptSet) {
+      console.log(`[getContext] 🔍 systemPromptSet=true, this.messages.length=${this.messages.length}`);
+      console.log(`[getContext] 🔍 过滤出的 systemMessages.length=${systemMessages.length}`);
+      console.log(`[getContext] 🔍 所有消息角色: ${this.messages.map((m, i) => `${i}:${m.role}`).join(', ')}`);
+
+      if (systemMessages.length === 0) {
+        console.warn('[getContext] ⚠️  systemPromptSet=true 但没有找到 system 消息！');
+        console.warn(`[getContext] ⚠️  this.messages 的类型: ${Array.isArray(this.messages) ? 'Array' : typeof this.messages}`);
+        if (this.messages.length > 0) {
+          console.warn(`[getContext] ⚠️  第一条消息:`, JSON.stringify(this.messages[0]).substring(0, 200));
+        }
+      }
+    }
+
     if (systemMessages.length > 0) {
+      console.log(`[getContext] 🔍 开始转换 ${systemMessages.length} 条系统消息`);
       const systemMsgs = systemMessages
-        .map((msg) => this.convertToLegacyMessage(msg))
-        .filter((msg) => msg.content && msg.content.trim().length > 0);
+        .map((msg) => {
+          const converted = this.convertToLegacyMessage(msg);
+          console.log(`[getContext] 🔍 转换后: role=${converted.role}, content长度=${converted.content?.length || 0}`);
+          return converted;
+        })
+        .filter((msg) => {
+          const hasContent = msg.content && msg.content.trim().length > 0;
+          if (!hasContent) {
+            console.warn('[getContext] ⚠️  系统消息被过滤（内容为空）');
+          }
+          return hasContent;
+        });
+
+      if (systemMsgs.length === 0) {
+        console.warn('[getContext] ⚠️  找到了 system 消息但转换后为空！');
+      }
 
       result.push(...systemMsgs);
       currentTokens = systemMsgs.reduce((sum, msg) => sum + this.estimateMessageTokens(msg), 0);
@@ -375,6 +405,19 @@ export class ContextManager {
   private convertToLegacyMessage(msg: Message | EnhancedMessage): Message {
     // 检查是否是增强消息
     if ('parts' in msg) {
+      // 对于系统消息，不要使用 messageToText，因为它会过滤掉 SYSTEM 部件
+      if (msg.role === 'system') {
+        // 系统消息：合并所有非忽略的文本部件
+        const textParts = (msg as EnhancedMessage).parts
+          .filter((part) => !part.ignored)
+          .filter((part) => part.type === PartType.TEXT || part.type === PartType.REASONING)
+          .map((part) => part.content)
+          .join('\n');
+        return {
+          role: 'system',
+          content: textParts || '',
+        };
+      }
       return {
         role: msg.role,
         content: messageToText(msg as EnhancedMessage),
@@ -459,6 +502,12 @@ export class ContextManager {
     // 添加新的系统提示词到开头
     this.messages.unshift({ role: 'system', content: prompt });
     this.systemPromptSet = true;
+
+    // 调试日志
+    const systemMsgs = this.messages.filter((m) => m.role === 'system');
+    console.log(
+      `[setSystemPrompt] 已设置系统提示词 (${prompt.length} 字符), 当前系统消息数: ${systemMsgs.length}`
+    );
   }
 
   /**
@@ -489,11 +538,38 @@ export class ContextManager {
       if (await fs.pathExists(this.historyFile)) {
         const content = await fs.readFile(this.historyFile, 'utf-8');
         const loaded = JSON.parse(content) as Message[];
+
+        // 🔑 修复：加载前先保存当前的系统消息
+        const existingSystemMessages = this.messages.filter((m) => m.role === 'system');
+
         // 加载的历史是旧格式，直接使用
         this.messages = loaded;
+
+        // 检查加载的历史中是否有系统消息
+        const loadedSystemMessages = loaded.filter((m) => m.role === 'system');
+
+        if (loadedSystemMessages.length > 0) {
+          // 历史中有系统消息，使用历史中的
+          this.systemPromptSet = true;
+          console.log(
+            `[loadHistory] 已加载 ${loaded.length} 条消息，其中 ${loadedSystemMessages.length} 条系统消息`
+          );
+        } else if (existingSystemMessages.length > 0) {
+          // 历史中没有系统消息，但内存中有，恢复它们
+          this.messages.unshift(...existingSystemMessages);
+          this.systemPromptSet = true;
+          console.log(
+            `[loadHistory] 已加载 ${loaded.length} 条消息，历史中没有系统消息，已恢复 ${existingSystemMessages.length} 条系统消息`
+          );
+        } else {
+          // 历史和内存中都没有系统消息
+          this.systemPromptSet = false;
+          console.log(`[loadHistory] 已加载 ${loaded.length} 条消息，但没有系统消息`);
+        }
       }
     } catch (error) {
       // 静默处理历史记录加载失败
+      console.warn(`[loadHistory] 加载失败: ${(error as Error).message}`);
     }
   }
 

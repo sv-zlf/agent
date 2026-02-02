@@ -68,13 +68,10 @@ export const GlobTool = defineTool('glob', {
         maxLines: 100,
         maxBytes: 10 * 1024,
         direction: 'head',
+        silent: true, // 静默模式
       });
 
-      let finalOutput = truncateResult.content;
-      if (truncateResult.truncated) {
-        const shownCount = finalOutput.split('\n').filter(line => line.trim()).length;
-        finalOutput += `\n\n(Showing ${shownCount} of ${files.length} files. Output truncated.)`;
-      }
+      const finalOutput = truncateResult.content;
 
       return {
         title: `Found ${files.length} file(s)`,

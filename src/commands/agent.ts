@@ -182,8 +182,8 @@ function printToolCompactResult(
     const brief = lines.slice(0, 2).join(' | ');
     const truncated = lines.length > 2 || result.output.length > 150;
     const display = success
-      ? chalk.gray(`  ⎿  ${brief}${truncated ? '... (ctrl+o expand)' : ''}`)
-      : chalk.red(`  ⎿  ✗ ${brief}${truncated ? '... (ctrl+o expand)' : ''}`);
+      ? chalk.gray(`  ⎿  ${brief}${truncated ? '...' : ''}`)
+      : chalk.red(`  ⎿  ✗ ${brief}${truncated ? '...' : ''}`);
     console.log(display);
   } else if (!success && result.error) {
     console.log(chalk.red(`  ⎿  ✗ ${result.error.substring(0, 100)}`));
@@ -495,6 +495,16 @@ export const agentCommand = new Command('agent')
 
     contextManager.setSystemPrompt(systemPrompt);
 
+    // 🔑 修复：验证系统消息确实存在（如果加载了历史）
+    if (options.history) {
+      const messages = contextManager.getContext();
+      const hasSystemMessage = messages.some((m) => m.role === 'system');
+      if (!hasSystemMessage) {
+        logger.debug('[启动] 加载历史后发现没有系统消息，重新设置');
+        contextManager.setSystemPrompt(systemPrompt);
+      }
+    }
+
     // 创建命令管理器
     const commandManager = createCommandManager();
 
@@ -626,10 +636,14 @@ export const agentCommand = new Command('agent')
               // 更新 contextManager 的历史文件路径并加载历史
               contextManager.updateHistoryFile(historyFile);
               await contextManager.loadHistory();
+              logger.debug(
+                `[会话切换] 加载历史: ${historyFile}, 系统提示词已设置: ${contextManager.isSystemPromptSet()}`
+              );
             }
 
             // 如果系统提示词未设置（比如切换会话后），重新设置
             if (!contextManager.isSystemPromptSet()) {
+              logger.debug('[会话切换] 重新设置系统提示词');
               contextManager.setSystemPrompt(systemPrompt);
             }
             // 使用 setImmediate 避免在 line 回调中立即调用 chatLoop
@@ -699,6 +713,14 @@ export const agentCommand = new Command('agent')
               // 获取当前上下文并调用AI
               let messages = contextManager.getContext();
 
+              // 调试：检查获取的消息
+              const systemMsgsInContext = messages.filter((m) => m.role === 'system');
+              if (systemMsgsInContext.length === 0) {
+                console.log(chalk.yellow('[getContext] ⚠️  getContext 返回的消息中没有系统消息！'));
+                console.log(chalk.yellow(`[getContext] systemPromptSet: ${contextManager.isSystemPromptSet()}`));
+                console.log(chalk.yellow(`[getContext] 总消息数: ${messages.length}`));
+              }
+
               // 检查上下文大小，如果过大则触发压缩（仅在启用自动压缩时）
               // 优化：只在特定轮次检查，避免每次都调用 estimateTokens() 影响性能
               const agentConfig = config.getAgentConfig();
@@ -760,7 +782,11 @@ export const agentCommand = new Command('agent')
                       const newSystemPrompt = `${currentSystemPrompt}\n\n## 对话摘要\n${summaryContent}`;
                       contextManager.setSystemPrompt(newSystemPrompt);
 
-                      console.log(chalk.green(`✓ 上下文已压缩\n`));
+                      console.log(
+                        chalk.green(
+                          `✓ 上下文已压缩 (系统提示词长度: ${newSystemPrompt.length} 字符)\n`
+                        )
+                      );
 
                       // 重新获取消息
                       messages = contextManager.getContext();
@@ -797,6 +823,16 @@ export const agentCommand = new Command('agent')
 
               try {
                 // API 调用（使用中断管理器的 signal，通过并发控制）
+                // 调试：检查系统消息
+                const systemMsgs = messages.filter((m) => m.role === 'system');
+                if (systemMsgs.length > 0) {
+                  logger.debug(
+                    `[API调用] 系统消息数量: ${systemMsgs.length}, 长度: ${systemMsgs[0].content.length}`
+                  );
+                } else {
+                  console.log(chalk.yellow('[API调用] ⚠️  没有系统消息！AI可能丢失身份'));
+                }
+
                 response = await executeAPIRequest(
                   async () => {
                     return apiAdapter.chat(messages, {

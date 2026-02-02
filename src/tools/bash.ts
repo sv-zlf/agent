@@ -98,12 +98,10 @@ export const BashTool = defineTool('bash', {
         maxLines: 500,
         maxBytes: 50 * 1024,
         direction: 'head',
+        silent: true, // 静默模式
       });
 
-      let finalOutput = truncateResult.content;
-      if (truncateResult.truncated) {
-        finalOutput += '\n\n(Output truncated. Full output was larger than display limit.)';
-      }
+      const finalOutput = truncateResult.content;
 
       return {
         title: `Command: ${command.substring(0, 50)}${command.length > 50 ? '...' : ''}`,
@@ -121,6 +119,7 @@ export const BashTool = defineTool('bash', {
         maxLines: 100,
         maxBytes: 10 * 1024,
         direction: 'head',
+        silent: true, // 静默模式
       });
 
       return {

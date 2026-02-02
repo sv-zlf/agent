@@ -114,6 +114,7 @@ export const ReadTool = defineTool('read', {
         maxLines: limit + 20,
         maxBytes: MAX_BYTES + 1024,
         direction: 'head',
+        silent: true, // 静默模式
       });
 
       // 截断后添加状态信息（确保始终可见）

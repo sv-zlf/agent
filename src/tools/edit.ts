@@ -1,16 +1,18 @@
 /**
  * GG CODE - Edit Tool
- * 编辑文件内容
+ * 编辑文件内容 - 支持智能匹配
  */
 
 import * as z from 'zod';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { defineTool } from './tool';
+import { findMatch } from '../utils/edit-utils';
+import { escapeRegExp } from '../utils/edit-utils';
 
 export const EditTool = defineTool('edit', {
   description:
-    '对文件执行精确的字符串替换。必须在读取文件后才能使用此工具。old_string 必须与文件内容完全匹配，包括缩进和换行符。',
+    '对文件执行精确的字符串替换。必须在读取文件后才能使用此工具。oldString 必须与文件内容完全匹配，包括缩进和换行符。',
   parameters: z.object({
     filePath: z.string().describe('要编辑的文件的绝对路径'),
     oldString: z.string().describe('要替换的旧字符串（必须完全匹配）'),
@@ -34,61 +36,70 @@ export const EditTool = defineTool('edit', {
     try {
       const content = await fs.readFile(filePath, 'utf-8');
 
-      let searchContent = oldString;
-      let useNormalized = false;
+      // 尝试查找匹配
+      const matchResult = findMatch(content, oldString);
 
-      if (!content.includes(oldString)) {
-        const normalizedOld = oldString.replace(/\r\n/g, '\n');
-        const normalizedContent = content.replace(/\r\n/g, '\n');
+      if (!matchResult.found) {
+        return {
+          success: false,
+          error: 'old_string not found in file',
+          title: 'Edit Failed',
+          output: `Edit failed: old_string not found in file
 
-        if (normalizedContent.includes(normalizedOld)) {
-          searchContent = normalizedOld;
-          useNormalized = true;
-        } else {
-          return {
-            success: false,
-            error: 'old_string not found in file',
-            title: 'Edit Failed',
-            output: `Edit failed: old_string not found in file\n\nThe specified string was not found. You must use the Read tool first to see the exact content.`,
-            metadata: { error: true, notFound: true },
-          };
-        }
+The specified string was not found after trying the following matching strategies:
+${matchResult.strategies.map((s) => `  - ${s}`).join('\n')}
+
+Suggestions:
+1. Use the Read tool first to see the exact file content
+2. Make sure to include the exact indentation (spaces/tabs) as shown after the line number
+3. Try providing more context (surrounding lines) to make the match unique
+4. Check for any trailing spaces or invisible characters`,
+          metadata: { error: true, notFound: true, attemptedStrategies: matchResult.strategies },
+        };
       }
 
-      const count = (content.match(new RegExp(escapeRegExp(searchContent), 'g')) || []).length;
+      const matchedString = matchResult.matchedString;
+
+      // 计算匹配数量
+      const count = (content.match(new RegExp(escapeRegExp(matchedString), 'g')) || []).length;
 
       if (count > 1 && !replaceAll) {
         return {
           success: false,
           error: 'old_string appears multiple times',
           title: 'Edit Failed',
-          output: `Edit failed: old_string appears ${count} times in the file\n\nPlease set replace_all=true to replace all occurrences, or provide a more unique old_string.`,
-          metadata: { error: true, multipleMatches: true, count },
+          output: `Edit failed: old_string appears ${count} times in the file
+
+The matched string was found using the "${matchResult.strategy}" strategy.
+
+Suggestions:
+1. Set replaceAll=true to replace all occurrences
+2. Provide a more unique old_string by including more surrounding lines`,
+          metadata: {
+            error: true,
+            multipleMatches: true,
+            count,
+            matchStrategy: matchResult.strategy,
+          },
         };
       }
 
-      let newContent: string;
-      if (useNormalized) {
-        const normalizedContent = content.replace(/\r\n/g, '\n');
-        const normalizedNew = newString.replace(/\r\n/g, '\n');
-        newContent = normalizedContent.split(searchContent).join(normalizedNew);
-        newContent = newContent.replace(/\n/g, '\r\n');
-      } else {
-        newContent = replaceAll
-          ? content.split(searchContent).join(newString)
-          : content.replace(searchContent, newString);
-      }
+      // 执行替换
+      const newContent = replaceAll
+        ? content.split(matchedString).join(newString)
+        : content.replace(matchedString, newString);
 
       await fs.writeFile(filePath, newContent, 'utf-8');
 
       return {
         title: `File edited: ${path.basename(filePath)}`,
         output: replaceAll
-          ? `Replaced ${count} occurrence(s)`
-          : `Successfully replaced 1 occurrence`,
+          ? `Replaced ${count} occurrence(s) using "${matchResult.strategy}" strategy`
+          : `Successfully replaced 1 occurrence using "${matchResult.strategy}" strategy`,
         metadata: {
           filePath,
           replacements: count,
+          matchStrategy: matchResult.strategy,
         },
       };
     } catch (error: any) {
@@ -97,7 +108,11 @@ export const EditTool = defineTool('edit', {
           success: false,
           error: `Edit failed: file not found`,
           title: 'Edit Failed',
-          output: `Edit failed: file not found\n\nFile does not exist: ${filePath}\n\nUse the Write tool to create new files.`,
+          output: `Edit failed: file not found
+
+File does not exist: ${filePath}
+
+Use the Write tool to create new files.`,
           metadata: { error: true, notFound: true },
         };
       }
@@ -111,7 +126,3 @@ export const EditTool = defineTool('edit', {
     }
   },
 });
-
-function escapeRegExp(string: string): string {
-  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}

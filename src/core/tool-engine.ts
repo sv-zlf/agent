@@ -322,6 +322,7 @@ export class ToolEngine {
               maxLines: TRUNCATE_MAX_LINES,
               maxBytes: TRUNCATE_MAX_BYTES,
               direction: 'head', // 默认保留头部
+              silent: true, // 静默模式，不显示截断提示
             });
 
             if (truncateResult.truncated) {
