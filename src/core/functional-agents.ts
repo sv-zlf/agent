@@ -205,13 +205,13 @@ export class FunctionalAgentManager {
     const context: Message[] = [
       {
         role: 'user',
-        content: userInput.substring(0, 500), // 限制输入长度，避免过长
+        content: userInput.substring(0, 200), // 进一步缩短输入，加快响应
       },
     ];
 
     return this.executeAgent(FunctionalAgentType.TITLE, context, {
-      maxTokens: 50, // 标题只需要很少的 tokens
-      priority: API_PRIORITY.LOW, // 标题生成优先级低
+      maxTokens: 30, // 标题只需要很少的 tokens，30 足够生成简短标题
+      priority: API_PRIORITY.NORMAL, // 使用普通优先级，避免等待太久
     });
   }
 
