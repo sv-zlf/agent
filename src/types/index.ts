@@ -154,13 +154,20 @@ export interface ParsedResult {
   choices: Array<{
     finish_reason: string;
     index: number;
-    messages: {
+    // 兼容两种字段名：message (单数, 内网API) 和 messages (复数, 兼容格式)
+    message?: {
+      content: string;
+      role: string;
+      reasoning_content?: string;
+      tool_calls?: any[];
+    };
+    messages?: {
       content: string;
       role: string;
     };
   }>;
   created: number;
-  usage: {
+  usage?: {
     completion_tokens: number;
     prompt_tokens: number;
     total_tokens: number;

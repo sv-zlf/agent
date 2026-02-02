@@ -57,9 +57,9 @@ export class InternalAPIAdapter {
       stream: false,
       model_config: {
         model: this.config.model,
-        repetition_penalty: options?.repetitionPenalty ?? 1.1,
-        temperature: options?.temperature ?? 0.7,
-        top_p: options?.topP ?? 0.8,
+        repetition_penalty: options?.repetitionPenalty ?? 1.05,
+        temperature: options?.temperature ?? 0.95,
+        top_p: options?.topP ?? 0.9,
         top_k: options?.topK ?? 20,
       },
     };
@@ -112,11 +112,15 @@ export class InternalAPIAdapter {
 
       const result: ParsedResult = JSON.parse(responseBody['Data_Enqr_Rslt']);
 
-      if (!result?.choices?.[0]?.messages?.content) {
+      // 兼容两种可能的字段名：message (单数) 和 messages (复数)
+      const choice = result?.choices?.[0];
+      const messageData = choice?.message || choice?.messages;
+
+      if (!messageData?.content) {
         throw new APIError('API 返回了空的响应内容', ErrorCode.API_EMPTY_RESPONSE);
       }
 
-      const content = result.choices[0].messages.content;
+      const content = messageData.content;
 
       if (!content || content.trim().length === 0) {
         throw new APIError('AI 模型返回了空白内容', ErrorCode.API_BLANK_CONTENT);
@@ -206,9 +210,9 @@ export class InternalAPIAdapter {
       stream: true,
       model_config: {
         model: this.config.model,
-        repetition_penalty: options?.repetitionPenalty ?? 1.1,
-        temperature: options?.temperature ?? 0.7,
-        top_p: options?.topP ?? 0.8,
+        repetition_penalty: options?.repetitionPenalty ?? 1.05,
+        temperature: options?.temperature ?? 0.95,
+        top_p: options?.topP ?? 0.9,
         top_k: options?.topK ?? 20,
       },
     };
@@ -334,21 +338,52 @@ export class InternalAPIAdapter {
     }
 
     try {
-      // 尝试直接解析为 JSON
-      const parsed = JSON.parse(line);
-      if (parsed.choices && parsed.choices[0]?.delta?.content) {
-        return parsed.choices[0].delta.content;
+      // 移除 SSE 格式的 "data:" 或 "data: " 前缀
+      let jsonStr = line.trim();
+      if (jsonStr.startsWith('data:')) {
+        jsonStr = jsonStr.substring(5).trim();
       }
-      // 检查内网双 JSON 格式
+
+      // 检查是否是有效的 JSON 开头
+      if (!jsonStr.startsWith('{') && !jsonStr.startsWith('[')) {
+        return null;
+      }
+
+      // 第一层：解析外层 JSON
+      const parsed = JSON.parse(jsonStr);
+
+      // 第二层：检查是否有 C-Response-Body（内网 API 双 JSON 格式）
       if (parsed['C-Response-Body']) {
         const responseBody = parsed['C-Response-Body'];
-        if (responseBody.codeid === '20000' && responseBody['Data_Enqr_Rslt']) {
-          const result = JSON.parse(responseBody['Data_Enqr_Rslt']);
-          if (result?.choices?.[0]?.delta?.content) {
-            return (result as any).choices[0].delta.content;
+
+        // C-Response-Body 本身也是 JSON 字符串，需要再次解析
+        const bodyObj = typeof responseBody === 'string'
+          ? JSON.parse(responseBody)
+          : responseBody;
+
+        if (bodyObj.codeid === '20000' && bodyObj['Data_Enqr_Rslt']) {
+          // 第三层：解析 Data_Enqr_Rslt（也是 JSON 字符串）
+          const result = typeof bodyObj['Data_Enqr_Rslt'] === 'string'
+            ? JSON.parse(bodyObj['Data_Enqr_Rslt'])
+            : bodyObj['Data_Enqr_Rslt'];
+
+          // 兼容 message (单数) 和 messages (复数)
+          const choice = result.choices?.[0];
+          const messageData = choice?.message || choice?.messages;
+
+          if (messageData?.content) {
+            return messageData.content;
           }
         }
       }
+
+      // 如果不是内网格式，尝试直接从 choices 读取（兼容其他格式）
+      const choice1 = parsed.choices?.[0];
+      const messageData1 = choice1?.message || choice1?.messages;
+      if (messageData1?.content) {
+        return messageData1.content;
+      }
+
     } catch (e) {
       // 忽略解析错误
     }

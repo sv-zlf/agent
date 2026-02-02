@@ -671,24 +671,6 @@ export const agentCommand = new Command('agent')
           // 更新统计
           stats.userMessages++;
 
-          // 第一条用户消息后，串行生成会话标题（等待完成后才继续）
-          if (isFirstUserMessage && options.history) {
-            isFirstUserMessage = false;
-
-            // 串行等待标题生成完成
-            try {
-              const titleResult = await functionalAgentManager.generateTitle(input);
-
-              if (titleResult.success && titleResult.output) {
-                const newTitle = titleResult.output.trim();
-                await sessionManager.setCurrentSessionTitle(newTitle);
-              }
-            } catch (error) {
-              // 静默失败，只记录到日志
-              logger.debug(`生成标题失败: ${(error as Error).message}`);
-            }
-          }
-
           // 每次新的用户输入时，重置所有状态
           autoApproveAll = options.yes || agentConfig.auto_approve || false;
 
@@ -1179,6 +1161,23 @@ export const agentCommand = new Command('agent')
               printAssistantMessage(cleanedFinalResponse);
             } catch (error) {
               console.log(chalk.red(`生成总结失败: ${(error as Error).message}\n`));
+            }
+          }
+
+          // 第一条用户消息的AI回复完成后，等待生成会话标题
+          if (isFirstUserMessage && options.history) {
+            isFirstUserMessage = false;
+
+            try {
+              const titleResult = await functionalAgentManager.generateTitle(input);
+
+              if (titleResult.success && titleResult.output) {
+                const newTitle = titleResult.output.trim();
+                await sessionManager.setCurrentSessionTitle(newTitle);
+              }
+            } catch (error) {
+              // 静默失败，只记录到日志
+              logger.debug(`生成标题失败: ${(error as Error).message}`);
             }
           }
         } catch (error) {
