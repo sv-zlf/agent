@@ -775,6 +775,7 @@ export const AGENTS: Record<string, IAgentConfig> = {
  */
 export class AgentManager {
   private agents: Map<string, IAgentConfig>;
+  private projectInstructionsCache: Map<string, string> = new Map(); // 文档缓存
 
   constructor() {
     this.agents = new Map();
@@ -896,53 +897,147 @@ export class AgentManager {
 
   /**
    * 加载项目文档指令
-   * 参考 OpenCode 实现：在项目目录向上查找 AGENTS.md, CLAUDE.md 等文件
+   * 参考 OpenCode 实现：支持多层级配置、缓存、全局配置等
    */
   private async loadProjectInstructions(): Promise<string> {
-    const fs = await import('fs/promises');
-
-    // 要查找的文档文件列表
-    const docFiles = ['AGENTS.md', 'CLAUDE.md', 'CONTEXT.md'];
-
-    // 获取当前工作目录
-    const workingDir = process.cwd();
+    const path = await import('path');
+    const os = await import('os');
+    const fsSync = await import('fs');
 
     const instructions: string[] = [];
 
-    for (const docFile of docFiles) {
-      const docPath = await this.findFileUpwards(docFile, workingDir);
-      if (docPath) {
-        try {
-          const content = await fs.readFile(docPath, 'utf-8');
-          instructions.push(`# Instructions from: ${docPath}\n\n${content}`);
-        } catch (error) {
-          // 忽略读取错误
-        }
+    // 1. 项目文档（从当前工作目录向上查找）
+    const projectDocs = await this.findProjectDocuments(process.cwd());
+    for (const docPath of projectDocs) {
+      const content = await this.loadDocumentWithCache(docPath);
+      if (content) {
+        instructions.push(content);
+        logger.debug(`✓ 已加载项目文档: ${path.relative(process.cwd(), docPath)}`);
       }
     }
+
+    // 2. 全局配置目录 (~/.ggcode/AGENTS.md)
+    const globalConfigDir = path.join(os.homedir(), '.ggcode');
+    const globalDocPath = path.join(globalConfigDir, 'AGENTS.md');
+    if (fsSync.existsSync(globalDocPath)) {
+      const content = await this.loadDocumentWithCache(globalDocPath);
+      if (content) {
+        instructions.push(content);
+        logger.debug(`✓ 已加载全局文档: ${globalDocPath}`);
+      }
+    }
+
+    // 3. 从配置文件读取自定义 instructions（未来扩展）
+    // const configInstructions = await this.loadConfigInstructions();
+    // if (configInstructions) {
+    //   instructions.push(configInstructions);
+    // }
 
     return instructions.join('\n\n---\n\n');
   }
 
   /**
-   * 从当前目录向上查找文件
+   * 从当前目录向上查找项目文档
+   * 参考 OpenCode 的 findUp 实现
    */
-  private async findFileUpwards(filename: string, startDir: string): Promise<string | null> {
-    const fsSync = await import('fs');
+  private async findProjectDocuments(startDir: string): Promise<string[]> {
     const path = await import('path');
+    const fsSync = await import('fs');
+
+    const found: string[] = [];
+    const docFiles = ['AGENTS.md', 'CLAUDE.md', 'CONTEXT.md'];
+
+    // 找到项目根目录（包含 .git、package.json 等的目录）
+    const projectRoot = this.findProjectRoot(startDir);
+    if (!projectRoot) {
+      // 如果找不到项目根目录，就在当前目录查找
+      for (const file of docFiles) {
+        const filePath = path.join(startDir, file);
+        if (fsSync.existsSync(filePath)) {
+          found.push(filePath);
+        }
+      }
+      return found;
+    }
+
+    // 从项目根目录向下查找，直到当前目录
+    let currentDir = startDir;
+    const searched = new Set<string>();
+
+    while (currentDir && currentDir !== path.dirname(currentDir) && currentDir.startsWith(projectRoot)) {
+      for (const file of docFiles) {
+        const filePath = path.join(currentDir, file);
+        if (!searched.has(filePath) && fsSync.existsSync(filePath)) {
+          found.push(filePath);
+          searched.add(filePath);
+        }
+      }
+
+      if (currentDir === projectRoot) {
+        break;
+      }
+      currentDir = path.dirname(currentDir);
+    }
+
+    // 按 docFiles 的顺序排序（优先级：AGENTS.md > CLAUDE.md > CONTEXT.md）
+    return found.sort((a, b) => {
+      const indexA = docFiles.indexOf(path.basename(a));
+      const indexB = docFiles.indexOf(path.basename(b));
+      return indexA - indexB;
+    });
+  }
+
+  /**
+   * 查找项目根目录
+   * 参考 OpenCode 的 Instance.directory 逻辑
+   */
+  private findProjectRoot(startDir: string): string | null {
+    const path = require('path');
+    const fsSync = require('fs');
+
+    const rootIndicators = ['.git', 'package.json', '.ggrc.json', 'tsconfig.json', 'Cargo.toml', 'go.mod'];
 
     let currentDir = startDir;
     const root = path.parse(startDir).root;
 
     while (currentDir !== root && currentDir !== path.dirname(currentDir)) {
-      const filePath = path.join(currentDir, filename);
-      if (fsSync.existsSync(filePath)) {
-        return filePath;
+      // 检查是否包含根目录标识文件
+      for (const indicator of rootIndicators) {
+        const indicatorPath = path.join(currentDir, indicator);
+        if (fsSync.existsSync(indicatorPath)) {
+          return currentDir;
+        }
       }
       currentDir = path.dirname(currentDir);
     }
 
     return null;
+  }
+
+  /**
+   * 带缓存的文档加载
+   * 参考 OpenCode 的 claims 机制
+   */
+  private async loadDocumentWithCache(docPath: string): Promise<string | null> {
+    // 检查缓存
+    if (this.projectInstructionsCache.has(docPath)) {
+      return this.projectInstructionsCache.get(docPath)!;
+    }
+
+    // 加载文档
+    try {
+      const fs = await import('fs/promises');
+      const content = await fs.readFile(docPath, 'utf-8');
+
+      // 添加到缓存
+      const formattedContent = `# Instructions from: ${docPath}\n\n${content}`;
+      this.projectInstructionsCache.set(docPath, formattedContent);
+
+      return formattedContent;
+    } catch (error) {
+      logger.debug(`✗ 无法读取文档: ${docPath} - ${(error as Error).message}`);
+      return null;
+    }
   }
 
   /**
