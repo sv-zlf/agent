@@ -15,6 +15,7 @@ import { TodoWriteTool, TodoReadTool, TodoDeleteTool, TodoClearTool } from './to
 import { BatchTool } from './batch';
 import { MultiEditTool } from './multiedit';
 import { QuestionTool } from './question';
+import { ListTool } from './ls';
 import type { ToolDefinition } from '../types';
 
 /**
@@ -35,6 +36,7 @@ export const tools = {
   batch: BatchTool,
   multiedit: MultiEditTool,
   question: QuestionTool,
+  ls: ListTool,
 };
 
 /**
@@ -127,6 +129,7 @@ export * from './todo';
 export * from './batch';
 export * from './multiedit';
 export * from './question';
+export * from './ls';
 
 /**
  * 获取所有工具信息
@@ -225,6 +228,7 @@ function getCategory(toolId: string): ToolDefinition['category'] {
     write: 'file',
     edit: 'file',
     multiedit: 'file',
+    ls: 'file',
     glob: 'search',
     grep: 'search',
     bash: 'command',
@@ -244,6 +248,7 @@ function getPermission(toolId: string): ToolDefinition['permission'] {
     read: 'safe',
     glob: 'safe',
     grep: 'safe',
+    ls: 'safe',
     write: 'local-modify',
     edit: 'local-modify',
     multiedit: 'local-modify',
@@ -271,6 +276,7 @@ export function overrideToolPermission(
     read: 'safe',
     glob: 'safe',
     grep: 'safe',
+    ls: 'safe',
     write: 'local-modify',
     edit: 'local-modify',
     multiedit: 'local-modify',

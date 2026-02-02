@@ -1,0 +1,44 @@
+## ls
+
+Lists directory contents in a tree structure format.
+
+**Usage:**
+- Exploring directory structure
+- Viewing file hierarchy
+- Understanding project layout
+- Quick directory overview
+
+**Parameters:**
+- `path` (optional): Directory path to list (defaults to current directory)
+- `ignore` (optional): Array of glob patterns to ignore (e.g., ["node_modules/**", ".git/**"])
+- `maxDepth` (optional): Maximum recursion depth (default: 3)
+- `limit` (optional): Maximum file count (default: 100)
+
+**Default Ignore Patterns:**
+- `node_modules/**`
+- `.git/**`
+- `dist/**`, `build/**`
+- `__pycache__/**`
+- `.vscode/**`, `.idea/**`
+- `coverage/**`, `tmp/**`, `temp/**`
+- `.cache/**`, `cache/**`
+
+**Example:**
+```json
+{
+  "tool": "ls",
+  "parameters": {
+    "path": "H:/Project/agent/src",
+    "ignore": ["node_modules/**", "dist/**"],
+    "maxDepth": 2,
+    "limit": 50
+  }
+}
+```
+
+**Best Practices:**
+- Use `ls` to quickly understand directory structure
+- Adjust `maxDepth` for large directories
+- Use `ignore` to exclude noise directories
+- Use `glob` for finding specific files by pattern
+- Use `grep` for searching file contents

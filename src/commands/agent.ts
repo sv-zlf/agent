@@ -94,13 +94,47 @@ function cleanResponse(response: string): string {
     ''
   );
 
-  // 移除 XML 格式的工具调用
+  // 移除 XML 格式的工具调用（完整标签）
   cleaned = cleaned.replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, '');
   cleaned = cleaned.replace(/<toolcall>[\s\S]*?<\/toolcall>/gi, '');
   cleaned = cleaned.replace(/<invoke>[\s\S]*?<\/invoke>/gi, '');
 
-  // 移除函数式格式的工具调用（如 glob(...)）
-  cleaned = cleaned.replace(/\b[a-z][a-z0-9]*\s*\([^)]*\)/gi, '');
+  // 移除不完整的 XML 格式
+  // 匹配 <tool_call>toolName>param=value 或 <tool_call>toolName param=value
+  cleaned = cleaned.replace(/<tool_call>\s*<[a-z]+\s+[^>]+>/gi, '');
+  cleaned = cleaned.replace(/<tool_call>\s*[a-z]+\s+[^>\n]+/gi, '');
+  cleaned = cleaned.replace(/<tool_call>\s*[a-z]+/gi, '');
+  cleaned = cleaned.replace(/<toolcall\s+[^>]+>/gi, '');
+  cleaned = cleaned.replace(/<invoke\s+[^>]+>/gi, '');
+  cleaned = cleaned.replace(/<[a-z]+>[^<]*<\/[a-z]+>/gi, '');
+
+  // 移除反引号包裹的 XML 格式工具调用
+  cleaned = cleaned.replace(/`<tool_call>[\s\S]*?<\/tool_call>`/gi, '');
+  cleaned = cleaned.replace(/`<toolcall>[\s\S]*?<\/toolcall>`/gi, '');
+
+  // 移除函数式格式的工具调用（如 glob(...)）- 只匹配已知的工具名
+  const knownTools = [
+    'glob',
+    'read',
+    'write',
+    'edit',
+    'grep',
+    'bash',
+    'batch',
+    'task',
+    'todowrite',
+    'todoread',
+    'tododelete',
+    'todoclear',
+    'multiedit',
+    'question',
+  ];
+  for (const tool of knownTools) {
+    // 移除 function call 格式
+    cleaned = cleaned.replace(new RegExp(`\\b${tool}\\s*\\([^)]*\\)`, 'gi'), '');
+    // 移除反引号包裹的 function call 格式
+    cleaned = cleaned.replace(new RegExp(`\`${tool}\\s*\\([^)]*\\)\``, 'gi'), '');
+  }
 
   // 清理多余的空行
   cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
@@ -163,14 +197,18 @@ function printAssistantMessage(message: string): void {
 function printCompactAssistant(response: string): void {
   const cleaned = cleanResponse(response);
 
-  // 如果清理后为空（只有工具调用），显示默认提示
+  // 如果清理后为空（只有工具调用），不输出任何内容
+  // 工具调用信息会通过 printCompactToolCall 单独显示
   if (!cleaned || cleaned.trim().length === 0) {
-    console.log(chalk.cyan('● 准备执行操作...'));
     return;
   }
 
-  const brief = cleaned.split('\n')[0].substring(0, 80) + (cleaned.length > 80 ? '...' : '');
-  console.log(chalk.cyan('● ') + brief);
+  // 只显示第一行的简短摘要，避免冗长
+  const firstLine = cleaned.split('\n')[0].trim();
+  if (firstLine.length > 0) {
+    const brief = firstLine.length > 60 ? firstLine.substring(0, 57) + '...' : firstLine;
+    console.log(chalk.cyan('● ') + brief);
+  }
 }
 
 /**
@@ -181,6 +219,11 @@ function printCompactToolCall(
   params: Record<string, unknown>,
   _toolEngine: any
 ): void {
+  if (!params || typeof params !== 'object') {
+    console.log(chalk.yellow('● ') + chalk.cyan(tool));
+    return;
+  }
+
   let display = '';
 
   // 根据工具类型选择关键参数
@@ -235,7 +278,7 @@ function printCompactToolCall(
       }
   }
 
-  console.log(chalk.yellow('● ') + chalk.cyan(tool) + (display ? ' ' + display : ''));
+  console.log(chalk.cyan(tool) + (display ? ' ' + display : ''));
 }
 
 function printToolCompactResult(
@@ -244,16 +287,17 @@ function printToolCompactResult(
 ): void {
   if (result.output) {
     const lines = result.output.split('\n');
-    const brief = lines.slice(0, 2).join(' | ');
-    const truncated = lines.length > 2 || result.output.length > 150;
+    // 只取第一行，避免过长
+    const brief = lines[0]?.substring(0, 80) || '';
+    const truncated = lines.length > 1 || result.output.length > 100;
     const display = success
-      ? chalk.gray(`  ⎿  ${brief}${truncated ? '...' : ''}`)
-      : chalk.red(`  ⎿  ✗ ${brief}${truncated ? '...' : ''}`);
+      ? chalk.gray(`${brief}${truncated ? '...' : ''}`)
+      : chalk.red(`✗ ${brief}${truncated ? '...' : ''}`);
     console.log(display);
   } else if (!success && result.error) {
-    console.log(chalk.red(`  ⎿  ✗ ${result.error.substring(0, 100)}`));
+    console.log(chalk.red(`✗ ${result.error.substring(0, 80)}`));
   } else {
-    console.log(chalk.gray('  ⎿  ✓'));
+    // 成功但无输出时不显示任何内容
   }
 }
 /**
