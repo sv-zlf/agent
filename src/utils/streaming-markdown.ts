@@ -125,82 +125,61 @@ export class StreamingMarkdownRenderer {
    * 尝试输出可以安全渲染的内容
    */
   private tryOutput(): string {
-    const buffer = this.state.buffer;
+    let buffer = this.state.buffer;
     let output = '';
-    let remaining = buffer;
-    let processed = 0;
 
-    while (remaining.length > 0) {
-      // 1. 检查是否在代码块中
-      if (this.state.inCodeBlock) {
-        const endPos = detectCodeBlockEnd(remaining);
-        if (endPos > 0) {
-          // 代码块结束
-          const codeContent = this.state.codeBlockBuffer + remaining.slice(0, endPos);
-          output += this.renderCodeBlock(codeContent, this.state.codeBlockLang);
-
-          this.state.inCodeBlock = false;
-          this.state.codeBlockBuffer = '';
-          this.state.codeBlockLang = '';
-          remaining = remaining.slice(endPos);
-          processed += endPos;
-        } else {
-          // 还在代码块中，累积但不输出（等待结束）
-          this.state.codeBlockBuffer += remaining;
-          remaining = '';
-        }
-        continue;
+    // 处理代码块
+    if (this.state.inCodeBlock) {
+      const endPos = detectCodeBlockEnd(buffer);
+      if (endPos > 0) {
+        const codeContent = this.state.codeBlockBuffer + buffer.slice(0, endPos);
+        output = this.renderCodeBlock(codeContent, this.state.codeBlockLang);
+        this.state.inCodeBlock = false;
+        this.state.codeBlockBuffer = '';
+        this.state.codeBlockLang = '';
+        this.state.buffer = buffer.slice(endPos);
+        return output;
       }
-
-      // 2. 检查是否开始新的代码块
-      const codeBlockStart = detectCodeBlockStart(remaining);
-      if (codeBlockStart) {
-        // 先输出前面的内容
-        const beforeCodeBlock = remaining.slice(0, remaining.indexOf('```'));
-        if (beforeCodeBlock) {
-          output += this.renderInlineContent(beforeCodeBlock);
-        }
-
-        this.state.inCodeBlock = true;
-        this.state.codeBlockLang = codeBlockStart.lang;
-        remaining = remaining.slice(codeBlockStart.matchLength);
-        processed += codeBlockStart.matchLength;
-        continue;
-      }
-
-      // 3. 查找安全的换行点
-      const newlinePos = remaining.indexOf('\n');
-      if (newlinePos !== -1) {
-        const line = remaining.slice(0, newlinePos + 1);
-
-        // 检查是否是完整的行（不包含未闭合的标记）
-        if (this.isSafeToOutput(line)) {
-          output += this.renderLine(line);
-          remaining = remaining.slice(newlinePos + 1);
-          processed += newlinePos + 1;
-        } else {
-          // 不安全，等待更多内容
-          remaining = '';
-        }
-        continue;
-      }
-
-      // 4. 没有换行符，检查是否可以直接输出（如：空格、标点符号后）
-      if (this.isCompleteSentence(remaining)) {
-        output += this.renderInlineContent(remaining);
-        processed += remaining.length; // 修复：应该加 remaining 的长度，而不是整个 buffer
-        remaining = '';
-        break;
-      }
-
-      // 5. 没有找到安全的输出点，等待更多 chunk
-      break;
+      // 还在代码块中，累积
+      this.state.codeBlockBuffer += buffer;
+      this.state.buffer = '';
+      return '';
     }
 
-    // 更新缓冲区
-    this.state.buffer = buffer.slice(processed);
+    // 检查是否开始代码块
+    const codeBlockStart = detectCodeBlockStart(buffer);
+    if (codeBlockStart) {
+      // 输出代码块前面的内容
+      const beforeCodeBlock = buffer.slice(0, buffer.indexOf('```'));
+      if (beforeCodeBlock) {
+        output = this.renderInlineContent(beforeCodeBlock);
+      }
+      this.state.inCodeBlock = true;
+      this.state.codeBlockLang = codeBlockStart.lang;
+      this.state.buffer = buffer.slice(codeBlockStart.matchLength);
+      return output;
+    }
 
-    return output;
+    // 查找换行点
+    const newlinePos = buffer.indexOf('\n');
+    if (newlinePos !== -1) {
+      const line = buffer.slice(0, newlinePos + 1);
+      if (this.isSafeToOutput(line)) {
+        output = this.renderLine(line);
+        this.state.buffer = buffer.slice(newlinePos + 1);
+        return output;
+      }
+    }
+
+    // 检查是否是完整句子
+    if (this.isCompleteSentence(buffer)) {
+      output = this.renderInlineContent(buffer);
+      this.state.buffer = '';
+      return output;
+    }
+
+    // 等待更多内容
+    return '';
   }
 
   /**
