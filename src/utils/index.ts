@@ -17,6 +17,16 @@ export {
   smartRender,
 } from './markdown';
 export {
+  createStreamingRenderer,
+  type StreamingMarkdownRenderer,
+} from './streaming-markdown';
+export {
+  detectMalformedToolCall,
+  generateCorrectionMessage,
+  type FormatDetectionResult,
+} from './tool-format-detector';
+export { ToolParameterHelper } from './tool-params';
+export {
   withRetry,
   createRetryableAPI,
   isRetryError,

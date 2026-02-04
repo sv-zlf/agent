@@ -1,6 +1,7 @@
 export { ContextManager, createContextManager } from './context-manager';
 export { CodeOperator, createCodeOperator } from './code-operator';
 export { ToolEngine, createToolEngine } from './tool-engine';
+export { ToolMonitor, createToolMonitor } from './tool-monitor';
 export { AgentOrchestrator, createAgentOrchestrator } from './agent';
 export {
   SessionStateManager,

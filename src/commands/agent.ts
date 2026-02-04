@@ -25,6 +25,7 @@ import { renderMarkdown } from '../utils/markdown';
 import { ToolParameterHelper } from '../utils/tool-params';
 import { startTUI, addMessageToTUI, updateTUIStatus } from '../tui';
 import { createStreamingRenderer } from '../utils/streaming-markdown';
+import { detectMalformedToolCall, generateCorrectionMessage } from '../utils/tool-format-detector';
 
 /**
  * 获取应用根目录（兼容 pkg 打包环境）
@@ -1007,6 +1008,32 @@ export const agentCommand = new Command('agent')
                       onChunk: (chunk: string) => {
                         // 累积完整响应
                         fullResponse += chunk;
+
+                        // 【新增】实时检测工具调用格式错误
+                        const detection = detectMalformedToolCall(fullResponse);
+                        if (detection.hasError && detection.confidence >= 0.8) {
+                          // 立即中断请求（使用 InterruptManager）
+                          interruptManager.requestInterrupt();
+
+                          // 停止 spinner
+                          if (!isFirstChunk) {
+                            spinner.stop();
+                          } else {
+                            spinner.stop();
+                          }
+
+                          // 输出警告信息
+                          console.log(chalk.yellow('\n⚠️ 检测到工具调用格式错误，已中断输出'));
+                          console.log(chalk.gray(`错误片段: ${detection.snippet?.slice(0, 100)}...`));
+
+                          // 生成并发送纠正消息
+                          const correctionMessage = generateCorrectionMessage(detection);
+                          contextManager.addMessage('user', correctionMessage);
+
+                          // 标记为被中断
+                          wasInterrupted = true;
+                          return;
+                        }
 
                         // 过滤工具调用代码块
                         const filteredChunk = streamFilter(chunk);

@@ -192,5 +192,12 @@ export class ToolMonitor {
   }
 }
 
+/**
+ * 创建工具监控器实例
+ */
+export function createToolMonitor(): ToolMonitor {
+  return new ToolMonitor();
+}
+
 // 全局监控器实例
 export const toolMonitor = new ToolMonitor();

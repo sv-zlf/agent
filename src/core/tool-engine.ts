@@ -710,8 +710,36 @@ export class ToolEngine {
   }
 
   /**
-   * 检测响应中是否存在错误格式的工具调用
-   * 用于识别 AI 返回的不符合要求的格式，以便进行纠正
+   * 检测响应中是否存在错误格式的工具调用（完整响应分析）
+   *
+   * @purpose 对完整的 AI 响应进行深度分析，识别各种格式错误
+   *
+   * @usage
+   * - 在 AI 完整响应后调用
+   * - 生成详细的格式错误报告
+   * - 为自动纠正提供格式信息
+   *
+   * @difference from tool-format-detector.detectMalformedToolCall
+   * - **此方法**：完整分析（150+ 行），支持多种格式检测
+   * - **tool-format-detector**：轻量级实时检测（100 行），仅检测 XML
+   *
+   * @detected-formats
+   * - XML 标签格式（如 <Read>, <function_calls>）
+   * - 函数调用格式（如 Read{...}, Read(...)）
+   * - 大写工具名（如 Read 而非 read）
+   *
+   * @returns
+   * - hasMalformed: 是否存在格式错误
+   * - detectedFormats: 检测到的错误格式列表
+   * - examples: 错误示例片段
+   *
+   * @example
+   * ```typescript
+   * const result = toolEngine.detectMalformedToolCalls(response);
+   * if (result.hasMalformed) {
+   *   console.log('检测到格式:', result.detectedFormats);
+   * }
+   * ```
    */
   detectMalformedToolCalls(
     response: string,
