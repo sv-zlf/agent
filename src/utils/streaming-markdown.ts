@@ -103,8 +103,31 @@ export class StreamingMarkdownRenderer {
    * @returns 应该立即输出的内容（可能为空）
    */
   public process(chunk: string): string {
+    // 跳过完全相同的重复 chunk
+    if (chunk === this.state.lastOutput) {
+      return '';
+    }
+
     this.state.buffer += chunk;
+
+    // 如果缓冲区以最后一个输出开头，说明是重复内容
+    if (this.state.buffer.startsWith(this.state.lastOutput)) {
+      // 只处理新增的部分
+      this.state.buffer = this.state.buffer.slice(this.state.lastOutput.length);
+    }
+
+    // 如果缓冲区变空，说明全是重复内容
+    if (this.state.buffer.length === 0) {
+      return '';
+    }
+
     const output = this.tryOutput();
+
+    // 跟踪最后输出的内容
+    if (output) {
+      this.state.lastOutput = output;
+    }
+
     return output;
   }
 
@@ -112,12 +135,9 @@ export class StreamingMarkdownRenderer {
    * 刷新剩余的缓冲内容
    */
   public flush(): string {
-    if (this.state.buffer.length === 0) {
-      return '';
-    }
-
     const output = this.renderBuffer(this.state.buffer);
     this.state.buffer = '';
+    this.state.lastOutput = output;
     return output;
   }
 
