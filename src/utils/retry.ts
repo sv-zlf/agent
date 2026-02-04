@@ -79,11 +79,18 @@ export async function withRetry<T>(
 
         let errMsg: string;
         if (isAPIError && responseData) {
-          errMsg = `重试失败，已达到最大重试次数 (${opts.maxRetries}): ${JSON.stringify(responseData)}`;
+          // 简化 API 错误信息，只显示关键内容
+          const simpleData =
+            typeof responseData === 'string'
+              ? responseData
+              : responseData?.error?.message ||
+                responseData?.message ||
+                JSON.stringify(responseData);
+          errMsg = simpleData;
         } else if (isAPIError && originalError?.message) {
-          errMsg = `重试失败，已达到最大重试次数 (${opts.maxRetries}): ${originalError.message}`;
+          errMsg = originalError.message;
         } else {
-          errMsg = `重试失败，已达到最大重试次数 (${opts.maxRetries}): ${originalError?.message || String(error)}`;
+          errMsg = originalError?.message || String(error);
         }
 
         const err = new Error(errMsg) as RetryError & { originalError: Error; responseData?: any };

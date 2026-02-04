@@ -453,16 +453,9 @@ export const agentCommand = new Command('agent')
     // 获取中断管理器
     const interruptManager = getInterruptManager();
 
-    // 添加全局未捕获异常处理器，防止进程意外退出
-    process.on('unhandledRejection', (reason: any) => {
-      console.error(chalk.red('未捕获的 Promise 错误:'), reason);
-      // 不退出，让对话继续
-    });
-
-    process.on('uncaughtException', (error: Error) => {
-      console.error(chalk.red('未捕获的异常:'), error.message);
-      // 不退出，让对话继续
-    });
+    // 注意：不添加全局未捕获异常处理器，让错误正常传播以便调试
+    // process.on('unhandledRejection', ...);
+    // process.on('uncaughtException', ...);
 
     // 启动交互式循环
     const readline = require('readline');
@@ -1070,7 +1063,7 @@ export const agentCommand = new Command('agent')
                     '\n\n用户中断了AI思考。请重新开始或询问其他问题。'
                   );
                 } else {
-                  console.log(chalk.red(`\n❌ ${apiError.message || apiError.toString()}`));
+                  // 错误已由 logger.error 输出，这里不再重复打印
                   contextManager.addMessage(
                     'user',
                     `\n\n执行过程中发生错误: ${apiError.message || apiError.toString()}`
@@ -1312,7 +1305,7 @@ export const agentCommand = new Command('agent')
 
               // 工具执行完成，显示分隔线
             } catch (roundError) {
-              console.log(chalk.red(`\n❌ ${(roundError as Error).message}`));
+              // 错误已由 api-concurrency.ts 输出，这里不再重复打印
               contextManager.addMessage(
                 'user',
                 `\n\n执行过程中发生错误: ${(roundError as Error).message}`
@@ -1392,19 +1385,8 @@ export const agentCommand = new Command('agent')
               logger.debug(`生成标题失败: ${(error as Error).message}`);
             }
           }
-        } catch (error) {
-          const err = error as any;
-
-          // 原样输出 API 返回的错误信息
-          if (err.message) {
-            if (err.message.includes('{')) {
-              console.log(chalk.red(`\n❌ ${err.message}\n`));
-            } else {
-              console.log(chalk.red(`\n❌ ${err.message}\n`));
-            }
-          } else {
-            console.log(chalk.red(`\n❌ 未知错误\n`));
-          }
+        } catch {
+          // 错误已由 api-concurrency.ts 输出，这里不再重复打印
         }
 
         // 继续下一轮对话

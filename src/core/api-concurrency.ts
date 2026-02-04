@@ -111,30 +111,38 @@ export class APIConcurrencyController {
             await new Promise((resolve) => setTimeout(resolve, 800));
           }
         } catch (error: any) {
-          // 只对网络连接错误（非 API 响应错误）做并发控制
-          // API 返回的 429 等错误由 withRetry 处理重试，这里直接透传
-          const isAPIResponseError = error?.context?.responseData || error?.message?.includes('{');
-
-          if (!isAPIResponseError && error.message && error.message.includes('429')) {
-            if (
-              error.message.includes('使用上限') ||
-              error.message.includes('限额') ||
-              error.message.includes('quota') ||
-              error.message.includes('limit')
-            ) {
-              logger.info(`API配额已达上限: ${error.message}`);
-            } else if (
-              error.message.includes('并发') ||
-              error.message.includes('concurrent') ||
-              error.message.includes('过高')
-            ) {
-              logger.info(`API并发限制: ${error.message}`);
-            } else {
-              logger.info(`API限制: ${error.message}`);
+          // 提取错误信息，避免 circular structure 问题
+          let errorMessage: string;
+          try {
+            const err = error as Error;
+            errorMessage = err?.message || String(error);
+            // 如果消息太长或包含敏感内容，截断
+            if (errorMessage.length > 500) {
+              errorMessage = errorMessage.substring(0, 500) + '...';
             }
+            // 过滤掉 circular structure 相关的内部错误信息
+            if (
+              errorMessage.includes('circular structure') ||
+              errorMessage.includes('TLSSocket') ||
+              errorMessage.includes('HTTPParser')
+            ) {
+              errorMessage = '网络请求处理错误';
+            }
+          } catch {
+            errorMessage = '未知错误';
           }
 
-          logger.error(`API请求失败: ${request.id}, 错误: ${(error as Error).message}`);
+          // 对于用户取消的请求，不显示错误
+          if (
+            errorMessage.includes('canceled') ||
+            errorMessage.includes('abort') ||
+            errorMessage.includes('中断')
+          ) {
+            request.reject(error as Error);
+            return;
+          }
+
+          logger.error(`API请求失败: ${request.id}, 错误: ${errorMessage}`);
           request.reject(error as Error);
         }
       }

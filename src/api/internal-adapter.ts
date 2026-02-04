@@ -294,6 +294,10 @@ export class InternalAPIAdapter {
         });
 
         response.data.on('error', (error: Error) => {
+          // 用户取消时不显示错误
+          if (error.message.includes('canceled') || error.message.includes('abort')) {
+            return;
+          }
           reject(new APIError(`流式响应错误: ${error.message}`, ErrorCode.API_NETWORK_ERROR));
         });
       });
@@ -308,12 +312,15 @@ export class InternalAPIAdapter {
         if (error.response) {
           const status = error.response.status;
           const data = error.response.data as any;
-          throw new APIError(
-            `API调用失败: ${JSON.stringify(data)}`,
-            ErrorCode.API_NETWORK_ERROR,
-            status,
-            { responseData: data }
-          );
+          let dataStr: string;
+          try {
+            dataStr = JSON.stringify(data);
+          } catch {
+            dataStr = '[无法序列化的响应数据]';
+          }
+          throw new APIError(`API调用失败: ${dataStr}`, ErrorCode.API_NETWORK_ERROR, status, {
+            responseData: data,
+          });
         }
         if (error.request) {
           throw new APIError(
