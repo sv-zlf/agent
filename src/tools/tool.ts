@@ -6,6 +6,7 @@
 import * as z from 'zod';
 import { truncateOutput } from '../utils/truncation';
 import { loadToolPrompt } from '../utils/tool-prompt-loader';
+import { formatToolValidationError } from '../utils/tool-error-formatter';
 
 /**
  * 工具元数据
@@ -97,9 +98,10 @@ export function defineTool<Parameters extends z.ZodType, M extends ToolMetadata 
           toolInfo.parameters.parse(args);
         } catch (error) {
           if (error instanceof z.ZodError) {
+            // 使用改进的错误格式化器
             const errorMsg = toolInfo.formatValidationError
               ? toolInfo.formatValidationError(error)
-              : `参数验证失败:\n${(error as any).errors.map((e: any) => `- ${e.path.join('.')}: ${e.message}`).join('\n')}`;
+              : formatToolValidationError(id, error, toolInfo.parameters);
             throw new Error(errorMsg);
           }
           throw error;

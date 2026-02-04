@@ -357,15 +357,14 @@ export class InternalAPIAdapter {
         const responseBody = parsed['C-Response-Body'];
 
         // C-Response-Body 本身也是 JSON 字符串，需要再次解析
-        const bodyObj = typeof responseBody === 'string'
-          ? JSON.parse(responseBody)
-          : responseBody;
+        const bodyObj = typeof responseBody === 'string' ? JSON.parse(responseBody) : responseBody;
 
         if (bodyObj.codeid === '20000' && bodyObj['Data_Enqr_Rslt']) {
           // 第三层：解析 Data_Enqr_Rslt（也是 JSON 字符串）
-          const result = typeof bodyObj['Data_Enqr_Rslt'] === 'string'
-            ? JSON.parse(bodyObj['Data_Enqr_Rslt'])
-            : bodyObj['Data_Enqr_Rslt'];
+          const result =
+            typeof bodyObj['Data_Enqr_Rslt'] === 'string'
+              ? JSON.parse(bodyObj['Data_Enqr_Rslt'])
+              : bodyObj['Data_Enqr_Rslt'];
 
           // 兼容 message (单数) 和 messages (复数)
           const choice = result.choices?.[0];
@@ -383,7 +382,6 @@ export class InternalAPIAdapter {
       if (messageData1?.content) {
         return messageData1.content;
       }
-
     } catch (e) {
       // 忽略解析错误
     }

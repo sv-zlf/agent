@@ -6,11 +6,11 @@
  * 会话状态枚举
  */
 export enum SessionState {
-  IDLE = 'idle',           // 空闲，等待用户输入
-  BUSY = 'busy',           // 忙碌，正在处理
-  THINKING = 'thinking',   // AI 思考中
+  IDLE = 'idle', // 空闲，等待用户输入
+  BUSY = 'busy', // 忙碌，正在处理
+  THINKING = 'thinking', // AI 思考中
   EXECUTING = 'executing', // 工具执行中
-  ERROR = 'error',         // 错误状态
+  ERROR = 'error', // 错误状态
   COMPLETED = 'completed', // 任务完成
 }
 
@@ -96,11 +96,9 @@ export class SessionStateManager {
    * 检查是否处于忙碌状态（包括思考、执行等）
    */
   isBusy(): boolean {
-    return [
-      SessionState.BUSY,
-      SessionState.THINKING,
-      SessionState.EXECUTING,
-    ].includes(this.currentState);
+    return [SessionState.BUSY, SessionState.THINKING, SessionState.EXECUTING].includes(
+      this.currentState
+    );
   }
 
   /**

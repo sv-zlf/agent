@@ -38,7 +38,7 @@ export enum ErrorCode {
 
   // 会话错误 (5xxx)
   SESSION_NOT_FOUND = 'SESSION_5001',
- _SESSION_LOAD_FAILED = 'SESSION_5002',
+  _SESSION_LOAD_FAILED = 'SESSION_5002',
   SESSION_SAVE_FAILED = 'SESSION_5003',
 
   // Agent 错误 (6xxx)
@@ -101,10 +101,7 @@ export class GGCodeError extends Error {
    * 格式化错误消息用于日志
    */
   toLogMessage(): string {
-    const parts = [
-      `[${this.code}]`,
-      this.message,
-    ];
+    const parts = [`[${this.code}]`, this.message];
 
     if (this.context) {
       parts.push(`Context: ${JSON.stringify(this.context)}`);
@@ -230,9 +227,7 @@ export class ErrorHelper {
    * 记录错误到日志
    */
   static logError(error: unknown, logger?: { error: (msg: string) => void }): void {
-    const message = error instanceof GGCodeError
-      ? error.toLogMessage()
-      : String(error);
+    const message = error instanceof GGCodeError ? error.toLogMessage() : String(error);
 
     if (logger) {
       logger.error(message);

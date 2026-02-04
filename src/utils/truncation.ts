@@ -14,20 +14,20 @@ const logger = createLogger();
  * 截断默认配置
  */
 export const TRUNCATE_DEFAULTS = {
-  MAX_LINES: 2000,      // 最大行数
+  MAX_LINES: 2000, // 最大行数
   MAX_BYTES: 50 * 1024, // 最大字节数 (50KB)
-  RETENTION_DAYS: 7,    // 文件保留天数
+  RETENTION_DAYS: 7, // 文件保留天数
 } as const;
 
 /**
  * 截断选项
  */
 export interface TruncateOptions {
-  maxLines?: number;    // 最大行数限制
-  maxBytes?: number;    // 最大字节数限制
+  maxLines?: number; // 最大行数限制
+  maxBytes?: number; // 最大字节数限制
   direction?: 'head' | 'tail'; // 截断方向：head（保留头部）或 tail（保留尾部）
-  outputDir?: string;   // 溢出文件存储目录
-  silent?: boolean;     // 静默模式，不显示截断提示信息
+  outputDir?: string; // 溢出文件存储目录
+  silent?: boolean; // 静默模式，不显示截断提示信息
 }
 
 /**
@@ -41,12 +41,12 @@ export type TruncateResult =
  * 截断统计信息
  */
 export interface TruncateStats {
-  totalLines: number;      // 总行数
-  totalBytes: number;      // 总字节数
-  keptLines: number;       // 保留行数
-  keptBytes: number;       // 保留字节数
-  removedLines?: number;   // 移除行数（如果按行截断）
-  removedBytes?: number;   // 移除字节数（如果按字节截断）
+  totalLines: number; // 总行数
+  totalBytes: number; // 总字节数
+  keptLines: number; // 保留行数
+  keptBytes: number; // 保留字节数
+  removedLines?: number; // 移除行数（如果按行截断）
+  removedBytes?: number; // 移除字节数（如果按字节截断）
   truncateReason: 'lines' | 'bytes'; // 截断原因
 }
 
@@ -295,9 +295,10 @@ async function saveTruncatedOutput(
     }
 
     // 生成截断提示
-    const removed = stats.truncateReason === 'bytes'
-      ? `${(stats.removedBytes || 0).toLocaleString()} bytes`
-      : `${(stats.removedLines || 0).toLocaleString()} lines`;
+    const removed =
+      stats.truncateReason === 'bytes'
+        ? `${(stats.removedBytes || 0).toLocaleString()} bytes`
+        : `${(stats.removedLines || 0).toLocaleString()} lines`;
 
     const hint = `\n... ${removed} truncated ...\n\n`;
     const message = `工具输出已截断，完整内容已保存到：${outputPath}\n可以使用 Grep 搜索完整内容，或使用 Read 工具配合 offset/limit 参数查看特定部分。`;
@@ -317,9 +318,10 @@ async function saveTruncatedOutput(
     logger.error(`Failed to save truncated output: ${error}`);
 
     // 如果保存失败，至少返回截断后的内容
-    const removed = stats.truncateReason === 'bytes'
-      ? `${(stats.removedBytes || 0).toLocaleString()} bytes`
-      : `${(stats.removedLines || 0).toLocaleString()} lines`;
+    const removed =
+      stats.truncateReason === 'bytes'
+        ? `${(stats.removedBytes || 0).toLocaleString()} bytes`
+        : `${(stats.removedLines || 0).toLocaleString()} lines`;
 
     return {
       content: `${preview}\n\n... ${removed} truncated (failed to save full output) ...`,
@@ -334,9 +336,10 @@ async function saveTruncatedOutput(
 export function formatTruncateStats(stats: TruncateStats): string {
   const { totalLines, totalBytes, keptLines, keptBytes, truncateReason } = stats;
 
-  const removed = truncateReason === 'bytes'
-    ? ((totalBytes - keptBytes) / 1024).toFixed(1) + ' KB'
-    : (totalLines - keptLines).toLocaleString() + ' lines';
+  const removed =
+    truncateReason === 'bytes'
+      ? ((totalBytes - keptBytes) / 1024).toFixed(1) + ' KB'
+      : (totalLines - keptLines).toLocaleString() + ' lines';
 
   return `Truncated: ${removed} (${keptLines.toLocaleString()} lines, ${(keptBytes / 1024).toFixed(1)} KB kept of ${totalLines.toLocaleString()} lines, ${(totalBytes / 1024).toFixed(1)} KB total)`;
 }

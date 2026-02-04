@@ -2,6 +2,7 @@ import type { ToolDefinition, ToolCall, ToolResult } from '../types';
 import { createLogger } from '../utils';
 import { truncateOutput, cleanupOldTruncationFiles } from '../utils/truncation';
 import { ToolParameterHelper } from '../utils/tool-params';
+import { ToolCallParser } from './tool-call-parser';
 
 const logger = createLogger(true); // 启用debug模式用于工具引擎
 

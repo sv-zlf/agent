@@ -6,17 +6,17 @@
  * 权限动作类型
  */
 export enum PermissionAction {
-  ALLOW = 'allow',   // 允许
-  DENY = 'deny',     // 拒绝
-  ASK = 'ask',       // 询问用户
+  ALLOW = 'allow', // 允许
+  DENY = 'deny', // 拒绝
+  ASK = 'ask', // 询问用户
 }
 
 /**
  * 权限规则
  */
 export interface PermissionRule {
-  tool: string;          // 工具名或 '*' (所有工具)
-  pattern: string;       // 路径模式 (如 '*', 'src/**/*.ts', '*.json')
+  tool: string; // 工具名或 '*' (所有工具)
+  pattern: string; // 路径模式 (如 '*', 'src/**/*.ts', '*.json')
   action: PermissionAction; // 权限动作
 }
 
@@ -26,7 +26,7 @@ export interface PermissionRule {
 export interface PermissionCheckResult {
   action: PermissionAction;
   rule?: PermissionRule; // 匹配的规则
-  reason?: string;      // 原因说明
+  reason?: string; // 原因说明
 }
 
 /**
@@ -43,7 +43,7 @@ export interface PermissionRequest {
  */
 export class PermissionManager {
   private rules: PermissionRule[] = [];
-  private defaultAction: PermissionAction = PermissionAction.ASK;  // 默认需要用户确认，而不是自动允许
+  private defaultAction: PermissionAction = PermissionAction.ASK; // 默认需要用户确认，而不是自动允许
 
   /**
    * 添加权限规则
@@ -145,9 +145,9 @@ export class PermissionManager {
     // 转换 glob 模式到正则表达式
     // 支持 *, **, ?
     const regexPattern = pattern
-      .replace(/\./g, '\\.')  // 转义点
-      .replace(/\*/g, '.*')   // * 匹配任意字符
-      .replace(/\?/g, '.');   // ? 匹配单个字符
+      .replace(/\./g, '\\.') // 转义点
+      .replace(/\*/g, '.*') // * 匹配任意字符
+      .replace(/\?/g, '.'); // ? 匹配单个字符
 
     const regex = new RegExp(`^${regexPattern}$`, 'i');
     return regex.test(path);
@@ -271,16 +271,12 @@ export const PermissionPresets = {
   /**
    * 完全开放 - 所有操作都允许
    */
-  allowAll: [
-    { tool: '*', pattern: '*', action: PermissionAction.ALLOW },
-  ],
+  allowAll: [{ tool: '*', pattern: '*', action: PermissionAction.ALLOW }],
 
   /**
    * 询问所有 - 所有操作都需要确认
    */
-  askAll: [
-    { tool: '*', pattern: '*', action: PermissionAction.ASK },
-  ],
+  askAll: [{ tool: '*', pattern: '*', action: PermissionAction.ASK }],
 };
 
 /**

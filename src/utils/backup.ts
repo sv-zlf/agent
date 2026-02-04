@@ -75,9 +75,7 @@ export class BackupManager {
       if (filePath) {
         // 只返回指定文件的备份
         const basename = path.basename(filePath);
-        return files
-          .filter((f) => f.startsWith(basename))
-          .map((f) => path.join(this.backupDir, f));
+        return files.filter((f) => f.startsWith(basename)).map((f) => path.join(this.backupDir, f));
       }
 
       return files.map((f) => path.join(this.backupDir, f));

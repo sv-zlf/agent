@@ -224,6 +224,7 @@ export class TUIRenderer {
 
     const message = `[${timestamp}] ${coloredRole}:\n${formattedContent}\n`;
     this.messageBox.log(message);
+    this.messageBox.scrollTo(0);
     this.screen.render();
   }
 

@@ -32,22 +32,11 @@ function getAppDir(): string {
   if ('pkg' in process && (process as any).pkg) {
     return path.dirname((process as any).execPath);
   }
-  // 开发环境使用 process.cwd()
-  return process.cwd();
+  return path.resolve(__dirname, '../..');
 }
 const appDir = getAppDir();
 
 const logger = createLogger();
-
-/**
- * 获取错误消息
- */
-function getErrorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  if (typeof error === 'string') return error;
-  if (error === null || error === undefined) return 'Unknown error';
-  return String(error);
-}
 
 /**
  * 安全的对象序列化（避免循环引用）
@@ -452,7 +441,7 @@ export const agentCommand = new Command('agent')
     }
 
     // 读取版本号
-    const packagePath = path.join(appDir, '../../package.json');
+    const packagePath = path.join(appDir, 'package.json');
     const version = JSON.parse(readFileSync(packagePath, 'utf-8')).version;
 
     // 显示 GG CODE 启动横幅
@@ -485,53 +474,56 @@ export const agentCommand = new Command('agent')
     // 不默认开启 raw mode，只在需要时（如 P 键监听）才开启
     // raw mode 会干扰正常的行输入
 
-    // 辅助函数：重新创建 readline 接口（在中断后）
+    // 按键监听器变量
+    let keyListener: any = null;
+    let interruptKeyListener: any = null;
+
     const recreateReadline = () => {
       try {
         if (rl && !(rl as any)._closed) {
           rl.close();
         }
-      } catch (e) {
-        // 忽略关闭错误
-      }
-
-      rl = readline.createInterface({
-        input: process.stdin,
-        output: process.stdout,
-      });
+      } catch {}
+      try {
+        rl = readline.createInterface({
+          input: process.stdin,
+          output: process.stdout,
+        });
+      } catch {}
     };
 
-    // 清空输入缓冲区
     const flushInput = () => {
       try {
-        if (process.stdin.isRaw) {
-          process.stdin.setRawMode(false);
+        if ((process.stdin as any).isRaw) {
+          (process.stdin as any).setRawMode(false);
         }
-        while (process.stdin.readableLength > 0) {
-          process.stdin.read();
+        if (process.stdin.readable) {
+          try {
+            while (process.stdin.readableLength > 0) {
+              process.stdin.read();
+            }
+          } catch {}
         }
-      } catch (e) {
-        // 忽略错误
-      }
+      } catch {}
     };
-
-    // 按键监听器变量
-    let keyListener: any = null;
-    let interruptKeyListener: any = null;
 
     // 设置 P 键中断监听
     const setupInterruptKey = () => {
       // 移除旧的中断监听器
       if (interruptKeyListener) {
-        rl.input.removeListener('data', interruptKeyListener);
+        try {
+          rl.input.removeListener('data', interruptKeyListener);
+        } catch {
+          // 忽略错误
+        }
+        interruptKeyListener = null;
       }
 
       // 开启 raw mode 以监听单个按键
       try {
         rl.input.setRawMode(true);
-      } catch (e) {
+      } catch {
         // 某些 Node.js 版本可能不支持 setRawMode
-        console.debug('setRawMode not supported, using alternative');
       }
       rl.input.resume();
 
@@ -553,15 +545,19 @@ export const agentCommand = new Command('agent')
                 flushInput();
                 recreateReadline();
                 setupInterruptKey();
-              } catch (e) {
-                // 忽略错误
+              } catch {
+                // 忽略所有错误
               }
             });
           }
         }
       };
 
-      rl.input.on('data', interruptKeyListener);
+      try {
+        rl.input.on('data', interruptKeyListener);
+      } catch {
+        // 监听器添加可能失败，忽略错误
+      }
     };
 
     // 设置 SIGINT 处理 - 只用于退出程序

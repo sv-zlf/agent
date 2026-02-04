@@ -47,11 +47,9 @@ async function executeToolCall(
           { requestedName: toolName, correctName: normalizedKey }
         );
       }
-      throw new ToolExecutionError(
-        `未找到工具: '${toolName}'`,
-        ErrorCode.TOOL_NOT_FOUND,
-        { toolName }
-      );
+      throw new ToolExecutionError(`未找到工具: '${toolName}'`, ErrorCode.TOOL_NOT_FOUND, {
+        toolName,
+      });
     }
 
     // 初始化工具

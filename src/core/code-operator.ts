@@ -68,11 +68,10 @@ export class CodeOperator {
     const content = await this.readFile(filePath);
 
     if (!content.includes(oldContent)) {
-      throw new FileOperationError(
-        '未找到要替换的代码内容',
-        ErrorCode.FILE_WRITE_ERROR,
-        { filePath, oldContentLength: oldContent.length }
-      );
+      throw new FileOperationError('未找到要替换的代码内容', ErrorCode.FILE_WRITE_ERROR, {
+        filePath,
+        oldContentLength: oldContent.length,
+      });
     }
 
     const newFileContent = content.replace(oldContent, newContent);

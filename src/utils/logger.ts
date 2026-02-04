@@ -83,17 +83,12 @@ export class Logger {
   table(headers: string[], rows: string[][]): void {
     // 计算每列最大宽度
     const colWidths = headers.map((h, i) => {
-      const maxWidth = Math.max(
-        h.length,
-        ...rows.map((row) => (row[i] || '').length)
-      );
+      const maxWidth = Math.max(h.length, ...rows.map((row) => (row[i] || '').length));
       return maxWidth + 2;
     });
 
     // 打印表头
-    const headerRow = headers
-      .map((h, i) => h.padEnd(colWidths[i]))
-      .join(chalk.gray('|'));
+    const headerRow = headers.map((h, i) => h.padEnd(colWidths[i])).join(chalk.gray('|'));
     console.log(headerRow);
 
     // 打印分隔线
