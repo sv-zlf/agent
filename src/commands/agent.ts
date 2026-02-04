@@ -1623,20 +1623,16 @@ export const agentCommand = new Command('agent')
             const toolCalls = toolEngine.parseToolCallsFromResponse(fullResponse);
 
             if (toolCalls.length === 0) {
-              // 没有工具调用，显示响应并结束
-              addMessageToTUI(cleanedResponse || '我已收到您的消息。', 'assistant');
+              // 没有工具调用，响应已经在流式输出时显示了，不需要重复显示
+              // 只添加到上下文
               contextManager.addMessage('assistant', fullResponse);
               stats.assistantMessages++;
               updateTUIStatus('idle');
               break;
             }
 
-            // 有工具调用，先显示 AI 的说明
-            if (cleanedResponse) {
-              addMessageToTUI(cleanedResponse, 'assistant');
-            }
-
-            // 执行工具调用
+            // 有工具调用，响应已经在流式输出时显示了
+            // 直接添加到上下文，不重复显示
             contextManager.addMessage('assistant', fullResponse);
             stats.assistantMessages++;
 

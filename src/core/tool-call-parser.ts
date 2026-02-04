@@ -65,7 +65,7 @@ export class ToolCallParser {
             }
           }
           if (calls.length > 0) {
-            logger.debug(`✅ 成功解析 ${calls.length} 个工具调用 (数组格式)`);
+            // 成功解析，不输出日志给用户
             return calls;
           }
         }
