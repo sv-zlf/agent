@@ -936,8 +936,6 @@ export const agentCommand = new Command('agent')
                       abortSignal: abortSignal,
                       stream: true, // 启用流式输出
                       onChunk: (chunk: string) => {
-                        // 调试：跟踪 chunk
-                        console.error(`[AGENT-DEBUG] Chunk received: ${chunk.length} chars`);
                         // 累积完整响应
                         fullResponse += chunk;
 
