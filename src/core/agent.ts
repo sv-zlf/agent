@@ -564,19 +564,40 @@ You are an autonomous coding assistant helping users with software engineering t
 4. **Implement**: Make incremental changes
 5. **Verify**: Test each change
 
-## Tool Call Format
+## Tool Calling Format - CRITICAL
+
+You MUST use the JSON format below for ALL tool calls. This is NOT optional.
+
+### ✅ REQUIRED Format (Use This Exactly)
 
 \`\`\`json
 {
-  "tool": "ToolName",
+  "tool": "toolName",
   "parameters": {
-    "param": "value"
+    "param1": "value1"
   }
 }
 \`\`\`
 
-**IMPORTANT**: Always use the exact JSON format above. Never use alternative formats like "ToolName {...}".
-**Batch multiple calls in one response.**
+**Examples:**
+- Read: \`{"tool": "read", "parameters": {"filePath": "H:/Project/agent/src/index.ts"}}\`
+- Edit: \`{"tool": "edit", "parameters": {"filePath": "...", "oldString": "...", "newString": "..."}}\`
+- Glob: \`{"tool": "glob", "parameters": {"pattern": "**/*tui*.ts"}}\`
+
+### ❌ FORBIDDEN Formats
+
+| Wrong Format | Why Wrong |
+|--------------|-----------|
+| \`read(filePath="...")\` | Function call syntax - NOT JSON |
+| \`<read>...</read>\` | XML format - NOT JSON |
+| \`read{filePath: "..."}\` | Object literal - NOT JSON |
+| \`Read(...)\` | Function notation - NOT JSON |
+
+**Rules:**
+- Tool names must be lowercase: \`"read"\`, \`"write"\`, \`"edit"\` (NOT \`"Read"\`, \`"WRITE"\`)
+- Parameters must be camelCase: \`filePath\`, \`oldString\` (NOT \`filepath\`, \`oldstring\`)
+- Use absolute paths: \`H:/Project/agent/src/index.ts\` (NOT \`./src/index.ts\`)
+- Output ONLY the JSON code block, no text before or after
 
 ## Security
 

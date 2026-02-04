@@ -3,8 +3,12 @@ import { createLogger } from '../utils';
 import { truncateOutput, cleanupOldTruncationFiles } from '../utils/truncation';
 import { ToolParameterHelper } from '../utils/tool-params';
 import { ToolCallParser } from './tool-call-parser';
+import { toolMonitor } from './tool-monitor';
 
-const logger = createLogger(true); // 启用debug模式用于工具引擎
+const logger = createLogger(true);
+
+// 工具监控开关
+const TOOL_MONITORING_ENABLED = true;
 
 // 截断配置
 const TRUNCATE_ENABLED = true; // 是否启用智能截断
@@ -17,8 +21,6 @@ const MAX_TOOL_TIMEOUT = 120000; // 2分钟
 
 // 解析结果缓存
 const PARSE_CACHE = new Map<string, { calls: ToolCall[]; timestamp: number }>();
-const PARSE_CACHE_TTL = 5 * 60 * 1000; // 5分钟过期时间
-const PARSE_CACHE_MAX_SIZE = 100;
 
 // 解析统计
 const PARSE_STATS = {
@@ -32,18 +34,6 @@ const PARSE_STATS = {
 
 // 小写工具名映射缓存（用于快速大小写匹配）
 let lowercaseToolMap: Map<string, string> = new Map();
-
-// 参数名映射表
-const PARAM_MAPPINGS: Record<string, string> = {
-  filepath: 'filePath',
-  file_path: 'filePath',
-  oldstring: 'oldString',
-  old_string: 'oldString',
-  oldtext: 'oldString',
-  newstring: 'newString',
-  new_string: 'newString',
-  newtext: 'newString',
-};
 
 /**
  * 工具执行引擎
@@ -266,10 +256,10 @@ export class ToolEngine {
         combinedSignal = toolTimeoutController.signal;
       }
 
-      try {
-        // 记录开始时间
-        const startTime = Date.now();
+      // 记录开始时间（移到 try 外面，让 catch 也能访问）
+      const startTime = Date.now();
 
+      try {
         // 执行工具，传入组合 abort 信号
         const execParams = {
           ...adaptedParams, // 使用适配后的参数
@@ -280,6 +270,18 @@ export class ToolEngine {
         const result = await tool.handler(execParams);
         const endTime = Date.now();
         const duration = endTime - startTime;
+
+        // 记录工具调用监控
+        if (TOOL_MONITORING_ENABLED) {
+          toolMonitor.recordCall({
+            toolId: call.tool,
+            timestamp: startTime,
+            duration,
+            success: result.success !== false,
+            errorMessage: result.success === false ? result.error : undefined,
+            parameterCount: Object.keys(call.parameters).length,
+          });
+        }
 
         // logger.info(`Tool ${call.tool} completed: ${result.success ? 'success' : 'failed'} (${duration}ms)`); // 已移除：由上层显示状态
 
@@ -359,6 +361,18 @@ export class ToolEngine {
       } catch (error: any) {
         const endTime = Date.now();
         clearTimeout(timeoutId);
+
+        // 记录工具调用监控（失败）
+        if (TOOL_MONITORING_ENABLED) {
+          toolMonitor.recordCall({
+            toolId: call.tool,
+            timestamp: startTime,
+            duration: endTime - startTime,
+            success: false,
+            errorMessage: error instanceof Error ? error.message : String(error),
+            parameterCount: Object.keys(call.parameters).length,
+          });
+        }
 
         // 检查中断原因
         if (combinedSignal?.aborted) {
@@ -449,45 +463,20 @@ export class ToolEngine {
 
   /**
    * 解析AI响应中的工具调用
-   * 支持多种格式：
-   * 1. JSON格式: {"tool": "Read", "parameters": {"filePath": "..."}}
-   * 2. 代码块格式
+   * 使用简化的解析器，只支持标准 JSON 格式
+   * 格式: {"tool": "ToolName", "parameters": {...}}
    */
   parseToolCallsFromResponse(response: string): ToolCall[] {
-    const startTime = Date.now();
-    const TIMEOUT = 5000;
-
-    if (Date.now() - startTime > TIMEOUT) return [];
-
-    const cleaned = response.replace(/^[\u0000-\u001F\u007F-\u009F\u200B-\u200F\uFEFF]+/, '');
-
-    const cacheKey = cleaned.slice(0, 200).replace(/\s+/g, ' ').trim();
-    const now = Date.now();
-    const cached = PARSE_CACHE.get(cacheKey);
-    if (cached && now - cached.timestamp < PARSE_CACHE_TTL) {
-      PARSE_STATS.cacheHits++;
-      return [...cached.calls];
-    }
-    PARSE_STATS.cacheMisses++;
-    if (cached) PARSE_CACHE.delete(cacheKey);
-
-    const calls: ToolCall[] = [];
-    const seen = new Set<string>();
     const knownTools = new Set(this.tools.keys());
+    return ToolCallParser.parseToolCalls(response, knownTools);
+  }
 
-    const addCall = (tool: string, params: Record<string, unknown>, id?: string) => {
-      const key = `${tool}:${JSON.stringify(params)}`;
-      if (!seen.has(key) && knownTools.has(tool.toLowerCase())) {
-        seen.add(key);
-        calls.push({
-          tool: tool.toLowerCase(),
-          parameters: params,
-          id: id || this.generateToolCallId(),
-        });
-      }
-    };
+  hasToolCalls(response: string): boolean {
+    return ToolCallParser.hasToolCalls(response);
+  }
 
-    const fixParams = (params: Record<string, unknown>): Record<string, unknown> => {
+  /**
+   * 检测响应中是否存在错误格式的工具调用
       const fixed: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(params)) {
         const mapped = PARAM_MAPPINGS[k.toLowerCase()] || k;
@@ -720,10 +709,6 @@ export class ToolEngine {
     return calls;
   }
 
-  hasToolCalls(response: string): boolean {
-    return this.parseToolCallsFromResponse(response).length > 0;
-  }
-
   /**
    * 检测响应中是否存在错误格式的工具调用
    * 用于识别 AI 返回的不符合要求的格式，以便进行纠正
@@ -812,158 +797,6 @@ export class ToolEngine {
    */
   size(): number {
     return this.tools.size;
-  }
-
-  /**
-   * 生成工具调用ID
-   */
-  private generateToolCallId(): string {
-    return `call_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-  }
-
-  /**
-   * 解析参数字符串
-   */
-  private parseParameters(paramsStr: string): Record<string, unknown> {
-    let parameters: Record<string, unknown> = {};
-    const startTime = Date.now();
-
-    // 清理参数字符串：移除首尾空白和换行
-    const cleanedParams = paramsStr.trim();
-
-    try {
-      const parsed = JSON.parse(`{${cleanedParams}}`);
-      if (parsed.parameters) {
-        parameters = parsed.parameters as Record<string, unknown>;
-      } else if (Object.keys(parsed).length > 0) {
-        parameters = parsed;
-      }
-    } catch {
-      // 超时保护：解析时间超过 10ms 则跳过
-      if (Date.now() - startTime > 10) {
-        return {};
-      }
-
-      const keyValuePairs = paramsStr.match(/(\w+)\s*[:=]\s*"([^"]*)"/g) || [];
-      for (const pair of keyValuePairs) {
-        const [key, ...valueParts] = pair.split(/[:=]\s*"/);
-        if (key && valueParts.length > 0) {
-          const value = valueParts.join(':').replace(/"$/, '');
-          parameters[key.trim()] = value.trim();
-        }
-      }
-
-      // 再次检查超时
-      if (Date.now() - startTime > 10) {
-        return {};
-      }
-
-      if (Object.keys(parameters).length === 0 && paramsStr.includes(':')) {
-        try {
-          const parsed = JSON.parse(`{${paramsStr}}`);
-          Object.assign(parameters, parsed);
-        } catch {
-          // 忽略
-        }
-      }
-    }
-
-    // 超时保护
-    if (Date.now() - startTime > 10) {
-      return {};
-    }
-
-    // 参数名标准化
-    const normalizedParams: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(parameters)) {
-      const normalizedKey = key.toLowerCase();
-      const mappedKey = PARAM_MAPPINGS[normalizedKey] || key;
-      normalizedParams[mappedKey] = value;
-    }
-
-    return normalizedParams;
-  }
-
-  /**
-   * 从任意格式提取参数
-   * 支持：JSON、key:value、XML标签、混合格式
-   */
-  private extractParamsFromAnyFormat(text: string): Record<string, unknown> {
-    const params: Record<string, unknown> = {};
-
-    // 1. 尝试 JSON 格式 {"key": "value"}
-    try {
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0]);
-        if (parsed.parameters) {
-          Object.assign(params, parsed.parameters);
-        } else if (Object.keys(parsed).length > 0) {
-          Object.assign(params, parsed);
-        }
-      }
-    } catch {
-      /* 忽略 */
-    }
-
-    // 2. 如果 JSON 解析失败，尝试解析类似 JSON 的格式 (key: "value" 或 key: value)
-    if (Object.keys(params).length === 0) {
-      try {
-        // 替换单引号为双引号，添加缺失的引号
-        const fixedJson = text
-          .replace(/'/g, '"')
-          .replace(/(\w+):\s*([^"\s,}\]]+)/g, '"$1": "$2"')
-          .replace(/(\w+):\s*"([^"]*)"/g, '"$1": "$2"');
-        const parsed = JSON.parse(`{${fixedJson}}`);
-        Object.assign(params, parsed);
-      } catch {
-        /* 忽略 */
-      }
-    }
-
-    // 3. 尝试 key:value 或 key="value" 格式
-    const keyValueMatches = text.matchAll(/(\w+)\s*[:=]\s*"([^"]*)"/g);
-    for (const m of keyValueMatches) {
-      params[m[1]] = m[2];
-    }
-
-    // 4. 尝试 XML/HTML 标签格式 <key>value</key>
-    const xmlMatches = text.matchAll(/<(\w+)>([\s\S]*?)<\/\1>/g);
-    for (const m of xmlMatches) {
-      const key = m[1];
-      const value = m[2].trim();
-      // 映射 XML 标签到参数名
-      const paramMap: Record<string, string> = {
-        path: 'filePath',
-        filepath: 'filePath',
-        pattern: 'pattern',
-        oldtext: 'oldString',
-        newtext: 'newString',
-        oldstring: 'oldString',
-        newstring: 'newString',
-        command: 'command',
-        content: 'content',
-      };
-      params[paramMap[key.toLowerCase()] || key] = value;
-    }
-
-    // 5. 尝试 key=value (无引号)
-    const bareKeyValueMatches = text.matchAll(/(\w+)\s*=\s*([^\s,}\]]+)/g);
-    for (const m of bareKeyValueMatches) {
-      if (!params[m[1]]) {
-        params[m[1]] = m[2];
-      }
-    }
-
-    // 6. 尝试 key: value (无引号)
-    const colonKeyValueMatches = text.matchAll(/(\w+)\s*:\s*([^\s,}\]]+)/g);
-    for (const m of colonKeyValueMatches) {
-      if (!params[m[1]]) {
-        params[m[1]] = m[2].trim();
-      }
-    }
-
-    return params;
   }
 
   /**

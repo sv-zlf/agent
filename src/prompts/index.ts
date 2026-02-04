@@ -162,6 +162,11 @@ export class PromptBuilder {
     parts.push(await this.loadAgentPrompt(config.agentType));
 
     if (includeTools) {
+      // 首先添加工具格式规范
+      const toolFormat = await this.loadBaseComponent('tool-format');
+      if (toolFormat) parts.push(toolFormat);
+
+      // 然后添加工具描述
       const toolsDescription = await this.buildToolsDescription(config.allowedTools);
       parts.push(toolsDescription);
     }

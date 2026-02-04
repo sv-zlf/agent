@@ -53,6 +53,76 @@ function getParameterAliases(paramName: string): string[] {
 }
 
 /**
+ * 生成工具的使用示例
+ */
+function generateToolExample(toolId: string, parameters: Record<string, any>): string {
+  const requiredParams = Object.entries(parameters)
+    .filter(([_, def]) => def.required)
+    .map(([name, def]) => {
+      const exampleValue = getExampleValueForParam(name, def.type);
+      return `      "${name}": ${JSON.stringify(exampleValue)}`;
+    })
+    .join(',\n');
+
+  return `{
+    "tool": "${toolId}",
+    "parameters": {
+${requiredParams}
+    }
+  }`;
+}
+
+/**
+ * 根据参数名和类型推断示例值
+ */
+function getExampleValueForParam(paramName: string, paramType: string): any {
+  const lowerName = paramName.toLowerCase();
+
+  // 文件路径
+  if (lowerName.includes('filepath') || lowerName.includes('file_path')) {
+    return '/path/to/file.txt';
+  }
+  if (lowerName.includes('path') && !lowerName.includes('search')) {
+    return '/path/to/directory';
+  }
+
+  // 搜索模式
+  if (lowerName.includes('pattern') || lowerName === 'query') {
+    return 'search_pattern';
+  }
+  if (lowerName === 'glob') {
+    return '**/*.ts';
+  }
+
+  // 内容
+  if (lowerName === 'content' || lowerName === 'text') {
+    return 'file content';
+  }
+  if (lowerName === 'oldstring') {
+    return 'old content';
+  }
+  if (lowerName === 'newstring') {
+    return 'new content';
+  }
+
+  // 布尔值
+  if (paramType === 'boolean') {
+    return true;
+  }
+
+  // 数字
+  if (paramType === 'number') {
+    if (lowerName.includes('limit') || lowerName.includes('max')) {
+      return 10;
+    }
+    return 0;
+  }
+
+  // 默认
+  return 'value';
+}
+
+/**
  * 转换工具为 ToolDefinition 格式（兼容性）
  */
 async function toolToDefinition(tool: any): Promise<ToolDefinition> {
@@ -83,10 +153,17 @@ async function toolToDefinition(tool: any): Promise<ToolDefinition> {
     }
   }
 
+  // 生成工具描述（包含示例）
+  let toolDescription = (info as any).shortDescription || info.description;
+
+  // 添加使用示例到描述中
+  const example = generateToolExample(tool.id, parameters);
+  toolDescription += `\n\nExample:\n${example}`;
+
   // 创建 ToolDefinition 兼容格式
   return {
     name: formatToolName(tool.id),
-    description: (info as any).shortDescription || info.description,
+    description: toolDescription,
     category: getCategory(tool.id),
     permission: getPermission(tool.id),
     parameters,

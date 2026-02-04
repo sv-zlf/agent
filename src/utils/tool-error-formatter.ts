@@ -15,54 +15,28 @@ const logger = createLogger(true);
 export function formatToolValidationError(
   toolId: string,
   error: z.ZodError,
-  parameters?: z.ZodType
+  _parameters?: z.ZodType
 ): string {
   const issues = error.issues;
 
   let message = `❌ 工具 "${toolId}" 参数错误\n\n`;
 
   // 分类错误类型
-  const missingParams = issues.filter(
-    (e) => e.code === 'invalid_type' && e.received === 'undefined'
-  );
-  const invalidParams = issues.filter(
-    (e) => e.code === 'invalid_type' && e.received !== 'undefined'
-  );
-  const otherErrors = issues.filter(
-    (e) => e.code !== 'invalid_type' || e.received === 'undefined'
-  );
+  const missingParams = issues.filter((e) => e.code === 'invalid_type');
+  const otherErrors = issues.filter((e) => e.code !== 'invalid_type');
 
   // 1. 缺少必需参数
   if (missingParams.length > 0) {
-    message += `📋 缺少必需参数:\n`;
+    message += `📋 参数错误:\n`;
     missingParams.forEach((issue) => {
       const paramPath = issue.path.join('.') || 'unknown';
-      message += `   ❌ ${paramPath}\n`;
-    });
-
-    // 如果有参数定义，生成正确示例
-    if (parameters) {
-      const example = generateParameterExample(toolId, parameters, missingParams);
-      message += `\n✅ 正确示例:\n`;
-      message += example;
-    }
-  }
-
-  // 2. 参数类型错误
-  if (invalidParams.length > 0) {
-    if (missingParams.length > 0) message += '\n';
-    message += `🔧 参数类型错误:\n`;
-    invalidParams.forEach((issue) => {
-      const paramPath = issue.path.join('.') || 'unknown';
-      const expected = issue.expected;
-      const received = issue.received;
-      message += `   ❌ ${paramPath}: 期望 ${expected}, 收到 ${received}\n`;
+      message += `   ❌ ${paramPath}: ${issue.message}\n`;
     });
   }
 
-  // 3. 其他错误
+  // 2. 其他错误
   if (otherErrors.length > 0) {
-    if (missingParams.length > 0 || invalidParams.length > 0) message += '\n';
+    if (missingParams.length > 0) message += '\n';
     message += `⚠️  其他错误:\n`;
     otherErrors.forEach((issue) => {
       const paramPath = issue.path.join('.');
@@ -78,20 +52,17 @@ export function formatToolValidationError(
  */
 function generateParameterExample(
   toolId: string,
-  parameters: z.ZodType,
+  _parameters: z.ZodType,
   missingParams: z.ZodIssue[]
 ): string {
   try {
-    // 获取参数 schema
-    const schema = parameters as z.ZodObject<any>;
-
     // 创建最小示例（只包含缺少的必需参数）
-    const example: Record<string, any> = {};
+    const example: Record<string, unknown> = {};
 
     // 尝试从缺少的参数中推断示例值
     missingParams.forEach((issue) => {
       const paramName = issue.path[0];
-      if (paramName) {
+      if (paramName && typeof paramName === 'string') {
         example[paramName] = getExampleValue(paramName);
       }
     });
@@ -160,10 +131,7 @@ function getExampleValue(paramName: string): string | number | boolean {
 /**
  * 格式化工具执行错误
  */
-export function formatToolExecutionError(
-  toolId: string,
-  error: Error | string
-): string {
+export function formatToolExecutionError(toolId: string, error: Error | string): string {
   const errorMessage = typeof error === 'string' ? error : error.message;
 
   // 分类错误类型
@@ -196,17 +164,17 @@ export function createToolUsageHint(
   description: string
 ): string {
   return `
-🔧 工具使用指南: ${toolId}
+ 🔧 工具使用指南: ${toolId}
 
-📝 描述:
-${description.split('\n')[0]}
+ 📝 描述:
+ ${description.split('\n')[0]}
 
-📋 参数:
-${getParameterList(parameters)}
+ 📋 参数:
+ ${getParameterList(parameters)}
 
-💡 使用示例:
-${generateParameterExample(toolId, parameters, [])}
-`;
+ 💡 使用示例:
+ ${generateParameterExample(toolId, parameters, [])}
+ `;
 }
 
 /**
@@ -217,10 +185,14 @@ function getParameterList(parameters: z.ZodType): string {
     const schema = parameters as z.ZodObject<any>;
     const shape = schema.shape;
 
+    if (!shape) {
+      return '   (参数列表获取失败)';
+    }
+
     return Object.entries(shape)
-      .map(([name, def]: [string, any]) => {
-        const required = !def.isOptional();
-        const description = def.describe?.() || '';
+      .map(([name, def]) => {
+        const required = !(def as unknown as { isOptional?: () => boolean }).isOptional?.();
+        const description = (def as { describe?: () => string }).describe?.() || '';
         const mark = required ? '✓' : '○';
         return `   ${mark} ${name}: ${description}`;
       })

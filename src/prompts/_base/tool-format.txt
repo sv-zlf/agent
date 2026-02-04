@@ -13,17 +13,9 @@ You MUST use the JSON format below for ALL tool calls. This is NOT optional.
 }
 ```
 
-**Example for glob:**
-```json
-{
-  "tool": "glob",
-  "parameters": {
-    "pattern": "**/*tui*.ts"
-  }
-}
-```
+**Examples:**
 
-**Example for read:**
+Read a file:
 ```json
 {
   "tool": "read",
@@ -33,7 +25,7 @@ You MUST use the JSON format below for ALL tool calls. This is NOT optional.
 }
 ```
 
-**Example for edit:**
+Edit a file:
 ```json
 {
   "tool": "edit",
@@ -45,21 +37,37 @@ You MUST use the JSON format below for ALL tool calls. This is NOT optional.
 }
 ```
 
+Find files:
+```json
+{
+  "tool": "glob",
+  "parameters": {
+    "pattern": "**/*tui*.ts"
+  }
+}
+```
+
 ### ❌ FORBIDDEN - NEVER USE These Formats
 
 | Wrong Format | Why Wrong |
 |--------------|-----------|
-| `glob(pattern="*.ts")` | Function call syntax - NOT JSON |
-| `<tool_call>glob>pattern>...</pattern>` | XML format - NOT JSON |
+| `read(filePath="...")` | Function call syntax - NOT JSON |
+| `<read>...</read>` | XML format - NOT JSON |
 | `read{filePath: "..."}` | Object literal - NOT JSON |
-| `ToolName(...)` | Function notation - NOT JSON |
+| `Read{...}` or `READ{...}` | Wrong case - must be lowercase |
 | `I'll read the file. {"tool": "read", ...}` | Mixed with text |
+| `./file.ts` or `file.ts` | Relative path - must be absolute |
 
-**Remember: EVERY tool call must be a standalone JSON code block.**
+**CRITICAL RULES:**
+1. **JSON format only** - Every tool call must be valid JSON
+2. **Lowercase tool names** - `"read"`, `"write"`, `"edit"` (NOT `"Read"`, `"WRITE"`)
+3. **camelCase parameters** - `filePath`, `oldString` (NOT `filepath`, `oldstring`)
+4. **Absolute paths only** - `H:/Project/agent/src/file.ts` (NOT `./file.ts`)
+5. **No text mixing** - Output ONLY the JSON, no conversational text
 
-### Multi-Tool Array Format
+### Multiple Tool Calls (Array Format)
 
-When calling multiple independent tools:
+When calling multiple independent tools, use an array:
 
 ```json
 [
@@ -74,24 +82,51 @@ When calling multiple independent tools:
     "parameters": {
       "filePath": "H:/Project/agent/src/file2.ts"
     }
+  },
+  {
+    "tool": "grep",
+    "parameters": {
+      "pattern": "interface User",
+      "path": "H:/Project/agent/src"
+    }
   }
 ]
 ```
 
-### Tool Name Rules
+**Best Practice:** Batch independent operations together for better performance.
 
-- ✅ Correct: `"read"`, `"write"`, `"edit"`, `"glob"`, `"grep"`, `"bash"`
-- ❌ Wrong: `"Read"`, `"WRITE"`, `"Glob"` (must be lowercase)
+### Common Mistakes to Avoid
 
-### Parameter Rules
+❌ **WRONG:**
+```json
+{
+  "tool": "Read",
+  "parameters": {
+    "filepath": "./src/index.ts"
+  }
+}
+```
+Problems: Uppercase tool name, snake_case parameter, relative path
 
-- ✅ Correct: `filePath`, `oldString`, `newString`, `pattern`
-- ❌ Wrong: `filepath`, `oldstring`, `PATTERN` (must be camelCase)
+✅ **CORRECT:**
+```json
+{
+  "tool": "read",
+  "parameters": {
+    "filePath": "H:/Project/agent/src/index.ts"
+  }
+}
+```
 
-### Path Rules
+### Quick Reference
 
-- ✅ Correct: `H:/Project/agent/src/index.ts`
-- ❌ Wrong: `./src/index.ts`, `src/index.ts` (must use absolute paths)
+| Aspect | Correct | Incorrect |
+|--------|---------|-----------|
+| Tool name | `"read"`, `"write"`, `"edit"` | `"Read"`, `"WRITE"`, `"EDIT"` |
+| Parameter names | `filePath`, `oldString`, `pattern` | `filepath`, `old_string`, `Pattern` |
+| Paths | `H:/Project/agent/src/file.ts` | `./file.ts`, `src/file.ts` |
+| Format | `{"tool": "...", "parameters": {...}}` | `read{...}`, `<read>...</read>`, `read(...)` |
+| Output | Only JSON code block | JSON + text mixed together |
 
 ---
 
