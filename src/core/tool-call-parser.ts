@@ -20,7 +20,9 @@ const PARSE_STATS = {
 
 /**
  * 简化的工具调用解析器
- * 只支持标准 JSON 格式: {"tool": "ToolName", "parameters": {...}}
+ * 支持格式:
+ * - 单个对象: {"tool": "read", "parameters": {...}}
+ * - 数组格式: [{"tool": "read", ...}, {"tool": "edit", ...}]
  */
 export class ToolCallParser {
   /**
@@ -36,6 +38,43 @@ export class ToolCallParser {
 
     // 清理响应文本
     const cleaned = this.cleanResponse(response);
+
+    // 策略 0: 提取 JSON 数组 (批量调用)
+    // 格式: [{"tool": "read", "parameters": {...}}, {"tool": "edit", ...}]
+    const arrayPattern = /\[\s*\{\s*"tool"\s*:\s*"\w+"[\s\S]*?\}\s*\]/g;
+
+    let arrayMatch = arrayPattern.exec(cleaned);
+    if (arrayMatch) {
+      try {
+        const parsedArray = JSON.parse(arrayMatch[0]);
+        if (Array.isArray(parsedArray)) {
+          for (const item of parsedArray) {
+            if (item.tool && item.parameters) {
+              const toolId = item.tool.toLowerCase();
+              if (knownTools.has(toolId)) {
+                const key = `${toolId}:${JSON.stringify(item.parameters)}`;
+                if (!seen.has(key)) {
+                  seen.add(key);
+                  calls.push({
+                    tool: toolId,
+                    parameters: item.parameters,
+                    id: item.id || this.generateId(),
+                  });
+                }
+              }
+            }
+          }
+          if (calls.length > 0) {
+            logger.debug(`✅ 成功解析 ${calls.length} 个工具调用 (数组格式)`);
+            return calls;
+          }
+        }
+      } catch (error) {
+        // 数组解析失败，静默处理，继续尝试单个对象
+        // 不向用户显示技术错误，后台默默处理
+        // 数组解析失败，继续尝试单个对象
+      }
+    }
 
     // 策略 1: 提取 JSON 对象 (最常用)
     // 格式: {"tool": "Read", "parameters": {"filePath": "..."}}
@@ -67,7 +106,8 @@ export class ToolCallParser {
           }
         }
       } catch (error) {
-        logger.debug(`Failed to parse tool call JSON: ${error}`);
+        // JSON 解析失败，静默处理
+        // 不显示技术错误给用户，后台默默处理
       }
     }
 

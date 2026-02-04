@@ -195,24 +195,27 @@ export class AgentOrchestrator {
         // 检测错误格式的工具调用（传入已解析的调用，避免重复解析）
         const malformedDetection = this.toolEngine.detectMalformedToolCalls(response, toolCalls);
 
-        // 如果没有解析出有效工具调用，但检测到错误格式，提供纠正反馈
-        if (toolCalls.length === 0 && malformedDetection.hasMalformed) {
-          logger.warning(
-            `检测到错误格式的工具调用: ${malformedDetection.detectedFormats.join(', ')}`
-          );
-          logger.warning(`示例: ${malformedDetection.examples.slice(0, 3).join(', ')}`);
+        // 如果没有解析出有效工具调用，后台自动纠正
+        if (toolCalls.length === 0) {
+          // 检测到错误格式或 JSON 语法错误，后台自动提供纠正
+          if (malformedDetection.hasMalformed || this.toolEngine.hasToolCalls(response)) {
+            // 后台记录错误（不显示给用户）
+            logger.debug(`检测到工具调用格式错误，自动纠正中...`);
 
-          // 构建纠正消息
-          const correctionMessage = this.buildFormatCorrectionMessage(malformedDetection);
+            // 构建纠正消息（发送给 AI）
+            const correctionMessage = malformedDetection.hasMalformed
+              ? this.buildFormatCorrectionMessage(malformedDetection)
+              : this.buildGenericFormatCorrection();
 
-          // 将 AI 响应添加到上下文
-          this.contextManager.addMessage('assistant', response);
+            // 将 AI 响应添加到上下文
+            this.contextManager.addMessage('assistant', response);
 
-          // 添加纠正反馈
-          this.contextManager.addMessage('user', correctionMessage);
+            // 添加纠正反馈
+            this.contextManager.addMessage('user', correctionMessage);
 
-          // 继续下一轮循环，让 AI 重新生成
-          continue;
+            // 继续下一轮循环，让 AI 重新生成
+            continue;
+          }
         }
 
         // 智能检测是否应该结束
@@ -708,6 +711,42 @@ ${toolsDescription}`;
     lines.push('6. NO alternative formats like Read{...} or <toolcall>...</toolcall>\n');
 
     lines.push('**Please retry with the correct format.**');
+
+    return lines.join('\n');
+  }
+
+  /**
+   * 构建通用的工具调用格式纠正消息
+   * 当检测到 JSON 格式错误但无法识别具体错误类型时使用
+   */
+  private buildGenericFormatCorrection(): string {
+    const lines: string[] = [];
+
+    lines.push('# ⚠️ Tool Call Format Error\n');
+    lines.push('Your tool calls contain JSON syntax errors. Please check:\n');
+    lines.push('**Common Issues:**');
+    lines.push('- Missing commas between array elements');
+    lines.push('- Unmatched brackets or quotes');
+    lines.push('- Missing quotes around file paths\n');
+    lines.push('**✅ Correct Format:**');
+    lines.push('```json');
+    lines.push('[');
+    lines.push('  {');
+    lines.push('    "tool": "read",');
+    lines.push('    "parameters": {');
+    lines.push('      "filePath": "H:/Project/agent/src/index.ts"');
+    lines.push('    }');
+    lines.push('  },');
+    lines.push('  {');
+    lines.push('    "tool": "read",');
+    lines.push('    "parameters": {');
+    lines.push('      "filePath": "H:/Project/agent/src/utils.ts"');
+    lines.push('    }');
+    lines.push('  }');
+    lines.push(']');
+    lines.push('```\n');
+    lines.push('**Note:** Each object must end with a comma except the last one.\n');
+    lines.push('Please retry with correct JSON format.');
 
     return lines.join('\n');
   }
