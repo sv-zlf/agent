@@ -96,8 +96,13 @@
     ],
     "outputPath": "dist-exe",
     "assets": [
+      "dist/**/*",
       "bin/**/*"
-    ]
+    ],
+    "options": {
+      "no-bytecode": true,
+      "public-packages": "*"
+    }
   },
   "jest": {
     "preset": "ts-jest",

@@ -25,7 +25,66 @@ import { renderMarkdown } from '../utils/markdown';
 import { ToolParameterHelper } from '../utils/tool-params';
 import { startTUI, addMessageToTUI, updateTUIStatus } from '../tui';
 
+/**
+ * 获取应用根目录（兼容 pkg 打包环境）
+ */
+function getAppDir(): string {
+  if ('pkg' in process && (process as any).pkg) {
+    return path.dirname((process as any).execPath);
+  }
+  // 开发环境使用 process.cwd()
+  return process.cwd();
+}
+const appDir = getAppDir();
+
 const logger = createLogger();
+
+/**
+ * 获取错误消息
+ */
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  if (error === null || error === undefined) return 'Unknown error';
+  return String(error);
+}
+
+/**
+ * 安全的对象序列化（避免循环引用）
+ */
+function safeStringify(obj: unknown, maxDepth = 3, currentDepth = 0): string {
+  if (currentDepth > maxDepth) return '[nested]';
+  if (obj === null) return 'null';
+  if (obj === undefined) return 'undefined';
+  if (typeof obj === 'string') return obj;
+  if (typeof obj === 'number' || typeof obj === 'boolean') return String(obj);
+  if (typeof obj === 'function') return '[function]';
+  if (obj instanceof Error) return obj.message;
+  if (obj instanceof Date) return obj.toISOString();
+  if (obj instanceof RegExp) return obj.toString();
+  if (Array.isArray(obj)) {
+    if (currentDepth >= maxDepth) return '[array]';
+    return '[' + obj.map((v) => safeStringify(v, maxDepth, currentDepth + 1)).join(', ') + ']';
+  }
+  if (typeof obj === 'object') {
+    if (currentDepth >= maxDepth) return '[object]';
+    try {
+      const keys = Object.keys(obj as object);
+      if (keys.length === 0) return '{}';
+      const pairs = keys
+        .slice(0, 10)
+        .map(
+          (k) =>
+            `${k}: ${safeStringify((obj as Record<string, unknown>)[k], maxDepth, currentDepth + 1)}`
+        );
+      if (keys.length > 10) pairs.push('...');
+      return '{' + pairs.join(', ') + '}';
+    } catch {
+      return '[circular]';
+    }
+  }
+  return String(obj);
+}
 
 /**
  * 过滤流式输出中的工具调用 JSON 代码块
@@ -270,11 +329,11 @@ function printCompactToolCall(
         display = '';
       } else if (paramKeys.length === 1) {
         const [k, v] = Object.entries(params)[0];
-        display = `${chalk.cyan(k)}=${JSON.stringify(v).slice(0, 30)}`;
+        display = `${chalk.cyan(k)}=${safeStringify(v, 1).slice(0, 30)}`;
       } else {
         // 多参数只显示第一个
         const [k, v] = Object.entries(params)[0];
-        display = `${chalk.cyan(k)}=${JSON.stringify(v).slice(0, 20)}...`;
+        display = `${chalk.cyan(k)}=${safeStringify(v, 1).slice(0, 20)}...`;
       }
   }
 
@@ -393,7 +452,7 @@ export const agentCommand = new Command('agent')
     }
 
     // 读取版本号
-    const packagePath = path.join(__dirname, '../../package.json');
+    const packagePath = path.join(appDir, '../../package.json');
     const version = JSON.parse(readFileSync(packagePath, 'utf-8')).version;
 
     // 显示 GG CODE 启动横幅
@@ -1094,7 +1153,7 @@ export const agentCommand = new Command('agent')
 
                   // 格式化工具参数显示
                   const paramsStr = Object.entries(call.parameters)
-                    .map(([k, v]) => `${k}=${JSON.stringify(v)}`)
+                    .map(([k, v]) => `${k}=${safeStringify(v, 1)}`)
                     .join(' ');
 
                   // 从工具参数中提取路径（用于细粒度权限检查）
@@ -1603,7 +1662,7 @@ export const agentCommand = new Command('agent')
               if (!approved && permissionResult.action === PermissionAction.ASK) {
                 // 在 TUI 中显示权限请求
                 addMessageToTUI(
-                  `请求执行工具: ${toolCall.tool}\n参数: ${JSON.stringify(toolCall.parameters, null, 2)}`,
+                  `请求执行工具: ${toolCall.tool}\n参数: ${safeStringify(toolCall.parameters, 2)}`,
                   'system'
                 );
                 // 在 TUI 模式下自动批准（简化处理）

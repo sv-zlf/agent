@@ -8,10 +8,22 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { getToolPrompt, hasPackedPrompts } from './packed-prompts';
 
+/**
+ * 获取应用根目录（兼容 pkg 打包环境）
+ */
+function getAppDir(): string {
+  if ('pkg' in process && (process as any).pkg) {
+    return path.dirname((process as any).execPath);
+  }
+  // 开发环境使用 process.cwd()
+  return process.cwd();
+}
+const appDir = getAppDir();
+
 const promptCache = new Map<string, string>();
 
 function getToolPromptPath(toolId: string): string {
-  return path.join(__dirname, '../prompts/_tools', `${toolId}.txt`);
+  return path.join(appDir, 'src/prompts/_tools', `${toolId}.txt`);
 }
 
 export async function loadToolPrompt(toolId: string): Promise<string> {

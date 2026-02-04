@@ -790,6 +790,9 @@ export class AgentManager {
    * 获取 agent 配置
    */
   getAgent(name: string): IAgentConfig | undefined {
+    if (name === 'default') {
+      return this.agents.get('build');
+    }
     return this.agents.get(name);
   }
 
