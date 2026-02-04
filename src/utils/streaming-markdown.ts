@@ -188,8 +188,8 @@ export class StreamingMarkdownRenderer {
       // 4. 没有换行符，检查是否可以直接输出（如：空格、标点符号后）
       if (this.isCompleteSentence(remaining)) {
         output += this.renderInlineContent(remaining);
+        processed += remaining.length; // 修复：应该加 remaining 的长度，而不是整个 buffer
         remaining = '';
-        processed += this.state.buffer.length;
         break;
       }
 

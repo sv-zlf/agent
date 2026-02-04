@@ -261,76 +261,6 @@ function printCompactAssistant(response: string): void {
   }
 }
 
-/**
- * Print enhanced tool call with detailed information
- */
-function printCompactToolCall(
-  tool: string,
-  params: Record<string, unknown>,
-  _toolEngine: any
-): void {
-  if (!params || typeof params !== 'object') {
-    console.log(chalk.yellow('● ') + chalk.cyan(tool));
-    return;
-  }
-
-  let display = '';
-
-  // 根据工具类型选择关键参数
-  switch (tool) {
-    case 'glob':
-    case 'grep':
-      // 搜索类工具只显示 pattern
-      if (params.pattern) {
-        display = chalk.cyan(String(params.pattern));
-      }
-      break;
-    case 'read':
-      // 读取类工具只显示 filePath
-      if (params.filePath) {
-        const fp = String(params.filePath);
-        display = chalk.cyan(fp.length > 40 ? '...' + fp.slice(-37) : fp);
-      }
-      break;
-    case 'edit':
-    case 'multiedit':
-      // 编辑类工具显示文件路径
-      if (params.filePath) {
-        const fp = String(params.filePath);
-        display = chalk.cyan(fp.length > 40 ? '...' + fp.slice(-37) : fp);
-      }
-      break;
-    case 'bash':
-      // bash 只显示命令摘要
-      if (params.command) {
-        const cmd = String(params.command);
-        display = chalk.cyan(cmd.length > 40 ? cmd.slice(0, 37) + '...' : cmd);
-      }
-      break;
-    case 'write':
-      if (params.filePath) {
-        const fp = String(params.filePath);
-        display = chalk.cyan(fp.length > 40 ? '...' + fp.slice(-37) : fp) + chalk.gray(' (new)');
-      }
-      break;
-    default:
-      // 其他工具使用简洁的参数摘要
-      const paramKeys = Object.keys(params);
-      if (paramKeys.length === 0) {
-        display = '';
-      } else if (paramKeys.length === 1) {
-        const [k, v] = Object.entries(params)[0];
-        display = `${chalk.cyan(k)}=${safeStringify(v, 1).slice(0, 30)}`;
-      } else {
-        // 多参数只显示第一个
-        const [k, v] = Object.entries(params)[0];
-        display = `${chalk.cyan(k)}=${safeStringify(v, 1).slice(0, 20)}...`;
-      }
-  }
-
-  console.log(chalk.cyan(tool) + (display ? ' ' + display : ''));
-}
-
 function printToolCompactResult(
   success: boolean,
   result: { output?: string; error?: string }
@@ -1006,6 +936,8 @@ export const agentCommand = new Command('agent')
                       abortSignal: abortSignal,
                       stream: true, // 启用流式输出
                       onChunk: (chunk: string) => {
+                        // 调试：跟踪 chunk
+                        console.error(`[AGENT-DEBUG] Chunk received: ${chunk.length} chars`);
                         // 累积完整响应
                         fullResponse += chunk;
 
@@ -1024,7 +956,9 @@ export const agentCommand = new Command('agent')
 
                           // 输出警告信息
                           console.log(chalk.yellow('\n⚠️ 检测到工具调用格式错误，已中断输出'));
-                          console.log(chalk.gray(`错误片段: ${detection.snippet?.slice(0, 100)}...`));
+                          console.log(
+                            chalk.gray(`错误片段: ${detection.snippet?.slice(0, 100)}...`)
+                          );
 
                           // 生成并发送纠正消息
                           const correctionMessage = generateCorrectionMessage(detection);
@@ -1137,10 +1071,8 @@ export const agentCommand = new Command('agent')
               // 有工具调用，使用紧凑格式显示
               printCompactAssistant(response);
 
-              // 显示工具调用（紧凑格式）
-              for (const call of toolCalls) {
-                printCompactToolCall(call.tool, call.parameters, toolEngine);
-              }
+              // 注意：不在执行前显示工具调用，避免重复
+              // 工具调用会在执行过程中显示（1207行和1257行）
 
               const toolResults: any[] = [];
               for (const call of toolCalls) {
