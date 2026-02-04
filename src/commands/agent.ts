@@ -1068,7 +1068,7 @@ export const agentCommand = new Command('agent')
                     'user',
                     `\n\n执行过程中发生错误: ${apiError.message || apiError.toString()}`
                   );
-                  throw apiError;
+                  // 不再抛出错误，避免重复输出
                 }
               } finally {
                 interruptManager.setAIThinking(false);

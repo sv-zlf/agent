@@ -272,13 +272,13 @@ export class OpenAPIAdapter {
           } catch {
             dataStr = '[无法序列化的响应数据]';
           }
-          throw new APIError(`API调用失败: ${dataStr}`, ErrorCode.API_NETWORK_ERROR, status, {
+          throw new APIError(dataStr, ErrorCode.API_NETWORK_ERROR, status, {
             responseData: data,
           });
         }
         if (error.request) {
           throw new APIError(
-            `网络错误: 无法连接到API服务器 (${this.config.base_url}): ${error.code || 'unknown'}`,
+            `无法连接到API服务器 (${this.config.base_url}): ${error.code || 'unknown'}`,
             ErrorCode.API_NETWORK_ERROR,
             undefined,
             { axiosCode: error.code }

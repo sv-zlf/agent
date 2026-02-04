@@ -91,6 +91,7 @@ export class APIConcurrencyController {
     }
 
     this.isProcessing = true;
+    let lastError: string | null = null;
 
     try {
       while (this.queue.length > 0) {
@@ -111,43 +112,34 @@ export class APIConcurrencyController {
             await new Promise((resolve) => setTimeout(resolve, 800));
           }
         } catch (error: any) {
-          // 提取错误信息，避免 circular structure 问题
-          let errorMessage: string;
-          try {
-            const err = error as Error;
-            errorMessage = err?.message || String(error);
-            // 如果消息太长或包含敏感内容，截断
-            if (errorMessage.length > 500) {
-              errorMessage = errorMessage.substring(0, 500) + '...';
-            }
-            // 过滤掉 circular structure 相关的内部错误信息
-            if (
-              errorMessage.includes('circular structure') ||
-              errorMessage.includes('TLSSocket') ||
-              errorMessage.includes('HTTPParser')
-            ) {
-              errorMessage = '网络请求处理错误';
-            }
-          } catch {
-            errorMessage = '未知错误';
-          }
-
-          // 对于用户取消的请求，不显示错误
+          // 对于用户取消的请求，直接跳过
+          const errorMessage = error?.message || String(error);
           if (
             errorMessage.includes('canceled') ||
             errorMessage.includes('abort') ||
             errorMessage.includes('中断')
           ) {
             request.reject(error as Error);
-            return;
+            continue;
           }
 
-          logger.error(`API请求失败: ${request.id}, 错误: ${errorMessage}`);
+          // 跳过无意义的错误，只保留有意义的业务错误
+          if (errorMessage.includes('无法序列化的响应数据')) {
+            request.reject(error as Error);
+            continue;
+          }
+
+          // 记录最后一个有意义的错误
+          lastError = errorMessage;
           request.reject(error as Error);
         }
       }
     } finally {
       this.isProcessing = false;
+      // 只输出最后一个错误
+      if (lastError) {
+        logger.error(lastError);
+      }
     }
   }
 
