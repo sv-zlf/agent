@@ -12,13 +12,8 @@ interface ParserState {
   inCodeBlock: boolean;
   codeBlockLang: string;
   codeBlockBuffer: string;
-  inList: boolean;
-  listMarker: string; // '-', '*', '+', or '1.'
-  inInlineCode: boolean;
-  inBold: boolean;
-  inItalic: boolean;
   buffer: string;
-  lastOutput: string;
+  processedOffset: number; // 已经处理并输出的字符位置
 }
 
 /**
@@ -29,13 +24,8 @@ function createInitialState(): ParserState {
     inCodeBlock: false,
     codeBlockLang: '',
     codeBlockBuffer: '',
-    inList: false,
-    listMarker: '',
-    inInlineCode: false,
-    inBold: false,
-    inItalic: false,
     buffer: '',
-    lastOutput: '',
+    processedOffset: 0,
   };
 }
 
@@ -44,9 +34,9 @@ function createInitialState(): ParserState {
  */
 function detectCodeBlockStart(text: string): { lang: string; matchLength: number } | null {
   // 匹配 ``` 或 ```lang
-  const match = text.match(/^```\w*\s*/);
+  const match = text.match(/^```(\w*)\s*/);
   if (match) {
-    const lang = match[0].replace(/`|\s/g, '') || 'code';
+    const lang = match[1] || 'code';
     return { lang, matchLength: match[0].length };
   }
   return null;
@@ -103,31 +93,8 @@ export class StreamingMarkdownRenderer {
    * @returns 应该立即输出的内容（可能为空）
    */
   public process(chunk: string): string {
-    // 跳过完全相同的重复 chunk
-    if (chunk === this.state.lastOutput) {
-      return '';
-    }
-
     this.state.buffer += chunk;
-
-    // 如果缓冲区以最后一个输出开头，说明是重复内容
-    if (this.state.buffer.startsWith(this.state.lastOutput)) {
-      // 只处理新增的部分
-      this.state.buffer = this.state.buffer.slice(this.state.lastOutput.length);
-    }
-
-    // 如果缓冲区变空，说明全是重复内容
-    if (this.state.buffer.length === 0) {
-      return '';
-    }
-
     const output = this.tryOutput();
-
-    // 跟踪最后输出的内容
-    if (output) {
-      this.state.lastOutput = output;
-    }
-
     return output;
   }
 
@@ -135,9 +102,13 @@ export class StreamingMarkdownRenderer {
    * 刷新剩余的缓冲内容
    */
   public flush(): string {
+    if (this.state.buffer.length === 0) {
+      return '';
+    }
+
     const output = this.renderBuffer(this.state.buffer);
     this.state.buffer = '';
-    this.state.lastOutput = output;
+    this.state.processedOffset = 0;
     return output;
   }
 
@@ -145,82 +116,109 @@ export class StreamingMarkdownRenderer {
    * 尝试输出可以安全渲染的内容
    */
   private tryOutput(): string {
-    let buffer = this.state.buffer;
+    const buffer = this.state.buffer;
     let output = '';
+    let remaining = buffer;
+    let processed = 0;
 
-    // 处理代码块
-    if (this.state.inCodeBlock) {
-      const endPos = detectCodeBlockEnd(buffer);
-      if (endPos > 0) {
-        const codeContent = this.state.codeBlockBuffer + buffer.slice(0, endPos);
-        output = this.renderCodeBlock(codeContent, this.state.codeBlockLang);
-        this.state.inCodeBlock = false;
-        this.state.codeBlockBuffer = '';
-        this.state.codeBlockLang = '';
-        this.state.buffer = buffer.slice(endPos);
-        return output;
+    while (remaining.length > 0) {
+      // 1. 检查是否在代码块中
+      if (this.state.inCodeBlock) {
+        const endPos = detectCodeBlockEnd(remaining);
+        if (endPos > 0) {
+          // 代码块结束
+          const codeContent = this.state.codeBlockBuffer + remaining.slice(0, endPos);
+          output += this.renderCodeBlock(codeContent, this.state.codeBlockLang);
+
+          this.state.inCodeBlock = false;
+          this.state.codeBlockBuffer = '';
+          this.state.codeBlockLang = '';
+          remaining = remaining.slice(endPos);
+          processed += endPos;
+        } else {
+          // 还在代码块中，累积但不输出（等待结束）
+          this.state.codeBlockBuffer += remaining;
+          remaining = '';
+        }
+        continue;
       }
-      // 还在代码块中，累积
-      this.state.codeBlockBuffer += buffer;
-      this.state.buffer = '';
-      return '';
-    }
 
-    // 检查是否开始代码块
-    const codeBlockStart = detectCodeBlockStart(buffer);
-    if (codeBlockStart) {
-      // 输出代码块前面的内容
-      const beforeCodeBlock = buffer.slice(0, buffer.indexOf('```'));
-      if (beforeCodeBlock) {
-        output = this.renderInlineContent(beforeCodeBlock);
+      // 2. 检查是否开始新的代码块
+      const codeBlockStart = detectCodeBlockStart(remaining);
+      if (codeBlockStart) {
+        // 先输出前面的内容
+        const beforeCodeBlock = remaining.slice(0, remaining.indexOf('```'));
+        if (beforeCodeBlock) {
+          output += this.renderInlineContent(beforeCodeBlock);
+          processed += beforeCodeBlock.length;
+        }
+
+        this.state.inCodeBlock = true;
+        this.state.codeBlockLang = codeBlockStart.lang;
+        remaining = remaining.slice(codeBlockStart.matchLength);
+        processed += codeBlockStart.matchLength;
+        continue;
       }
-      this.state.inCodeBlock = true;
-      this.state.codeBlockLang = codeBlockStart.lang;
-      this.state.buffer = buffer.slice(codeBlockStart.matchLength);
-      return output;
-    }
 
-    // 查找换行点
-    const newlinePos = buffer.indexOf('\n');
-    if (newlinePos !== -1) {
-      const line = buffer.slice(0, newlinePos + 1);
-      if (this.isSafeToOutput(line)) {
-        output = this.renderLine(line);
-        this.state.buffer = buffer.slice(newlinePos + 1);
-        return output;
+      // 3. 查找安全的换行点
+      const newlinePos = remaining.indexOf('\n');
+      if (newlinePos !== -1) {
+        const line = remaining.slice(0, newlinePos + 1);
+
+        // 放宽检查：几乎所有行都允许输出
+        // 只有极少数明显未闭合的情况才拒绝
+        if (this.isSafeToOutput(line)) {
+          output += this.renderLine(line);
+          remaining = remaining.slice(newlinePos + 1);
+          processed += newlinePos + 1;
+        } else {
+          // 不安全，但这行很可能永远不会被满足
+          // 为了避免内容丢失，强制输出这一行
+          output += this.renderLine(line);
+          remaining = remaining.slice(newlinePos + 1);
+          processed += newlinePos + 1;
+        }
+        continue;
       }
+
+      // 4. 没有换行符，检查是否可以直接输出（如：空格、标点符号后）
+      if (this.isCompleteSentence(remaining)) {
+        output += this.renderInlineContent(remaining);
+        processed += remaining.length;
+        remaining = '';
+        break;
+      }
+
+      // 5. 没有找到安全的输出点，等待更多 chunk
+      break;
     }
 
-    // 检查是否是完整句子
-    if (this.isCompleteSentence(buffer)) {
-      output = this.renderInlineContent(buffer);
-      this.state.buffer = '';
-      return output;
-    }
+    // 更新缓冲区
+    this.state.buffer = buffer.slice(processed);
+    this.state.processedOffset = processed;
 
-    // 等待更多内容
-    return '';
+    return output;
   }
 
   /**
    * 判断一行文本是否可以安全输出
    */
   private isSafeToOutput(line: string): boolean {
-    // 检查是否有未闭合的行内代码
-    const backtickCount = (line.match(/[^\\]`/g) || []).length;
-    if (backtickCount % 2 !== 0) {
-      return false;
+    // 极简检查：只拒绝明显未闭合的情况
+    const trimmed = line.trimEnd();
+
+    // 只有当行以单个反引号结尾时才拒绝（明显的未闭合代码）
+    const doubleBacktick = '``';
+    const tripleBacktick = '```';
+    if (trimmed.endsWith('`') && !trimmed.endsWith(doubleBacktick) && !trimmed.endsWith(tripleBacktick)) {
+      // 检查是否有奇数个反引号
+      const backtickCount = (trimmed.match(/`/g) || []).length;
+      if (backtickCount % 2 !== 0) {
+        return false;
+      }
     }
 
-    // 检查是否有未闭合的粗体或斜体（简化检查）
-    // 注意：这是一个保守的检查，可能会有误判
-    const hasUnmatchedBold = (line.match(/\*\*/g) || []).length % 2 !== 0;
-    const hasUnmatchedItalic = (line.match(/(?<!\*)\*(?!\*)/g) || []).length % 2 !== 0;
-
-    if (hasUnmatchedBold || hasUnmatchedItalic) {
-      return false;
-    }
-
+    // 其他情况都允许输出（包括粗体、斜体等）
     return true;
   }
 
@@ -235,7 +233,6 @@ export class StreamingMarkdownRenderer {
 
     // 如果以空格结尾，对于简单内容可能安全
     if (/\s+$/.test(text) && text.length < 50) {
-      // 但需要检查是否有未闭合的标记
       return !this.hasUnclosedMarkers(text);
     }
 
@@ -265,6 +262,34 @@ export class StreamingMarkdownRenderer {
       // 还在代码块中，直接输出
       return this.renderCodeBlock(text, this.state.codeBlockLang);
     }
+
+    // 如果有换行符，逐行渲染
+    if (text.includes('\n')) {
+      const lines = text.split('\n');
+      let output = '';
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const isLastLine = i === lines.length - 1;
+
+        if (line === '') {
+          // 空行（除非是最后且原文本不以 \n 结尾）
+          if (!isLastLine || text.endsWith('\n')) {
+            output += '\n';
+          }
+        } else {
+          // 非空行，渲染
+          const rendered = this.renderLine(line);
+          output += rendered;
+          // 如果 renderLine 没有添加换行符，且不是最后一行，手动添加
+          if (!isLastLine && !rendered.endsWith('\n')) {
+            output += '\n';
+          }
+        }
+      }
+      return output;
+    }
+
+    // 单行内容，使用行内渲染
     return this.renderInlineContent(text);
   }
 
