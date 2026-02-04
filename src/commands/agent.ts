@@ -24,6 +24,7 @@ import { readFileSync } from 'fs';
 import { renderMarkdown } from '../utils/markdown';
 import { ToolParameterHelper } from '../utils/tool-params';
 import { startTUI, addMessageToTUI, updateTUIStatus } from '../tui';
+import { createStreamingRenderer } from '../utils/streaming-markdown';
 
 /**
  * 获取应用根目录（兼容 pkg 打包环境）
@@ -980,9 +981,11 @@ export const agentCommand = new Command('agent')
               let wasInterrupted = false;
               let fullResponse = ''; // 累积流式响应
               let isFirstChunk = true; // 标记是否是第一个 chunk
-              let streamBuffer = ''; // 流式输出缓冲区
               const { filter: streamFilter } = createStreamFilter(); // 工具调用过滤器
               let hasStreamed = false; // 标记是否已经流式输出过
+
+              // 创建智能流式渲染器
+              const streamingRenderer = createStreamingRenderer();
 
               try {
                 // API 调用（使用中断管理器的 signal，通过并发控制）
@@ -1009,26 +1012,17 @@ export const agentCommand = new Command('agent')
                         const filteredChunk = streamFilter(chunk);
                         if (!filteredChunk) return;
 
-                        // 累积过滤后的内容
-                        streamBuffer += filteredChunk;
+                        // 第一个 chunk 到达时，停止 spinner 并输出前缀
+                        if (isFirstChunk) {
+                          spinner.stop();
+                          process.stdout.write(chalk.cyan('● '));
+                          isFirstChunk = false;
+                        }
 
-                        // 查找完整段落（句末或换行）
-                        const match = streamBuffer.match(/[^.!?\n]*[.!?\n]|[^.!?\n]+$/);
-                        if (!match) return;
-
-                        // 取完整段落
-                        const completeText = streamBuffer.slice(0, match[0].length);
-                        if (completeText) {
-                          if (isFirstChunk) {
-                            spinner.stop();
-                            process.stdout.write(chalk.cyan('● '));
-                            isFirstChunk = false;
-                          }
-                          // 渲染 markdown
-                          const rendered = renderMarkdown(completeText, { colors: true });
+                        // 使用智能流式渲染器处理
+                        const rendered = streamingRenderer.process(filteredChunk);
+                        if (rendered) {
                           process.stdout.write(rendered);
-                          // 移除已渲染内容
-                          streamBuffer = streamBuffer.slice(completeText.length);
                         }
                       },
                     });
@@ -1036,8 +1030,16 @@ export const agentCommand = new Command('agent')
                   API_PRIORITY.HIGH // 用户直接对话使用高优先级
                 );
 
-                // 如果没有流式输出（空响应），停止 spinner
-                if (isFirstChunk) {
+                // 刷新渲染器缓冲区
+                if (!isFirstChunk) {
+                  const remaining = streamingRenderer.flush();
+                  if (remaining) {
+                    process.stdout.write(remaining);
+                  }
+                  // 流式输出已完成，打印换行
+                  console.log();
+                } else {
+                  // 没有流式输出（空响应），停止 spinner
                   spinner.stop();
                 }
 
@@ -1046,10 +1048,6 @@ export const agentCommand = new Command('agent')
 
                 // 标记是否已经流式输出过（用于避免重复输出）
                 hasStreamed = !isFirstChunk;
-                if (hasStreamed) {
-                  // 流式输出已完成，打印换行
-                  console.log();
-                }
               } catch (apiError: any) {
                 spinner.stop();
 
@@ -1332,30 +1330,39 @@ export const agentCommand = new Command('agent')
               let fullFinalResponse = '';
               let isFirstFinalChunk = true;
               const finalSpinner = ora('正在生成总结...').start();
+              const finalStreamingRenderer = createStreamingRenderer();
 
               const finalResponse = await executeAPIRequest(async () => {
                 return apiAdapter.chat(finalMessages, {
                   stream: true, // 启用流式输出
                   onChunk: (chunk: string) => {
+                    // 累积完整响应（包含工具调用）
+                    fullFinalResponse += chunk;
+
                     // 第一个 chunk 到达时，停止 spinner
                     if (isFirstFinalChunk) {
                       finalSpinner.stop();
+                      process.stdout.write(chalk.cyan('● '));
                       isFirstFinalChunk = false;
                     }
-                    // 过滤工具调用JSON代码块，只输出文本内容
-                    const cleanedChunk = cleanResponse(chunk);
-                    if (cleanedChunk) {
-                      // 实时输出流式内容
-                      process.stdout.write(cleanedChunk);
+
+                    // 使用智能流式渲染器
+                    const rendered = finalStreamingRenderer.process(chunk);
+                    if (rendered) {
+                      process.stdout.write(rendered);
                     }
-                    // 累积完整响应（包含工具调用）
-                    fullFinalResponse += chunk;
                   },
                 });
               }, API_PRIORITY.HIGH);
 
-              // 如果没有流式输出，停止 spinner
-              if (isFirstFinalChunk) {
+              // 刷新渲染器缓冲区
+              if (!isFirstFinalChunk) {
+                const remaining = finalStreamingRenderer.flush();
+                if (remaining) {
+                  process.stdout.write(remaining);
+                }
+                console.log();
+              } else {
                 finalSpinner.stop();
               }
 
@@ -1363,7 +1370,10 @@ export const agentCommand = new Command('agent')
               const finalResponseContent = fullFinalResponse || finalResponse;
               const cleanedFinalResponse = cleanResponse(finalResponseContent);
               contextManager.addMessage('assistant', cleanedFinalResponse);
-              printAssistantMessage(cleanedFinalResponse);
+              // 只有在没有流式输出时才重新打印
+              if (isFirstFinalChunk) {
+                printAssistantMessage(cleanedFinalResponse);
+              }
             } catch (error) {
               console.log(chalk.red(`生成总结失败: ${(error as Error).message}\n`));
             }
@@ -1548,6 +1558,7 @@ export const agentCommand = new Command('agent')
 
             let fullResponse = '';
             const { filter: streamFilter } = createStreamFilter();
+            const tuiStreamingRenderer = createStreamingRenderer();
 
             try {
               const response = await executeAPIRequest(async () => {
@@ -1558,12 +1569,21 @@ export const agentCommand = new Command('agent')
                     fullResponse += chunk;
                     const filteredChunk = streamFilter(chunk);
                     if (filteredChunk) {
-                      // 在 TUI 中显示流式输出
-                      process.stdout.write(filteredChunk);
+                      // 使用智能流式渲染器
+                      const rendered = tuiStreamingRenderer.process(filteredChunk);
+                      if (rendered) {
+                        process.stdout.write(rendered);
+                      }
                     }
                   },
                 });
               }, API_PRIORITY.HIGH);
+
+              // 刷新 TUI 渲染器缓冲区
+              const remaining = tuiStreamingRenderer.flush();
+              if (remaining) {
+                process.stdout.write(remaining);
+              }
 
               fullResponse = fullResponse || response || '';
             } catch (apiError: any) {

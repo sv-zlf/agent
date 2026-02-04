@@ -55,7 +55,7 @@ async function registerSubagentTools(toolEngine: ToolEngine, subagentType: strin
 
 function getAllowedToolsForAgent(agentType: string): string[] {
   const agentConfigs: Record<string, string[]> = {
-    explore: ['read', 'glob', 'grep', 'bash'],
+    explore: ['read', 'glob', 'grep', 'bash', 'ls'],
     default: [
       'read',
       'write',
